@@ -139,6 +139,9 @@ final class NotchModel: ObservableObject {
         var shortcuts = true
         var hud = true
         var spectrum = true // equalizer mengikuti suara asli (izin audio macOS)
+        var power = true // charger dicolok/dicabut, baterai lemah
+        var devices = true // AirPods & headphone tersambung
+        var hotkey = true // ⌃⌥N membuka notch
     }
 
     /// Perubahan volume / kecerahan yang sedang ditampilkan.
@@ -167,6 +170,7 @@ final class NotchModel: ObservableObject {
         let tint: Color
         var level: Double? = nil // bar volume/kecerahan menggantikan teks
         var media = false // sampul + equalizer
+        var title: String? = nil // teks di sayap kiri (nama perangkat); sayap jadi lebar
     }
 
     @Published var expanded = false
@@ -182,6 +186,7 @@ final class NotchModel: ObservableObject {
     @Published var now = Date()
     @Published private(set) var features = Features()
     @Published private(set) var level: Level?
+    @Published private(set) var notice: DeviceNotice?
 
     /// App mandiri "Cognify Notch" (tanpa Cognify): agenda dari Kalender saja, catatan cepat
     /// disimpan di notch, seret file langsung ke tray, pengaturan lewat ikon menu bar.
@@ -196,6 +201,12 @@ final class NotchModel: ObservableObject {
     let shortcuts = ShortcutsModel()
     private let levels = SystemLevels()
     private var levelTask: Task<Void, Never>?
+    private let power = PowerMonitor()
+    private let audioDevices = AudioDeviceMonitor()
+    private let hotKey = HotKey()
+    private var noticeTask: Task<Void, Never>?
+    /// Notch dibuka lewat ⌃⌥N: jendela notch perlu menerima ketikan (diatur NotchController).
+    var onKeyboardOpen: (() -> Void)?
     let bridge: Bridge?
     private(set) var api: API?
 
@@ -216,6 +227,9 @@ final class NotchModel: ObservableObject {
             publisher.sink { [weak self] in self?.objectWillChange.send() }.store(in: &changes)
         }
         levels.onChange = { [weak self] level in self?.showLevel(level) }
+        power.onNotice = { [weak self] notice in self?.showNotice(notice) }
+        audioDevices.onNotice = { [weak self] notice in self?.showNotice(notice) }
+        hotKey.onPress = { [weak self] in self?.toggleFromKeyboard() }
         media.$nowPlaying.sink { [weak self] now in
             DispatchQueue.main.async { self?.updateSpectrum(playing: now?.playing == true) }
         }.store(in: &changes)
@@ -234,10 +248,11 @@ final class NotchModel: ObservableObject {
 
     static let expandedSize = CGSize(width: 680, height: 222)
     static let wing: CGFloat = 76
+    static let wideWing: CGFloat = 150
 
     var size: CGSize {
         if expanded { return CGSize(width: Self.expandedSize.width, height: Self.expandedSize.height + notchSize.height - 32) }
-        if live != nil { return CGSize(width: notchSize.width + Self.wing * 2, height: notchSize.height) }
+        if let live { return CGSize(width: notchSize.width + (live.title == nil ? Self.wing : Self.wideWing) * 2, height: notchSize.height) }
         return notchSize
     }
 
@@ -250,6 +265,7 @@ final class NotchModel: ObservableObject {
             return Live(icon: value < 0.5 ? "sun.min.fill" : "sun.max.fill", tint: .yellow, level: value)
         case nil: break
         }
+        if let notice { return Self.live(for: notice) }
         switch toast {
         case .working(let text)?: return Live(icon: "arrow.down.circle", text: text, tint: .accent)
         case .done?: return Live(icon: "checkmark.circle.fill", text: "Tersimpan", tint: .green)
@@ -269,6 +285,44 @@ final class NotchModel: ObservableObject {
             return Live(icon: "music.note", tint: .accent, media: true)
         }
         return nil
+    }
+
+    private static func live(for notice: DeviceNotice) -> Live {
+        switch notice {
+        case .charging(let percent, let full):
+            return Live(icon: "battery.100percent.bolt", text: full ? "Penuh" : "\(percent)%", tint: .green)
+        case .unplugged(let percent):
+            return Live(icon: batteryIcon(percent), text: "\(percent)%", tint: .white)
+        case .lowBattery(let percent):
+            return Live(icon: "battery.25percent", text: "\(percent)%", tint: .red)
+        case .audioConnected(let name, let battery):
+            return Live(icon: audioIcon(name), text: battery ?? "Tersambung", tint: .white, title: shortName(name))
+        case .audioDisconnected(let name):
+            return Live(icon: audioIcon(name), text: "Terputus", tint: .gray, title: shortName(name))
+        }
+    }
+
+    private static func batteryIcon(_ percent: Int) -> String {
+        percent > 87 ? "battery.100percent" : percent > 62 ? "battery.75percent" : percent > 37 ? "battery.50percent"
+            : percent > 12 ? "battery.25percent" : "battery.0percent"
+    }
+
+    /// "AirPods Pro milik Reinhard" / "Reinhard's AirPods Pro" → "AirPods Pro" (sayap notch sempit).
+    static func shortName(_ name: String) -> String {
+        var n = name
+        if let r = n.range(of: " milik ") { n = String(n[..<r.lowerBound]) }
+        for mark in ["’s ", "'s "] { if let r = n.range(of: mark) { n = String(n[r.upperBound...]) } }
+        n = n.trimmingCharacters(in: .whitespaces)
+        return n.isEmpty ? name : n
+    }
+
+    private static func audioIcon(_ name: String) -> String {
+        let n = name.lowercased()
+        if n.contains("airpods max") { return "airpodsmax" }
+        if n.contains("airpods pro") { return "airpodspro" }
+        if n.contains("airpods") { return "airpods" }
+        if n.contains("beats") || n.contains("headphone") || n.contains("wh-") || n.contains("buds") { return "headphones" }
+        return "hifispeaker.fill"
     }
 
     /// Tab yang terlihat sesuai fitur yang dinyalakan.
@@ -293,6 +347,9 @@ final class NotchModel: ObservableObject {
         updateSpectrum(playing: media.nowPlaying?.playing == true)
         calendar.setEnabled(next.calendar)
         levels.setEnabled(next.hud)
+        power.setEnabled(next.power)
+        audioDevices.setEnabled(next.devices)
+        hotKey.setEnabled(next.hotkey)
         if !tabs.contains(tab) { tab = .home }
     }
 
@@ -300,6 +357,35 @@ final class NotchModel: ObservableObject {
     func preview(level next: Level?, features next2: Features? = nil) {
         level = next
         if let next2 { features = next2 }
+    }
+
+    func preview(notice next: DeviceNotice) { notice = next }
+
+    private func showNotice(_ next: DeviceNotice) {
+        noticeTask?.cancel()
+        withAnimation(.notch) { notice = next }
+        let seconds: Double
+        switch next {
+        case .lowBattery: seconds = 6
+        case .audioConnected: seconds = 4
+        default: seconds = 3
+        }
+        noticeTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            withAnimation(.notch) { self?.notice = nil }
+        }
+    }
+
+    /// ⌃⌥N: buka notch (siap diketik) atau tutup lagi.
+    func toggleFromKeyboard() {
+        if expanded {
+            setExpanded(false)
+        } else {
+            tab = .home
+            setExpanded(true)
+            onKeyboardOpen?()
+        }
     }
 
     private func showLevel(_ next: Level) {

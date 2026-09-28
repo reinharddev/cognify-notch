@@ -96,6 +96,18 @@ struct LiveWings: View {
             Group {
                 if live.media {
                     Artwork(media: media, size: 20)
+                } else if let title = live.title {
+                    HStack(spacing: 6) {
+                        Image(systemName: live.icon)
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(live.tint)
+                        Text(title)
+                            .font(.system(size: 12, weight: .semibold, design: .rounded))
+                            .foregroundStyle(.white)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    }
+                    .padding(.horizontal, 8)
                 } else {
                     Image(systemName: live.icon)
                         .font(.system(size: 13, weight: .semibold))

@@ -19,6 +19,9 @@ Cognify Notch adalah bagian dari Cognify, aplikasi catatan dan belajar berbasis 
 | Cermin | Pratinjau kamera depan. Kamera hanya menyala saat tab Cermin dibuka dan tidak merekam. |
 | Pintasan | Jalankan Siri Shortcuts dengan satu klik. |
 | Volume & kecerahan | Perubahan ditampilkan di notch. |
+| Baterai & charger | Muncul saat charger dicolok atau dicabut, dan saat baterai tinggal 20% dan 10%. |
+| AirPods & headphone | Nama dan baterai perangkat muncul saat suara pindah ke perangkat Bluetooth. |
+| Shortcut ⌃⌥N | Buka notch dari keyboard dan langsung mengetik. Esc atau klik di luar notch menutupnya. |
 
 Pengaturan ada di ikon notch di menu bar: nyalakan atau matikan tiap fitur, buka saat Mac dinyalakan, dan periksa update. Update dipasang otomatis lewat [Sparkle](https://sparkle-project.org).
 

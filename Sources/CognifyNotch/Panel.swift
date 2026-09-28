@@ -60,6 +60,21 @@ final class NotchController {
         model.$expanded.removeDuplicates().sink { [weak self] expanded in
             if !expanded { self?.returnFocus() }
         }.store(in: &cancellables)
+        // ⌃⌥N: jendela notch menerima ketikan tanpa mengaktifkan app ini (seperti Spotlight).
+        model.onKeyboardOpen = { [weak self] in self?.panel.makeKey() }
+        // Esc menutup notch; klik di luar notch juga menutupnya (penting saat dibuka lewat keyboard).
+        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self, event.keyCode == 53, self.model.expanded else { return event }
+            MainActor.assumeIsolated { self.model.setExpanded(false) }
+            return nil
+        }
+        NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.model.expanded, !self.model.dropTargeted,
+                      !self.hotRect(margin: 6).contains(NSEvent.mouseLocation) else { return }
+                self.model.setExpanded(false)
+            }
+        }
         // Geser dua jari ke kiri/kanan di notch = lagu berikutnya/sebelumnya.
         NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
             MainActor.assumeIsolated { self?.scroll(event) }
@@ -192,6 +207,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     f.shortcuts = flags["shortcuts"] ?? f.shortcuts
                     f.hud = flags["hud"] ?? f.hud
                     f.spectrum = flags["spectrum"] ?? f.spectrum
+                    f.power = flags["power"] ?? f.power
+                    f.devices = flags["devices"] ?? f.devices
+                    f.hotkey = flags["hotkey"] ?? f.hotkey
                     model.apply(f)
                 }
             }

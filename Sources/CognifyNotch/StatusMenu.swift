@@ -23,6 +23,9 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         Toggle(title: "Cermin kamera", key: \.camera, defaultsKey: "feature.camera"),
         Toggle(title: "Pintasan", key: \.shortcuts, defaultsKey: "feature.shortcuts"),
         Toggle(title: "Volume & kecerahan", key: \.hud, defaultsKey: "feature.hud"),
+        Toggle(title: "Baterai & charger", key: \.power, defaultsKey: "feature.power"),
+        Toggle(title: "AirPods & headphone", key: \.devices, defaultsKey: "feature.devices"),
+        Toggle(title: "Buka dengan \(HotKey.label)", key: \.hotkey, defaultsKey: "feature.hotkey"),
     ]
 
     init(model: NotchModel) {
@@ -52,7 +55,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         let title = NSMenuItem(title: "Cognify Notch", action: nil, keyEquivalent: "")
         title.isEnabled = false
         menu.addItem(title)
-        let hint = NSMenuItem(title: "Arahkan kursor ke notch untuk membukanya", action: nil, keyEquivalent: "")
+        let hint = NSMenuItem(title: "Arahkan kursor ke notch atau tekan \(HotKey.label)", action: nil, keyEquivalent: "")
         hint.isEnabled = false
         menu.addItem(hint)
         menu.addItem(.separator())
@@ -110,7 +113,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         NSApp.activate(ignoringOtherApps: true)
         NSApp.orderFrontStandardAboutPanel(options: [
             .applicationName: "Cognify Notch",
-            .credits: NSAttributedString(string: "Notch ala Dynamic Island dari Cognify: lagu yang diputar, agenda, catatan cepat, tray file, timer belajar, cermin, dan pintasan. Semua berjalan di Mac ini."),
+            .credits: NSAttributedString(string: "Notch ala Dynamic Island dari Cognify: lagu yang diputar, agenda, catatan cepat, tray file, timer belajar, cermin, pintasan, baterai, dan AirPods. Semua berjalan di Mac ini."),
         ])
     }
 }
