@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Ditanam ke program cognify-notch (Package.swift, -sectcreate __TEXT __info_plist): program
+     tanpa bundle butuh teks izin ini, kalau tidak macOS menghentikannya saat meminta akses. -->
+<plist version="1.0">
+<dict>
+	<key>CFBundleIdentifier</key>
+	<string>com.reinhard.cognify.notch</string>
+	<key>CFBundleName</key>
+	<string>Cognify</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Cognify memakai kamera hanya untuk Cermin di notch. Tidak ada yang direkam atau disimpan.</string>
+	<key>NSAudioCaptureUsageDescription</key>
+	<string>Cognify memakai suara yang sedang diputar hanya untuk menggerakkan equalizer di notch (tinggi nada per pita). Suara tidak direkam, disimpan, atau dikirim.</string>
+	<key>NSCalendarsUsageDescription</key>
+	<string>Cognify menampilkan acara hari ini dan besok dari app Kalender di notch. Tidak ada yang dikirim ke mana pun.</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>Cognify menampilkan acara hari ini dan besok dari app Kalender di notch. Tidak ada yang dikirim ke mana pun.</string>
+</dict>
+</plist>
