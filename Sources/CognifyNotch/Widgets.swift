@@ -10,9 +10,33 @@ struct CalendarEvent: Identifiable, Equatable {
     let id: String
     let title: String
     let start: Date
+    var end: Date? = nil
     let allDay: Bool
     let calendar: String
     let color: Color
+    /// Tautan rapat online (Zoom, Google Meet, Teams, Webex) dari URL, lokasi, atau catatan acara.
+    var meeting: URL? = nil
+
+    /// Tombol Gabung tampil dari 10 menit sebelum mulai sampai acara selesai.
+    func joinable(at now: Date) -> Bool {
+        guard meeting != nil, !allDay else { return false }
+        return start.timeIntervalSince(now) <= 10 * 60 && (end ?? start.addingTimeInterval(3600)) > now
+    }
+
+    private static let meetingPattern = try! NSRegularExpression(
+        pattern: #"https://[^\s<>"']*(zoom\.us/(j|my|w|s)/|meet\.google\.com/[a-z]|teams\.microsoft\.com/l/meetup-join|teams\.live\.com/meet|webex\.com/(meet|join|[a-z0-9.-]+/j\.php))[^\s<>"']*"#,
+        options: [.caseInsensitive])
+
+    static func meetingURL(in texts: [String?]) -> URL? {
+        for text in texts.compactMap({ $0 }) {
+            let range = NSRange(text.startIndex..., in: text)
+            if let match = meetingPattern.firstMatch(in: text, range: range), let r = Range(match.range, in: text),
+               let url = URL(string: String(text[r]).trimmingCharacters(in: CharacterSet(charactersIn: ".,;)>"))) {
+                return url
+            }
+        }
+        return nil
+    }
 }
 
 /// Acara hari ini & besok dari app Kalender (iCloud, Google, dll. yang ditambahkan di Mac).
@@ -64,8 +88,14 @@ final class CalendarFeed: ObservableObject {
             .filter { $0.status != .canceled }
             .sorted { $0.startDate < $1.startDate }
             .prefix(8)
-            .map { CalendarEvent(id: $0.eventIdentifier ?? UUID().uuidString, title: $0.title ?? "(Tanpa judul)", start: $0.startDate,
-                                 allDay: $0.isAllDay, calendar: $0.calendar.title, color: Color(nsColor: $0.calendar.color)) }
+            .map { CalendarEvent(id: $0.eventIdentifier ?? UUID().uuidString, title: $0.title ?? L("(Tanpa judul)", "(No title)"),
+                                 start: $0.startDate, end: $0.endDate, allDay: $0.isAllDay, calendar: $0.calendar.title,
+                                 color: Color(nsColor: $0.calendar.color),
+                                 meeting: CalendarEvent.meetingURL(in: [$0.url?.absoluteString, $0.location, $0.notes])) }
+    }
+
+    func join(_ event: CalendarEvent) {
+        if let url = event.meeting { NSWorkspace.shared.open(url) }
     }
 
     func openCalendarApp() {
@@ -90,9 +120,18 @@ final class CameraMirror: ObservableObject {
 
     @Published private(set) var state: State = .idle
     let session = AVCaptureSession()
+    /// Lapisan pratinjau milik kamera (bukan milik tampilan): terpasang ke sesi sekali saja.
+    let preview = AVCaptureVideoPreviewLayer()
+    /// Semua perintah ke sesi kamera (atur, mulai, berhenti) lewat satu antrean berurutan.
+    /// Mulai & berhenti yang berjalan bersamaan (pindah tab cepat) membuat AVFoundation crash
+    /// ("Collection was mutated while being enumerated").
+    private let queue = DispatchQueue(label: "cognify.camera")
     private var configured = false
+    /// Keinginan terakhir (tab Cermin terlihat atau tidak); antrean menyamakan sesi dengannya.
+    private var wanted = false
 
     func start() {
+        wanted = true
         switch AVCaptureDevice.authorizationStatus(for: .video) {
         case .authorized: run()
         case .notDetermined:
@@ -104,29 +143,52 @@ final class CameraMirror: ObservableObject {
     }
 
     private func run() {
+        guard wanted else { return } // tab sudah ditinggal sebelum izin dijawab
         if !configured {
             guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .front)
                     ?? AVCaptureDevice.default(for: .video),
-                  let input = try? AVCaptureDeviceInput(device: device), session.canAddInput(input) else {
+                  let input = try? AVCaptureDeviceInput(device: device) else {
                 state = .unavailable
                 return
             }
+            configured = true
+            // Sekali saja, sebelum perintah mulai pertama masuk antrean: input + lapisan pratinjau
+            // (yang menambah koneksi ke sesi). Membuat pratinjau saat sesi sedang dinyalakan
+            // mengubah daftar koneksi di tengah `startRunning` → crash.
             session.beginConfiguration()
             session.sessionPreset = .medium
-            session.addInput(input)
+            if session.canAddInput(input) { session.addInput(input) }
             session.commitConfiguration()
-            configured = true
+            preview.session = session
+            preview.videoGravity = .resizeAspectFill
+            if let connection = preview.connection, connection.isVideoMirroringSupported {
+                connection.automaticallyAdjustsVideoMirroring = false
+                connection.isVideoMirrored = true // seperti cermin
+            }
         }
-        let session = session
-        DispatchQueue.global(qos: .userInitiated).async { session.startRunning() }
         state = .running
+        sync()
     }
 
     func stop() {
+        wanted = false
         guard state == .running else { return }
-        let session = session
-        DispatchQueue.global(qos: .userInitiated).async { session.stopRunning() }
         state = .idle
+        sync()
+    }
+
+    /// Nyalakan/matikan sesi sesuai `wanted`, satu perintah dalam satu waktu.
+    private func sync() {
+        let box = UncheckedBox(session)
+        let want = wanted
+        queue.async {
+            let session = box.value
+            if want, !session.isRunning {
+                session.startRunning()
+            } else if !want, session.isRunning {
+                session.stopRunning()
+            }
+        }
     }
 
     func openPrivacySettings() {
@@ -134,25 +196,22 @@ final class CameraMirror: ObservableObject {
     }
 }
 
+/// Menampilkan lapisan pratinjau milik `CameraMirror`; tidak menyentuh sesi kamera sama sekali.
 struct CameraPreview: NSViewRepresentable {
-    let session: AVCaptureSession
+    let layer: AVCaptureVideoPreviewLayer
 
     func makeNSView(context: Context) -> NSView {
         let view = NSView()
-        let layer = AVCaptureVideoPreviewLayer(session: session)
-        layer.videoGravity = .resizeAspectFill
-        layer.connection?.automaticallyAdjustsVideoMirroring = false
-        layer.connection?.isVideoMirrored = true // seperti cermin
-        view.layer = layer
         view.wantsLayer = true
+        layer.removeFromSuperlayer()
+        layer.frame = view.bounds
+        layer.autoresizingMask = [.layerWidthSizable, .layerHeightSizable]
+        view.layer?.addSublayer(layer)
         return view
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
-        if let layer = nsView.layer as? AVCaptureVideoPreviewLayer, let connection = layer.connection, connection.isVideoMirroringSupported {
-            connection.automaticallyAdjustsVideoMirroring = false
-            connection.isVideoMirrored = true
-        }
+        layer.frame = nsView.bounds
     }
 }
 
@@ -165,29 +224,29 @@ struct MirrorPanel: View {
             ZStack {
                 RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Color.white.opacity(0.06))
                 if camera.state == .running && !snapshot {
-                    CameraPreview(session: camera.session)
+                    CameraPreview(layer: camera.preview)
                         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
                 } else if camera.state == .denied {
                     VStack(spacing: 6) {
                         Image(systemName: "video.slash.fill").font(.system(size: 20))
-                        Text("Izin kamera ditolak").font(.system(size: 11.5))
-                        Button("Buka Pengaturan Sistem") { camera.openPrivacySettings() }.buttonStyle(PillButtonStyle(prominent: true))
+                        Text(L("Izin kamera ditolak", "Camera access denied")).font(.system(size: 11.5))
+                        Button(L("Buka Pengaturan Sistem", "Open System Settings")) { camera.openPrivacySettings() }.buttonStyle(PillButtonStyle(prominent: true))
                     }
                     .foregroundStyle(.white.opacity(0.7))
                 } else if camera.state == .unavailable {
-                    Label("Kamera tidak ditemukan", systemImage: "video.slash").font(.system(size: 11.5)).foregroundStyle(.white.opacity(0.6))
+                    Label(L("Kamera tidak ditemukan", "No camera found"), systemImage: "video.slash").font(.system(size: 11.5)).foregroundStyle(.white.opacity(0.6))
                 } else {
                     Image(systemName: "person.crop.square").font(.system(size: 36)).foregroundStyle(.white.opacity(0.25))
                 }
             }
             .frame(width: 250, height: 146)
             VStack(alignment: .leading, spacing: 6) {
-                SectionLabel(text: "Cermin")
-                Text("Cek rambut & latar sebelum kelas online atau video call.")
+                SectionLabel(text: L("Cermin", "Mirror"))
+                Text(L("Cek rambut & latar sebelum kelas online atau video call.", "Check your hair and background before a class or video call."))
                     .font(.system(size: 11.5)).foregroundStyle(.white.opacity(0.65)).fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: 5) {
                     Circle().fill(camera.state == .running ? Color.green : .gray).frame(width: 6, height: 6)
-                    Text(camera.state == .running ? "Kamera menyala, tidak merekam" : "Kamera mati")
+                    Text(camera.state == .running ? L("Kamera menyala, tidak merekam", "Camera on, not recording") : L("Kamera mati", "Camera off"))
                         .font(.system(size: 10.5)).foregroundStyle(.white.opacity(0.5))
                 }
             }
@@ -223,7 +282,7 @@ final class ShortcutsModel: ObservableObject {
             let ok = Self.run(["run", name]) != nil
             await MainActor.run {
                 self.running = nil
-                model.show(ok ? .done("“\(name)” selesai dijalankan") : .failed("“\(name)” gagal dijalankan"))
+                model.show(ok ? .done(L("“\(name)” selesai dijalankan", "“\(name)” finished")) : .failed(L("“\(name)” gagal dijalankan", "“\(name)” failed")))
             }
         }
     }
@@ -265,14 +324,14 @@ struct ShortcutsPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                SectionLabel(text: "Pintasan")
+                SectionLabel(text: L("Pintasan", "Shortcuts"))
                 Spacer()
-                Button("Buka app Pintasan") { shortcuts.openShortcutsApp() }.buttonStyle(PillButtonStyle(prominent: false))
+                Button(L("Buka app Pintasan", "Open Shortcuts")) { shortcuts.openShortcutsApp() }.buttonStyle(PillButtonStyle(prominent: false))
             }
             if !shortcuts.loaded {
-                Placeholder(icon: "hourglass", text: "Memuat pintasan…")
+                Placeholder(icon: "hourglass", text: L("Memuat pintasan…", "Loading shortcuts…"))
             } else if shortcuts.names.isEmpty {
-                Placeholder(icon: "bolt.slash", text: "Belum ada pintasan. Buat dulu di app Pintasan.")
+                Placeholder(icon: "bolt.slash", text: L("Belum ada pintasan. Buat dulu di app Pintasan.", "No shortcuts yet. Create one in the Shortcuts app."))
             } else if snapshot {
                 grid
             } else {

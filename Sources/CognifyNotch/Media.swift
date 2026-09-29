@@ -12,6 +12,9 @@ struct NowPlaying: Equatable {
     var timestamp: Date?
     var playing: Bool
     var bundle: String?
+    /// Mode MediaRemote: 1 = mati, >1 = nyala (repeat 2 = satu lagu). nil = app tidak melapor.
+    var shuffle: Int? = nil
+    var repeatMode: Int? = nil
 
     /// Posisi saat ini (detik), dihitung dari posisi terakhir yang dilaporkan + waktu berjalan.
     func position(at date: Date) -> Double? {
@@ -145,7 +148,9 @@ final class MediaMonitor: ObservableObject {
             rate: o["rate"] as? Double ?? 0,
             timestamp: (o["timestamp"] as? Double).map { Date(timeIntervalSince1970: $0) },
             playing: o["playing"] as? Bool ?? false,
-            bundle: o["bundle"] as? String
+            bundle: o["bundle"] as? String,
+            shuffle: o["shuffle"] as? Int,
+            repeatMode: o["repeat"] as? Int
         )
         if next != nowPlaying { withAnimation(.notch) { nowPlaying = next } }
     }
@@ -163,6 +168,8 @@ final class MediaMonitor: ObservableObject {
 
     func next() { send("next") }
     func previous() { send("prev") }
+    func cycleShuffle() { send("shuffle") }
+    func cycleRepeat() { send("repeat") }
 
     /// Ikon app pemutar (dipakai bila lagu tidak punya sampul, mis. Spotify).
     var appIcon: NSImage? {
@@ -260,7 +267,7 @@ struct MediaCard: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 10) {
                     Button(action: media.openApp) { Artwork(media: media, size: 50) }.buttonStyle(.plain)
-                        .help(media.appName.map { "Buka \($0)" } ?? "")
+                        .help(media.appName.map { L("Buka \($0)", "Open \($0)") } ?? "")
                     VStack(alignment: .leading, spacing: 2) {
                         Marquee(text: now.title, font: .system(size: 12.5, weight: .semibold))
                         Text(now.artist ?? media.appName ?? "").font(.system(size: 11)).foregroundStyle(.white.opacity(0.55)).lineLimit(1)
@@ -269,13 +276,20 @@ struct MediaCard: View {
                     Equalizer(playing: now.playing, spectrum: spectrum)
                 }
                 Progress(now: now)
-                HStack(spacing: 22) {
+                HStack(spacing: 0) {
+                    ControlButton(icon: "shuffle", size: 10.5, active: (now.shuffle ?? 1) > 1) { media.cycleShuffle() }
+                        .help(L("Acak", "Shuffle"))
                     Spacer(minLength: 0)
                     ControlButton(icon: "backward.fill", size: 13) { media.previous() }
+                    Spacer(minLength: 0)
                     ControlButton(icon: now.playing ? "pause.fill" : "play.fill", size: 19) { media.toggle() }
+                    Spacer(minLength: 0)
                     ControlButton(icon: "forward.fill", size: 13) { media.next() }
                     Spacer(minLength: 0)
+                    ControlButton(icon: now.repeatMode == 2 ? "repeat.1" : "repeat", size: 10.5, active: (now.repeatMode ?? 1) > 1) { media.cycleRepeat() }
+                        .help(L("Ulangi", "Repeat"))
                 }
+                VolumeRow()
             }
         }
     }
@@ -363,6 +377,7 @@ struct Marquee: View {
 struct ControlButton: View {
     let icon: String
     let size: CGFloat
+    var active = false
     let action: () -> Void
     @State private var hover = false
 
@@ -370,6 +385,7 @@ struct ControlButton: View {
         Button(action: action) {
             Image(systemName: icon)
                 .font(.system(size: size, weight: .semibold))
+                .foregroundStyle(active ? Color.accent : .white)
                 .frame(width: size + 16, height: size + 16)
                 .background(Circle().fill(Color.white.opacity(hover ? 0.12 : 0)))
                 .contentShape(Circle())
@@ -384,5 +400,84 @@ struct PressableStyle: ButtonStyle {
         configuration.label
             .scaleEffect(configuration.isPressed ? 0.88 : 1)
             .animation(.spring(response: 0.25, dampingFraction: 0.6), value: configuration.isPressed)
+    }
+}
+
+// MARK: - Volume & output suara
+
+/// Baris volume di kartu lagu: geser untuk mengatur volume, ikon speaker untuk memilih output
+/// (speaker Mac, AirPods, monitor, dll.).
+struct VolumeRow: View {
+    @State private var volume: Float = AudioOutputs.volume() ?? 0.5
+    @State private var devices: [OutputDevice] = []
+    @State private var current = AudioOutputs.current()
+    @State private var picking = false
+    @Environment(\.snapshot) private var snapshot
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Button {
+                    devices = AudioOutputs.all()
+                    current = AudioOutputs.current()
+                    withAnimation(.notch) { picking.toggle() }
+                } label: {
+                    Image(systemName: icon).font(.system(size: 10.5, weight: .semibold)).frame(width: 18, height: 16)
+                        .foregroundStyle(picking ? Color.accent : .white.opacity(0.7))
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(L("Pilih output suara", "Choose audio output"))
+                LineSlider(value: $volume) { AudioOutputs.setVolume($0) }
+            }
+            if picking && !snapshot {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(devices) { device in
+                            Button {
+                                AudioOutputs.select(device.id)
+                                current = device.id
+                                volume = AudioOutputs.volume() ?? volume
+                                withAnimation(.notch) { picking = false }
+                            } label: {
+                                Label(NotchModel.shortName(device.name), systemImage: device.bluetooth ? "headphones" : "hifispeaker")
+                                    .lineLimit(1)
+                            }
+                            .buttonStyle(PillButtonStyle(prominent: device.id == current))
+                        }
+                    }
+                }
+            }
+        }
+        .onAppear { volume = AudioOutputs.volume() ?? volume }
+    }
+
+    private var icon: String {
+        volume == 0 ? "speaker.slash.fill" : volume < 0.34 ? "speaker.wave.1.fill" : volume < 0.67 ? "speaker.wave.2.fill" : "speaker.wave.3.fill"
+    }
+}
+
+/// Slider tipis bergaya notch (Slider bawaan tidak ikut terender di snapshot).
+struct LineSlider: View {
+    @Binding var value: Float
+    let onChange: (Float) -> Void
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                Capsule().fill(Color.white.opacity(0.14)).frame(height: 4)
+                Capsule().fill(Color.white.opacity(0.85)).frame(width: geo.size.width * CGFloat(value), height: 4)
+                Circle().fill(.white).frame(width: 10, height: 10)
+                    .offset(x: max(0, geo.size.width * CGFloat(value) - 5))
+            }
+            .frame(maxHeight: .infinity)
+            .contentShape(Rectangle())
+            .gesture(DragGesture(minimumDistance: 0).onChanged { drag in
+                let next = Float(max(0, min(1, drag.location.x / max(1, geo.size.width))))
+                value = next
+                onChange(next)
+            })
+        }
+        .frame(height: 14)
     }
 }

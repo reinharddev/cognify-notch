@@ -6,7 +6,7 @@
 	<!-- Cermin di notch. -->
 	<key>com.apple.security.device.camera</key>
 	<true/>
-	<!-- Equalizer yang mengikuti suara (Core Audio tap). -->
+	<!-- Equalizer yang mengikuti suara (Core Audio tap) & rekam suara di catatan cepat. -->
 	<key>com.apple.security.device.audio-input</key>
 	<true/>
 	<!-- Acara app Kalender di agenda notch. -->

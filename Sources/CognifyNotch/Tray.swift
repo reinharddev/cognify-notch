@@ -61,7 +61,7 @@ final class TrayModel: ObservableObject {
         let clean = newName.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "/", with: "-")
         guard !clean.isEmpty, clean != item.name, let url = url(for: item) else { return nil }
         let target = url.deletingLastPathComponent().appendingPathComponent(clean)
-        guard !FileManager.default.fileExists(atPath: target.path) else { return "Sudah ada file bernama “\(clean)”" }
+        guard !FileManager.default.fileExists(atPath: target.path) else { return L("Sudah ada file bernama “\(clean)”", "A file named “\(clean)” already exists") }
         do {
             try FileManager.default.moveItem(at: url, to: target)
             guard let index = items.firstIndex(where: { $0.id == item.id }), let bookmark = try? target.bookmarkData() else { return nil }
@@ -69,7 +69,7 @@ final class TrayModel: ObservableObject {
             save()
             return nil
         } catch {
-            return "Nama tidak bisa diganti: \(error.localizedDescription)"
+            return L("Nama tidak bisa diganti: ", "Couldn't rename: ") + error.localizedDescription
         }
     }
 
@@ -107,19 +107,19 @@ struct TrayPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                SectionLabel(text: tray.items.isEmpty ? "Tray" : "Tray · \(tray.items.count) file")
+                SectionLabel(text: tray.items.isEmpty ? "Tray" : "Tray · \(tray.items.count) " + L("file", tray.items.count == 1 ? "file" : "files"))
                 Spacer()
                 if !tray.items.isEmpty {
-                    Button { tray.airDrop(tray.items) } label: { Label("AirDrop semua", systemImage: "airplayaudio") }
+                    Button { tray.airDrop(tray.items) } label: { Label(L("AirDrop semua", "AirDrop all"), systemImage: "airplayaudio") }
                         .buttonStyle(PillButtonStyle(prominent: false))
-                    Button("Kosongkan") { tray.clear() }.buttonStyle(PillButtonStyle(prominent: false))
+                    Button(L("Kosongkan", "Clear")) { tray.clear() }.buttonStyle(PillButtonStyle(prominent: false))
                 }
             }
             if tray.items.isEmpty {
                 VStack(spacing: 6) {
                     Image(systemName: "tray").font(.system(size: 22)).foregroundStyle(.white.opacity(0.35))
-                    Text(model.appMode ? "Seret file ke notch untuk menaruhnya di sini." : "Seret file ke notch lalu lepas di “Taruh di tray”.").font(.system(size: 11.5))
-                    Text("File tetap di tempat aslinya; tray hanya menyimpan pintasannya.").font(.system(size: 10.5)).foregroundStyle(.white.opacity(0.45))
+                    Text(model.appMode ? L("Seret file ke notch untuk menaruhnya di sini.", "Drop files on the notch to park them here.") : "Seret file ke notch lalu lepas di “Taruh di tray”.").font(.system(size: 11.5))
+                    Text(L("File tetap di tempat aslinya; tray hanya menyimpan pintasannya.", "Files stay where they are; the tray only keeps a shortcut.")).font(.system(size: 10.5)).foregroundStyle(.white.opacity(0.45))
                 }
                 .foregroundStyle(.white.opacity(0.6))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -162,7 +162,7 @@ struct TrayTile: View {
                         Button { tray.remove(item) } label: {
                             Image(systemName: "xmark.circle.fill").font(.system(size: 14)).foregroundStyle(.white, Color(white: 0.3))
                         }
-                        .buttonStyle(.plain).offset(x: 6, y: -6).help("Keluarkan dari tray")
+                        .buttonStyle(.plain).offset(x: 6, y: -6).help(L("Keluarkan dari tray", "Remove from tray"))
                     }
                 }
             if tray.renaming == item.id {
@@ -186,16 +186,16 @@ struct TrayTile: View {
         .onTapGesture(count: 2) { tray.open(item) }
         .onDrag { url.map { NSItemProvider(object: $0 as NSURL) } ?? NSItemProvider() } // seret keluar ke app lain
         .contextMenu {
-            Button("Buka") { tray.open(item) }
-            Button("Tampilkan di Finder") { tray.reveal(item) }
+            Button(L("Buka", "Open")) { tray.open(item) }
+            Button(L("Tampilkan di Finder", "Show in Finder")) { tray.reveal(item) }
             Button("AirDrop") { tray.airDrop([item]) }
-            Button("Ganti nama") { tray.renaming = item.id }
+            Button(L("Ganti nama", "Rename")) { tray.renaming = item.id }
             Divider()
             if !model.appMode {
                 Button("Simpan ke Knowledge") { if let url { model.save(files: [url], links: [], texts: []) } }
             }
             Divider()
-            Button("Keluarkan dari tray") { tray.remove(item) }
+            Button(L("Keluarkan dari tray", "Remove from tray")) { tray.remove(item) }
         }
         .help("\(item.name)\nKlik dua kali untuk membuka, klik kanan untuk pilihan lain, seret untuk memindahkan.")
     }
@@ -243,10 +243,10 @@ struct DropChoice: View {
                 model.save(files: files, links: links, texts: texts)
             }
             }
-            DropTargetZone(icon: "tray.full.fill", title: "Taruh di tray",
-                           detail: "Parkir sementara, AirDrop, ganti nama") { files, links, texts in
+            DropTargetZone(icon: "tray.full.fill", title: L("Taruh di tray", "Add to tray"),
+                           detail: L("Parkir sementara, AirDrop, ganti nama", "Park, AirDrop, rename")) { files, links, texts in
                 if files.isEmpty {
-                    model.show(.failed(model.appMode ? "Tray hanya untuk file." : "Tray hanya untuk file. Tautan & teks bisa disimpan ke Knowledge."))
+                    model.show(.failed(model.appMode ? L("Tray hanya untuk file.", "The tray only holds files.") : "Tray hanya untuk file. Tautan & teks bisa disimpan ke Knowledge."))
                 } else {
                     model.tray.add(files)
                     model.tab = .tray

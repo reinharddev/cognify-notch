@@ -10,9 +10,10 @@
 // menutup celah ini; notch lalu menyembunyikan bagian media.
 //
 // Keluar (stdout, satu baris JSON per perubahan):
-//   {"title","artist","album","duration","elapsed","rate","timestamp","playing","bundle","artworkKey","artwork"?}
+//   {"title","artist","album","duration","elapsed","rate","timestamp","playing","bundle","shuffle","repeat","artworkKey","artwork"?}
+//   `shuffle`/`repeat`: mode MediaRemote (1 = mati; shuffle 2/3 = album/lagu; repeat 2 = satu lagu, 3 = semua), null = app tidak melapor.
 //   `artwork` (base64) hanya dikirim saat gambarnya berubah. {"idle":true} = tidak ada yang diputar.
-// Masuk (stdin): toggle | play | pause | next | prev | seek:<detik>. stdin tertutup → keluar.
+// Masuk (stdin): toggle | play | pause | next | prev | shuffle | repeat | seek:<detik>. stdin tertutup → keluar.
 #import <Foundation/Foundation.h>
 #include <dlfcn.h>
 #include <stdio.h>
@@ -59,9 +60,12 @@ static void emit(void) {
                 NSDate *stamp = info[@"kMRMediaRemoteNowPlayingInfoTimestamp"];
                 NSData *art = info[@"kMRMediaRemoteNowPlayingInfoArtworkData"];
                 // Hanya melapor jika ada yang berubah (dipanggil juga oleh pemeriksaan tiap detik).
-                NSString *signature = [NSString stringWithFormat:@"%@|%@|%@|%d|%@|%lu|%@|%@",
+                id shuffle = info[@"kMRMediaRemoteNowPlayingInfoShuffleMode"];
+                id repeat = info[@"kMRMediaRemoteNowPlayingInfoRepeatMode"];
+                NSString *signature = [NSString stringWithFormat:@"%@|%@|%@|%d|%@|%lu|%@|%@|%@|%@",
                     title, info[@"kMRMediaRemoteNowPlayingInfoArtist"], info[@"kMRMediaRemoteNowPlayingInfoAlbum"], playing, bundle,
-                    (unsigned long)(art ? (art.length ^ art.hash) : 0), info[@"kMRMediaRemoteNowPlayingInfoElapsedTime"], stamp];
+                    (unsigned long)(art ? (art.length ^ art.hash) : 0), info[@"kMRMediaRemoteNowPlayingInfoElapsedTime"], stamp,
+                    shuffle, repeat];
                 if ([signature isEqualToString:lastSignature]) return;
                 lastSignature = signature;
                 NSMutableDictionary *out = [@{
@@ -74,6 +78,8 @@ static void emit(void) {
                     @"timestamp": stamp ? @(stamp.timeIntervalSince1970) : [NSNull null],
                     @"playing": @(playing),
                     @"bundle": orNull(bundle),
+                    @"shuffle": orNull(shuffle),
+                    @"repeat": orNull(repeat),
                     @"artworkKey": @(art ? (art.length ^ art.hash) : 0),
                 } mutableCopy];
                 NSUInteger key = art ? (art.length ^ art.hash) : 0;
@@ -96,7 +102,7 @@ static void runCommand(NSString *line) {
         if (setElapsed) setElapsed([[line substringFromIndex:5] doubleValue]);
         return;
     }
-    NSDictionary *codes = @{@"play": @0, @"pause": @1, @"toggle": @2, @"next": @4, @"prev": @5};
+    NSDictionary *codes = @{@"play": @0, @"pause": @1, @"toggle": @2, @"next": @4, @"prev": @5, @"shuffle": @6, @"repeat": @7};
     NSNumber *code = codes[line];
     if (code) sendCommand(code.intValue, nil);
 }

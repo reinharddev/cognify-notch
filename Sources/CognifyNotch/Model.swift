@@ -9,14 +9,18 @@ final class StudyTimer: ObservableObject {
     enum Mode: String, CaseIterable {
         case focus, rest
 
-        var label: String { self == .focus ? "Fokus" : "Istirahat" }
-        var minutes: Int { self == .focus ? 25 : 5 }
+        var label: String { self == .focus ? L("Fokus", "Focus") : L("Istirahat", "Break") }
     }
+
+    /// Pilihan cepat durasi (fokus, istirahat) dalam menit.
+    static let presets: [(focus: Int, rest: Int)] = [(25, 5), (50, 10), (90, 15)]
 
     @Published private(set) var mode: Mode = .focus
     @Published private(set) var remaining: TimeInterval = 25 * 60
     @Published private(set) var running = false
     @Published private(set) var sessionsToday = 0
+    @Published private(set) var focusMinutes = 25
+    @Published private(set) var restMinutes = 5
 
     /// Dipanggil saat waktu habis (notch menampilkan pemberitahuan).
     var onFinish: ((Mode) -> Void)?
@@ -27,9 +31,36 @@ final class StudyTimer: ObservableObject {
 
     init() {
         sessionsToday = defaults.string(forKey: "timer.day") == Self.today ? defaults.integer(forKey: "timer.sessions") : 0
+        if defaults.integer(forKey: "timer.focus") > 0 { focusMinutes = defaults.integer(forKey: "timer.focus") }
+        if defaults.integer(forKey: "timer.rest") > 0 { restMinutes = defaults.integer(forKey: "timer.rest") }
+        remaining = total
     }
 
-    var total: TimeInterval { TimeInterval(mode.minutes * 60) }
+    func minutes(_ mode: Mode) -> Int { mode == .focus ? focusMinutes : restMinutes }
+
+    var total: TimeInterval { TimeInterval(minutes(mode) * 60) }
+
+    /// Ubah durasi (hanya saat timer tidak berjalan). Fokus 5-180 menit, istirahat 1-60 menit.
+    func setMinutes(focus: Int? = nil, rest: Int? = nil) {
+        guard !running else { return }
+        if let focus { focusMinutes = max(5, min(180, focus)) }
+        if let rest { restMinutes = max(1, min(60, rest)) }
+        defaults.set(focusMinutes, forKey: "timer.focus")
+        defaults.set(restMinutes, forKey: "timer.rest")
+        remaining = total
+    }
+
+    // Untuk snapshot (tidak disimpan).
+    func preview(focus: Int, rest: Int) {
+        focusMinutes = focus
+        restMinutes = rest
+        remaining = total
+    }
+
+    /// Tambah/kurangi durasi mode yang sedang dipilih.
+    func adjust(by delta: Int) {
+        mode == .focus ? setMinutes(focus: focusMinutes + delta) : setMinutes(rest: restMinutes + delta)
+    }
     var progress: Double { 1 - remaining / total }
     var isIdle: Bool { !running && remaining == total }
 
@@ -105,13 +136,14 @@ final class StudyTimer: ObservableObject {
 
 @MainActor
 final class NotchModel: ObservableObject {
-    enum Tab: CaseIterable {
-        case home, notes, tray, timer, mirror, shortcuts
+    enum Tab: String, CaseIterable {
+        case home, notes, clipboard, tray, timer, mirror, shortcuts
 
         var icon: String {
             switch self {
             case .home: return "house.fill"
             case .notes: return "note.text"
+            case .clipboard: return "doc.on.clipboard"
             case .tray: return "tray.full.fill"
             case .timer: return "timer"
             case .mirror: return "person.crop.square"
@@ -121,12 +153,13 @@ final class NotchModel: ObservableObject {
 
         var label: String {
             switch self {
-            case .home: return "Beranda"
-            case .notes: return "Catatan"
+            case .home: return L("Beranda", "Home")
+            case .notes: return L("Catatan", "Notes")
+            case .clipboard: return "Clipboard"
             case .tray: return "Tray"
             case .timer: return "Timer"
-            case .mirror: return "Cermin"
-            case .shortcuts: return "Pintasan"
+            case .mirror: return L("Cermin", "Mirror")
+            case .shortcuts: return L("Pintasan", "Shortcuts")
             }
         }
     }
@@ -141,7 +174,10 @@ final class NotchModel: ObservableObject {
         var spectrum = true // equalizer mengikuti suara asli (izin audio macOS)
         var power = true // charger dicolok/dicabut, baterai lemah
         var devices = true // AirPods & headphone tersambung
-        var hotkey = true // ⌃⌥N membuka notch
+        var hotkey = true // shortcut keyboard membuka notch
+        var clipboard = true // tab riwayat clipboard
+        var downloads = true // progress download di sayap
+        var voice = true // tombol mikrofon di catatan cepat
     }
 
     /// Perubahan volume / kecerahan yang sedang ditampilkan.
@@ -161,6 +197,7 @@ final class NotchModel: ObservableObject {
     enum AlertAction: Equatable {
         case startTimer(String) // label tombol
         case open(path: String)
+        case join(URL) // rapat online dari Kalender
     }
 
     /// Isi "sayap" kiri-kanan notch saat tertutup (mirip Live Activity).
@@ -204,6 +241,10 @@ final class NotchModel: ObservableObject {
     let calendar = CalendarFeed()
     let camera = CameraMirror()
     let shortcuts = ShortcutsModel()
+    let clipboard = ClipboardHistory()
+    let downloads = DownloadWatcher()
+    let voice = VoiceNote()
+    let prefs: Preferences
     private let levels = SystemLevels()
     private var levelTask: Task<Void, Never>?
     private let power = PowerMonitor()
@@ -222,19 +263,40 @@ final class NotchModel: ObservableObject {
     private var announced = Set<String>()
     private var changes = Set<AnyCancellable>()
 
-    init(bridge: Bridge?, appMode: Bool = false) {
+    private var announcedMeetings = Set<String>()
+    private var clock: Timer?
+    /// Isi kolom catatan sebelum mulai merekam suara (teks hasil rekaman ditambahkan di belakangnya).
+    private var noteBeforeVoice = ""
+
+    init(bridge: Bridge?, appMode: Bool = false, prefs: Preferences? = nil) {
         self.bridge = bridge
         self.appMode = appMode
+        self.prefs = prefs ?? Preferences(persist: false)
         // Sayap notch & ukurannya bergantung pada timer: teruskan perubahannya.
         for publisher in [timer.objectWillChange.eraseToAnyPublisher(), media.objectWillChange.eraseToAnyPublisher(),
                           tray.objectWillChange.eraseToAnyPublisher(), calendar.objectWillChange.eraseToAnyPublisher(),
-                          notes.objectWillChange.eraseToAnyPublisher()] {
+                          notes.objectWillChange.eraseToAnyPublisher(), downloads.objectWillChange.eraseToAnyPublisher(),
+                          clipboard.objectWillChange.eraseToAnyPublisher(), self.prefs.objectWillChange.eraseToAnyPublisher()] {
             publisher.sink { [weak self] in self?.objectWillChange.send() }.store(in: &changes)
         }
         levels.onChange = { [weak self] level in self?.showLevel(level) }
         power.onNotice = { [weak self] notice in self?.showNotice(notice) }
         audioDevices.onNotice = { [weak self] notice in self?.showNotice(notice) }
         hotKey.onPress = { [weak self] in self?.toggleFromKeyboard() }
+        self.prefs.$hotKey.dropFirst().sink { [weak self] choice in
+            DispatchQueue.main.async { self?.hotKey.choice = choice }
+        }.store(in: &changes)
+        hotKey.choice = self.prefs.hotKey
+        downloads.onFinish = { [weak self] name in self?.showNotice(.downloadDone(name)) }
+        voice.onText = { [weak self] text in
+            guard let self else { return }
+            self.note = self.noteBeforeVoice.isEmpty ? text : self.noteBeforeVoice + " " + text
+        }
+        voice.onError = { [weak self] message in self?.show(.failed(message)) }
+        // Jam notch: waktu relatif agenda & pengingat rapat tetap segar walau tanpa Cognify.
+        clock = Timer.scheduledTimer(withTimeInterval: 20, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.tick() }
+        }
         media.$nowPlaying.sink { [weak self] now in
             DispatchQueue.main.async {
                 self?.updateSpectrum(playing: now?.playing == true)
@@ -245,9 +307,11 @@ final class NotchModel: ObservableObject {
             NSSound(named: "Glass")?.play()
             self?.tab = .timer
             self?.show(.alert(
-                title: mode == .focus ? "Waktu fokus selesai" : "Istirahat selesai",
-                detail: mode == .focus ? "Istirahat 5 menit dulu, lalu lanjut lagi." : "Siap fokus lagi?",
-                action: .startTimer(mode == .focus ? "Mulai istirahat" : "Mulai fokus")
+                title: mode == .focus ? L("Waktu fokus selesai", "Focus time is up") : L("Istirahat selesai", "Break is over"),
+                detail: mode == .focus
+                    ? L("Istirahat \(self?.timer.restMinutes ?? 5) menit dulu, lalu lanjut lagi.", "Take a \(self?.timer.restMinutes ?? 5) minute break, then keep going.")
+                    : L("Siap fokus lagi?", "Ready to focus again?"),
+                action: .startTimer(mode == .focus ? L("Mulai istirahat", "Start break") : L("Mulai fokus", "Start focus"))
             ))
         }
     }
@@ -270,7 +334,10 @@ final class NotchModel: ObservableObject {
     var shapeOffset: CGFloat { (wings.right - wings.left) / 2 }
 
     var size: CGSize {
-        if expanded { return CGSize(width: Self.expandedSize.width, height: Self.expandedSize.height + notchSize.height - 32) }
+        if expanded {
+            let scale = CGFloat(prefs.scale)
+            return CGSize(width: Self.expandedSize.width * scale, height: (Self.expandedSize.height + notchSize.height - 32) * scale)
+        }
         if live != nil { return CGSize(width: notchSize.width + wings.left + wings.right, height: notchSize.height) }
         return notchSize
     }
@@ -287,10 +354,16 @@ final class NotchModel: ObservableObject {
         if let notice { return Self.live(for: notice) }
         switch toast {
         case .working(let text)?: return Live(icon: "arrow.down.circle", text: text, tint: .accent)
-        case .done?: return Live(icon: "checkmark.circle.fill", text: "Tersimpan", tint: .green)
-        case .failed?: return Live(icon: "exclamationmark.circle.fill", text: "Gagal", tint: .orange)
-        case .alert?: return Live(icon: "bell.fill", text: "Sekarang", tint: .accent)
+        case .done?: return Live(icon: "checkmark.circle.fill", text: L("Tersimpan", "Saved"), tint: .green)
+        case .failed?: return Live(icon: "exclamationmark.circle.fill", text: L("Gagal", "Failed"), tint: .orange)
+        case .alert?: return Live(icon: "bell.fill", text: L("Sekarang", "Now"), tint: .accent)
         case nil: break
+        }
+        if voice.recording {
+            return Live(icon: "mic.fill", text: L("Merekam", "Recording"), tint: .red)
+        }
+        if features.downloads, let download = downloads.active {
+            return Live(icon: "arrow.down.circle.fill", text: download.percent.map { "\($0)%" } ?? "…", tint: .accent, title: download.name)
         }
         if timer.running {
             return Live(icon: timer.mode == .focus ? "brain.head.profile" : "cup.and.saucer.fill",
@@ -309,15 +382,17 @@ final class NotchModel: ObservableObject {
     private static func live(for notice: DeviceNotice) -> Live {
         switch notice {
         case .charging(let percent, let full):
-            return Live(icon: "battery.100percent.bolt", text: full ? "Penuh" : "\(percent)%", tint: .green)
+            return Live(icon: "battery.100percent.bolt", text: full ? L("Penuh", "Full") : "\(percent)%", tint: .green)
         case .unplugged(let percent):
             return Live(icon: batteryIcon(percent), text: "\(percent)%", tint: .white)
         case .lowBattery(let percent):
             return Live(icon: "battery.25percent", text: "\(percent)%", tint: .red)
         case .audioConnected(let name, let battery):
-            return Live(icon: audioIcon(name), text: battery ?? "Tersambung", tint: .white, title: shortName(name))
+            return Live(icon: audioIcon(name), text: battery ?? L("Tersambung", "Connected"), tint: .white, title: shortName(name))
         case .audioDisconnected(let name):
-            return Live(icon: audioIcon(name), text: "Terputus", tint: .gray, title: shortName(name))
+            return Live(icon: audioIcon(name), text: L("Terputus", "Disconnected"), tint: .gray, title: shortName(name))
+        case .downloadDone(let name):
+            return Live(icon: "checkmark.circle.fill", text: L("Selesai", "Done"), tint: .green, title: name)
         }
     }
 
@@ -346,14 +421,15 @@ final class NotchModel: ObservableObject {
 
     /// Tab yang terlihat sesuai fitur yang dinyalakan.
     var tabs: [Tab] {
-        Tab.allCases.filter {
+        prefs.ordered(Tab.allCases.filter {
             switch $0 {
             case .mirror: return features.camera
             case .shortcuts: return features.shortcuts
+            case .clipboard: return features.clipboard
             case .notes: return appMode
             default: return true
             }
-        }
+        })
     }
 
     private func updateSpectrum(playing: Bool) {
@@ -369,6 +445,9 @@ final class NotchModel: ObservableObject {
         power.setEnabled(next.power)
         audioDevices.setEnabled(next.devices)
         hotKey.setEnabled(next.hotkey)
+        clipboard.setEnabled(next.clipboard)
+        downloads.setEnabled(next.downloads)
+        if !next.voice { voice.stop() }
         if !tabs.contains(tab) { tab = .home }
     }
 
@@ -449,13 +528,13 @@ final class NotchModel: ObservableObject {
         collapseTask?.cancel()
         if inside {
             collapseTask = Task { [weak self] in
-                try? await Task.sleep(nanoseconds: 90_000_000) // lewat sekilas tidak membuka notch
+                try? await Task.sleep(nanoseconds: UInt64((self?.prefs.hoverDelay ?? 0.09) * 1_000_000_000)) // lewat sekilas tidak membuka notch
                 guard !Task.isCancelled else { return }
                 self?.setExpanded(true)
             }
         } else {
             collapseTask = Task { [weak self] in
-                try? await Task.sleep(nanoseconds: 350_000_000)
+                try? await Task.sleep(nanoseconds: UInt64((self?.prefs.closeDelay ?? 0.35) * 1_000_000_000))
                 guard !Task.isCancelled else { return }
                 self?.setExpanded(false)
             }
@@ -537,12 +616,41 @@ final class NotchModel: ObservableObject {
         }
     }
 
+    /// Tombol mikrofon: mulai/berhenti merekam; teksnya masuk ke kolom catatan cepat.
+    func toggleVoice() {
+        if !voice.recording { noteBeforeVoice = note.trimmingCharacters(in: .whitespacesAndNewlines) }
+        voice.toggle()
+    }
+
+    // MARK: Jam & rapat
+
+    private func tick() {
+        now = Date()
+        announceMeetings()
+    }
+
+    /// Rapat online (Kalender) yang mulai dalam 5 menit → notch terbuka dengan tombol Gabung.
+    private func announceMeetings() {
+        guard features.calendar else { return }
+        for event in calendar.events where event.meeting != nil && !event.allDay && !announcedMeetings.contains(event.id) {
+            let wait = event.start.timeIntervalSince(now)
+            guard wait <= 5 * 60, wait > -60, let url = event.meeting else { continue }
+            announcedMeetings.insert(event.id)
+            NSSound(named: "Glass")?.play()
+            show(.alert(title: event.title,
+                        detail: wait > 30 ? L("Mulai \(Int((wait / 60).rounded(.up))) menit lagi", "Starts in \(Int((wait / 60).rounded(.up))) min")
+                                          : L("Mulai sekarang", "Starting now"),
+                        action: .join(url)))
+        }
+    }
+
     func saveNote() {
+        if voice.recording { voice.stop() }
         let text = note.trimmingCharacters(in: .whitespacesAndNewlines)
         if appMode, !text.isEmpty {
             notes.add(text)
             note = ""
-            show(.done("Catatan tersimpan di tab Catatan"))
+            show(.done(L("Catatan tersimpan di tab Catatan", "Saved to the Notes tab")))
             return
         }
         guard !text.isEmpty, let api, !savingNote else { return }
@@ -642,47 +750,51 @@ final class LocalNotes: ObservableObject {
     }
 }
 
-// MARK: - Format waktu (Bahasa Indonesia)
+// MARK: - Format waktu
 
 enum Relative {
     private static let calendar = Calendar.current
 
-    private static func time(_ date: Date) -> String {
+    private static func formatter(_ id: String, _ en: String) -> DateFormatter {
         let f = DateFormatter()
-        f.locale = Locale(identifier: "id_ID")
-        f.dateFormat = "HH.mm"
-        return f.string(from: date)
+        f.locale = Locale(identifier: Lang.english ? "en_US" : "id_ID")
+        f.dateFormat = Lang.english ? en : id
+        return f
     }
 
-    private static func day(_ date: Date) -> String {
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "id_ID")
-        f.dateFormat = "EEE d MMM"
-        return f.string(from: date)
-    }
+    private static func time(_ date: Date) -> String { formatter("HH.mm", "h:mm a").string(from: date) }
+    private static func day(_ date: Date) -> String { formatter("EEE d MMM", "EEE MMM d").string(from: date) }
 
     /// "15 menit lagi", "Hari ini 14.00", "Besok", "Sen 29 Sep 10.00".
     static func long(_ due: Date, allDay: Bool, now: Date) -> String {
+        let tomorrow = calendar.date(byAdding: .day, value: 1, to: now)
         if allDay {
-            if calendar.isDate(due, inSameDayAs: now) { return "Hari ini" }
-            if let tomorrow = calendar.date(byAdding: .day, value: 1, to: now), calendar.isDate(due, inSameDayAs: tomorrow) { return "Besok" }
+            if calendar.isDate(due, inSameDayAs: now) { return L("Hari ini", "Today") }
+            if let tomorrow, calendar.isDate(due, inSameDayAs: tomorrow) { return L("Besok", "Tomorrow") }
             return day(due)
         }
         let minutes = Int(due.timeIntervalSince(now) / 60)
-        if minutes < 1 { return "Sekarang" }
-        if minutes < 60 { return "\(minutes) menit lagi" }
-        if minutes < 6 * 60 { return "\(minutes / 60) jam lagi" }
-        if calendar.isDate(due, inSameDayAs: now) { return "Hari ini \(time(due))" }
-        if let tomorrow = calendar.date(byAdding: .day, value: 1, to: now), calendar.isDate(due, inSameDayAs: tomorrow) {
-            return "Besok \(time(due))"
-        }
+        if minutes < 1 { return L("Sekarang", "Now") }
+        if minutes < 60 { return L("\(minutes) menit lagi", "in \(minutes) min") }
+        if minutes < 6 * 60 { return L("\(minutes / 60) jam lagi", "in \(minutes / 60) h") }
+        if calendar.isDate(due, inSameDayAs: now) { return L("Hari ini", "Today") + " " + time(due) }
+        if let tomorrow, calendar.isDate(due, inSameDayAs: tomorrow) { return L("Besok", "Tomorrow") + " " + time(due) }
         return "\(day(due)) \(time(due))"
     }
 
     /// Untuk sayap notch: "15m", "1j".
     static func short(_ due: Date, now: Date) -> String {
         let minutes = max(0, Int(due.timeIntervalSince(now) / 60))
-        return minutes < 60 ? "\(minutes)m" : "\(minutes / 60)j"
+        return minutes < 60 ? "\(minutes)m" : "\(minutes / 60)" + L("j", "h")
+    }
+
+    /// "baru saja", "5 mnt lalu", "2 jam lalu", "Sen 29 Sep".
+    static func ago(_ date: Date, now: Date = Date()) -> String {
+        let minutes = Int(now.timeIntervalSince(date) / 60)
+        if minutes < 1 { return L("baru saja", "just now") }
+        if minutes < 60 { return L("\(minutes) mnt lalu", "\(minutes) min ago") }
+        if minutes < 24 * 60 { return L("\(minutes / 60) jam lalu", "\(minutes / 60) h ago") }
+        return day(date)
     }
 }
 

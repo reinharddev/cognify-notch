@@ -12,6 +12,10 @@
 	<string>Cognify memakai kamera hanya untuk Cermin di notch. Tidak ada yang direkam atau disimpan.</string>
 	<key>NSAudioCaptureUsageDescription</key>
 	<string>Cognify memakai suara yang sedang diputar hanya untuk menggerakkan equalizer di notch (tinggi nada per pita). Suara tidak direkam, disimpan, atau dikirim.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Cognify memakai mikrofon hanya saat kamu menekan tombol rekam di catatan cepat. Suara diubah jadi teks di Mac ini dan tidak disimpan.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Cognify mengubah rekaman suaramu jadi teks catatan. Pengenalan suara berjalan di Mac ini, tidak dikirim ke internet.</string>
 	<key>NSCalendarsUsageDescription</key>
 	<string>Cognify menampilkan acara hari ini dan besok dari app Kalender di notch. Tidak ada yang dikirim ke mana pun.</string>
 	<key>NSCalendarsFullAccessUsageDescription</key>

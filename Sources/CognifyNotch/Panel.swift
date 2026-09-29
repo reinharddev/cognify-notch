@@ -28,7 +28,7 @@ final class NotchPanel: NSPanel {
 @MainActor
 final class NotchController {
     /// Cukup untuk panel terbuka + bayangannya; area transparan lainnya meneruskan klik.
-    static let windowSize = CGSize(width: 760, height: 300)
+    static let windowSize = CGSize(width: 820, height: 330)
 
     private let panel = NotchPanel()
     private let model: NotchModel
@@ -184,7 +184,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         MainActor.assumeIsolated {
-            let model = NotchModel(bridge: bridge, appMode: bridge.appMode)
+            let model = NotchModel(bridge: bridge, appMode: bridge.appMode, prefs: Preferences(persist: bridge.appMode))
             self.model = model
             controller = NotchController(model: model)
             if bridge.appMode {
@@ -192,8 +192,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // Pertama kali dibuka: tunjukkan di mana notch-nya.
                 if !UserDefaults.standard.bool(forKey: "welcomed") {
                     UserDefaults.standard.set(true, forKey: "welcomed")
-                    model.show(.alert(title: "Cognify Notch sudah aktif",
-                                      detail: "Arahkan kursor ke notch kapan saja. Pengaturan ada di ikon menu bar.", action: nil))
+                    model.show(.alert(title: L("Cognify Notch sudah aktif", "Cognify Notch is on"),
+                                      detail: L("Arahkan kursor ke notch kapan saja. Pengaturan ada di ikon menu bar.",
+                                                "Point at the notch any time. Settings live in the menu bar icon."), action: nil))
                 }
                 return
             }
@@ -210,6 +211,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     f.power = flags["power"] ?? f.power
                     f.devices = flags["devices"] ?? f.devices
                     f.hotkey = flags["hotkey"] ?? f.hotkey
+                    f.clipboard = flags["clipboard"] ?? f.clipboard
+                    f.downloads = flags["downloads"] ?? f.downloads
+                    f.voice = flags["voice"] ?? f.voice
                     model.apply(f)
                 }
             }

@@ -71,7 +71,12 @@ struct NotchRoot: View {
 
     @ViewBuilder private var content: some View {
         if model.expanded {
+            // Ukuran "Besar": isi digambar pada ukuran normal lalu diperbesar dari atas.
+            let scale = CGFloat(model.prefs.scale)
             ExpandedView(model: model)
+                .frame(width: (model.size.width - 24) / scale, height: model.size.height / scale)
+                .scaleEffect(scale, anchor: .top)
+                .frame(width: model.size.width - 24, height: model.size.height, alignment: .top)
                 .transition(.asymmetric(
                     insertion: .opacity.combined(with: .scale(scale: 0.96, anchor: .top)).animation(.notch.delay(0.06)),
                     removal: .opacity.animation(.easeOut(duration: 0.12))
@@ -226,6 +231,7 @@ struct ExpandedView: View {
                     switch model.tab {
                     case .home: HomePanel(model: model, media: model.media, calendar: model.calendar)
                     case .notes: NotesPanel(model: model, notes: model.notes)
+                    case .clipboard: ClipboardPanel(model: model, history: model.clipboard)
                     case .tray: TrayPanel(model: model, tray: model.tray)
                     case .timer: TimerPanel(timer: model.timer)
                     case .mirror: MirrorPanel(camera: model.camera)
@@ -241,31 +247,44 @@ struct ExpandedView: View {
         .foregroundStyle(.white)
     }
 
-    /// Baris setinggi notch: kiri & kanan notch fisik, tengahnya dibiarkan kosong.
+    /// Baris setinggi notch: kiri & kanan notch fisik, tengahnya dibiarkan kosong. Kedua sisi
+    /// dibuat sama lebar supaya tidak ada yang masuk ke bawah notch fisik; tombol tab mengecil bila
+    /// tabnya banyak.
     private var header: some View {
-        HStack(spacing: 8) {
-            HStack(spacing: 6) {
-                if !model.appMode {
-                    Circle().fill(model.connected ? Color.accent : .gray).frame(width: 7, height: 7)
+        GeometryReader { geo in
+            // Lebar notch fisik dalam koordinat isi (isi diperbesar `scale` kali saat ukuran Besar).
+            let gap = model.notchSize.width / CGFloat(model.prefs.scale) + 10
+            let side = max(0, (geo.size.width - gap) / 2)
+            let count = CGFloat(max(1, model.tabs.count))
+            let tabWidth = min(30, max(20, (side - 10) / count - 2))
+            HStack(spacing: 0) {
+                HStack(spacing: 6) {
+                    if !model.appMode {
+                        Circle().fill(model.connected ? Color.accent : .gray).frame(width: 7, height: 7)
+                    }
+                    Text("Cognify").font(.system(size: 12, weight: .semibold))
+                    if !model.appMode, let overdue = model.state?.overdue, overdue > 0 {
+                        Text(L("\(overdue) terlambat", "\(overdue) overdue"))
+                            .font(.system(size: 10.5, weight: .semibold))
+                            .padding(.horizontal, 6).padding(.vertical, 2)
+                            .background(Capsule().fill(Color.red.opacity(0.28)))
+                            .foregroundStyle(Color(red: 1, green: 0.62, blue: 0.6))
+                            .lineLimit(1)
+                    }
                 }
-                Text("Cognify").font(.system(size: 12, weight: .semibold))
-                if !model.appMode, let overdue = model.state?.overdue, overdue > 0 {
-                    Text("\(overdue) terlambat")
-                        .font(.system(size: 10.5, weight: .semibold))
-                        .padding(.horizontal, 6).padding(.vertical, 2)
-                        .background(Capsule().fill(Color.red.opacity(0.28)))
-                        .foregroundStyle(Color(red: 1, green: 0.62, blue: 0.6))
+                .padding(.leading, 12)
+                .frame(width: side, alignment: .leading)
+                Color.clear.frame(width: gap)
+                HStack(spacing: 2) {
+                    ForEach(model.tabs, id: \.self) { tab in
+                        TabButton(icon: tab.icon, label: tab.label, selected: model.tab == tab, width: tabWidth,
+                                  badge: tab == .tray && !model.tray.items.isEmpty ? model.tray.items.count : nil) { model.tab = tab }
+                    }
                 }
+                .padding(.trailing, 8)
+                .frame(width: side, alignment: .trailing)
             }
-            .padding(.leading, 12)
-            Spacer(minLength: model.notchSize.width)
-            HStack(spacing: 2) {
-                ForEach(model.tabs, id: \.self) { tab in
-                    TabButton(icon: tab.icon, label: tab.label, selected: model.tab == tab,
-                              badge: tab == .tray && !model.tray.items.isEmpty ? model.tray.items.count : nil) { model.tab = tab }
-                }
-            }
-            .padding(.trailing, 10)
+            .frame(height: geo.size.height)
         }
     }
 }
@@ -274,14 +293,15 @@ struct TabButton: View {
     let icon: String
     let label: String
     let selected: Bool
+    var width: CGFloat = 30
     var badge: Int? = nil
     let action: () -> Void
 
     var body: some View {
         Button(action: { withAnimation(.notch) { action() } }) {
             Image(systemName: icon)
-                .font(.system(size: 11.5, weight: .semibold))
-                .frame(width: 30, height: 22)
+                .font(.system(size: width < 26 ? 10.5 : 11.5, weight: .semibold))
+                .frame(width: width, height: 22)
                 .background(Capsule().fill(Color.white.opacity(selected ? 0.16 : 0)))
                 .foregroundStyle(selected ? .white : .white.opacity(0.55))
                 .overlay(alignment: .topTrailing) {
@@ -353,29 +373,29 @@ struct AgendaList: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            SectionLabel(text: model.features.calendar ? "Agenda" : "Berikutnya").padding(.bottom, 2)
+            SectionLabel(text: model.features.calendar ? L("Agenda", "Agenda") : L("Berikutnya", "Up next")).padding(.bottom, 2)
             if model.appMode && !model.features.calendar {
-                Placeholder(icon: "calendar", text: "Nyalakan Kalender lewat ikon notch di menu bar")
+                Placeholder(icon: "calendar", text: L("Nyalakan Kalender lewat ikon notch di menu bar", "Turn on Calendar from the notch icon in the menu bar"))
             } else if model.appMode && entries.isEmpty {
-                if calendar.access != .denied { Placeholder(icon: "checkmark.seal", text: "Tidak ada acara hari ini & besok") }
+                if calendar.access != .denied { Placeholder(icon: "checkmark.seal", text: L("Tidak ada acara hari ini & besok", "Nothing today or tomorrow")) }
             } else if model.appMode {
                 agendaRows
             } else if !model.connected {
-                Placeholder(icon: "hourglass", text: "Menghubungkan ke Cognify…")
+                Placeholder(icon: "hourglass", text: L("Menghubungkan ke Cognify…", "Connecting to Cognify…"))
             } else if !entries.isEmpty {
                 agendaRows
             } else if model.state != nil {
-                Placeholder(icon: "checkmark.seal", text: "Tidak ada deadline 7 hari ke depan")
+                Placeholder(icon: "checkmark.seal", text: L("Tidak ada deadline 7 hari ke depan", "No deadlines in the next 7 days"))
             }
             if model.features.calendar && calendar.access == .denied {
-                Text("Izinkan Kalender di Pengaturan Sistem → Privasi untuk melihat acaramu di sini.")
+                Text(L("Izinkan Kalender di Pengaturan Sistem → Privasi untuk melihat acaramu di sini.", "Allow Calendar in System Settings → Privacy to see your events here."))
                     .font(.system(size: 10)).foregroundStyle(.white.opacity(0.45)).padding(.leading, 6)
             }
             Spacer(minLength: 0)
             if !model.appMode, let processing = model.state?.processing, processing > 0 {
                 HStack(spacing: 5) {
                     Spinner()
-                    Text("Memproses \(processing) item…").font(.system(size: 10.5))
+                    Text(L("Memproses \(processing) item…", "Processing \(processing) items…")).font(.system(size: 10.5))
                 }
                 .foregroundStyle(.white.opacity(0.55))
             }
@@ -433,7 +453,9 @@ extension AgendaList {
             case .cognify(let event):
                 EventRow(event: event, now: model.now, compact: compact) { model.open(event.path) }
             case .calendar(let event):
-                CalendarRow(event: event, now: model.now, compact: compact) { calendar.openCalendarApp() }
+                CalendarRow(event: event, now: model.now, compact: compact, join: { calendar.join(event); model.setExpanded(false) }) {
+                    calendar.openCalendarApp()
+                }
             }
         }
     }
@@ -443,6 +465,7 @@ struct CalendarRow: View {
     let event: CalendarEvent
     let now: Date
     var compact = false
+    var join: () -> Void = {}
     let action: () -> Void
     @State private var hover = false
 
@@ -456,7 +479,13 @@ struct CalendarRow: View {
                         .font(.system(size: 10.5)).foregroundStyle(.white.opacity(0.5)).lineLimit(1)
                 }
                 Spacer(minLength: 6)
-                if !compact {
+                if event.joinable(at: now) {
+                    Button(action: join) {
+                        Label(compact ? "" : L("Gabung", "Join"), systemImage: "video.fill").labelStyle(.titleAndIcon)
+                    }
+                    .buttonStyle(PillButtonStyle(prominent: true))
+                    .help(L("Gabung rapat", "Join meeting"))
+                } else if !compact {
                     Text(Relative.long(event.start, allDay: event.allDay, now: now))
                         .font(.system(size: 10.5, weight: .medium).monospacedDigit())
                         .foregroundStyle(.white.opacity(0.6)).lineLimit(1)
@@ -468,7 +497,7 @@ struct CalendarRow: View {
         }
         .buttonStyle(.plain)
         .onHover { hover = $0 }
-        .help("Buka app Kalender")
+        .help(L("Buka app Kalender", "Open Calendar"))
     }
 }
 
@@ -480,18 +509,18 @@ struct QuickNote: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            SectionLabel(text: "Catatan cepat")
+            SectionLabel(text: L("Catatan cepat", "Quick note"))
             ZStack(alignment: .topLeading) {
                 RoundedRectangle(cornerRadius: 10)
                     .fill(Color.white.opacity(focused ? 0.1 : 0.07))
                     .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.accent.opacity(focused ? 0.7 : 0), lineWidth: 1))
                 if snapshot {
-                    Text(model.note.isEmpty ? "Tulis sesuatu, tekan Enter…" : model.note)
+                    Text(model.note.isEmpty ? L("Tulis sesuatu, tekan Enter…", "Type something, press Enter…") : model.note)
                         .font(.system(size: 12))
                         .foregroundStyle(.white.opacity(model.note.isEmpty ? 0.4 : 1))
                         .padding(8)
                 } else {
-                    TextField("Tulis sesuatu, tekan Enter…", text: $model.note, axis: .vertical)
+                    TextField(L("Tulis sesuatu, tekan Enter…", "Type something, press Enter…"), text: $model.note, axis: .vertical)
                         .textFieldStyle(.plain)
                         .font(.system(size: 12))
                         .lineLimit(3, reservesSpace: true)
@@ -504,10 +533,11 @@ struct QuickNote: View {
             HStack(spacing: 5) {
                 if !compact {
                     Image(systemName: "tray.and.arrow.down").font(.system(size: 10))
-                    Text(model.appMode ? "Seret file ke notch → tray" : "Seret file atau tautan ke notch").font(.system(size: 10.5))
+                    Text(model.appMode ? L("Seret file ke notch → tray", "Drop files on the notch → tray") : L("Seret file atau tautan ke notch", "Drop files or links on the notch")).font(.system(size: 10.5))
                 }
                 Spacer()
-                Button(model.savingNote ? "Menyimpan…" : "Simpan") { model.saveNote() }
+                if model.features.voice { MicButton(voice: model.voice, toggle: model.toggleVoice) }
+                Button(model.savingNote ? L("Menyimpan…", "Saving…") : L("Simpan", "Save")) { model.saveNote() }
                     .buttonStyle(PillButtonStyle(prominent: true))
                     .disabled(model.note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || model.savingNote)
             }
@@ -518,59 +548,168 @@ struct QuickNote: View {
 
 // MARK: - Timer
 
+/// Tiga kolom: cincin waktu (kiri), pengaturan mode & durasi (tengah), tombol mulai (kanan).
 struct TimerPanel: View {
     @ObservedObject var timer: StudyTimer
+    @Namespace private var segment
 
     var body: some View {
-        HStack(spacing: 22) {
-            ZStack {
-                Circle().stroke(Color.white.opacity(0.1), lineWidth: 6)
-                Circle()
-                    .trim(from: 0, to: timer.progress)
-                    .stroke(tint, style: StrokeStyle(lineWidth: 6, lineCap: .round))
-                    .rotationEffect(.degrees(-90))
-                    .animation(.linear(duration: 0.25), value: timer.progress)
-                VStack(spacing: 0) {
-                    Text(StudyTimer.clock(timer.remaining))
-                        .font(.system(size: 22, weight: .semibold, design: .rounded).monospacedDigit())
-                        .contentTransition(.numericText())
-                    Text(timer.mode.label).font(.system(size: 10.5)).foregroundStyle(.white.opacity(0.55))
+        HStack(alignment: .center, spacing: 22) {
+            ring
+            VStack(alignment: .leading, spacing: 11) {
+                modePicker
+                HStack(spacing: 10) {
+                    stepper
+                    presets
                 }
+                sessions
             }
-            .frame(width: 104, height: 104)
-            .padding(.leading, 6)
-
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(spacing: 6) {
-                    ForEach(StudyTimer.Mode.allCases, id: \.self) { mode in
-                        Button("\(mode.label) \(mode.minutes)m") { withAnimation(.notch) { timer.select(mode) } }
-                            .buttonStyle(PillButtonStyle(prominent: timer.mode == mode))
-                    }
-                }
-                HStack(spacing: 8) {
-                    Button(action: { timer.toggle() }) {
-                        Label(timer.running ? "Jeda" : (timer.isIdle ? "Mulai" : "Lanjut"),
-                              systemImage: timer.running ? "pause.fill" : "play.fill")
-                            .frame(width: 92)
-                    }
-                    .buttonStyle(PillButtonStyle(prominent: true, large: true))
-                    Button(action: { timer.reset() }) {
-                        Image(systemName: "arrow.counterclockwise")
-                    }
-                    .buttonStyle(PillButtonStyle(prominent: false, large: true))
-                    .disabled(timer.isIdle)
-                    .help("Ulang")
-                }
-                Text(timer.sessionsToday == 0 ? "Belum ada sesi fokus hari ini" : "\(timer.sessionsToday) sesi fokus hari ini")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.white.opacity(0.55))
-            }
+            .disabled(timer.running)
+            .opacity(timer.running ? 0.55 : 1)
+            .animation(.notch, value: timer.running)
             Spacer(minLength: 0)
+            controls
         }
+        .padding(.horizontal, 8)
         .frame(maxHeight: .infinity)
     }
 
     private var tint: Color { timer.mode == .focus ? .accent : .green }
+
+    // Cincin + sisa waktu (+ jam selesai saat berjalan).
+    private var ring: some View {
+        ZStack {
+            Circle().stroke(Color.white.opacity(0.08), lineWidth: 7)
+            Circle()
+                .trim(from: 0, to: timer.progress)
+                .stroke(tint, style: StrokeStyle(lineWidth: 7, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+                .animation(.linear(duration: 0.25), value: timer.progress)
+            VStack(spacing: 2) {
+                Text(StudyTimer.clock(timer.remaining))
+                    .font(.system(size: 27, weight: .semibold, design: .rounded).monospacedDigit())
+                    .contentTransition(.numericText())
+                Text(timer.running ? L("Selesai ", "Ends ") + Self.endTime(timer.remaining) : timer.mode.label)
+                    .font(.system(size: 10.5, weight: .medium))
+                    .foregroundStyle(timer.running ? tint : .white.opacity(0.5))
+            }
+        }
+        .frame(width: 124, height: 124)
+    }
+
+    // Fokus | Istirahat, penanda bergeser di antara keduanya.
+    private var modePicker: some View {
+        HStack(spacing: 0) {
+            ForEach(StudyTimer.Mode.allCases, id: \.self) { mode in
+                let selected = timer.mode == mode
+                Button { withAnimation(.notch) { timer.select(mode) } } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: mode == .focus ? "brain.head.profile" : "cup.and.saucer.fill").font(.system(size: 10))
+                        Text(mode.label).font(.system(size: 11.5, weight: .semibold))
+                        Text("\(timer.minutes(mode))m").font(.system(size: 10.5, weight: .medium).monospacedDigit())
+                            .foregroundStyle(.white.opacity(selected ? 0.8 : 0.45))
+                    }
+                    .padding(.horizontal, 12).padding(.vertical, 6)
+                    .background {
+                        if selected {
+                            Capsule().fill(mode == .focus ? Color.accent : Color.green.opacity(0.85))
+                                .matchedGeometryEffect(id: "mode", in: segment)
+                        }
+                    }
+                    .foregroundStyle(.white.opacity(selected ? 1 : 0.6))
+                    .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(3)
+        .background(Capsule().fill(Color.white.opacity(0.08)))
+    }
+
+    // − 25 menit +
+    private var stepper: some View {
+        let step = timer.mode == .focus ? 5 : 1
+        return HStack(spacing: 0) {
+            Button { timer.adjust(by: -step) } label: {
+                Image(systemName: "minus").font(.system(size: 10, weight: .bold)).frame(width: 26, height: 24).contentShape(Rectangle())
+            }
+            .buttonStyle(PressableStyle())
+            .help(L("Kurangi \(step) menit", "\(step) min shorter"))
+            Text(L("\(timer.minutes(timer.mode)) menit", "\(timer.minutes(timer.mode)) min"))
+                .font(.system(size: 11.5, weight: .semibold).monospacedDigit())
+                .frame(minWidth: 62)
+            Button { timer.adjust(by: step) } label: {
+                Image(systemName: "plus").font(.system(size: 10, weight: .bold)).frame(width: 26, height: 24).contentShape(Rectangle())
+            }
+            .buttonStyle(PressableStyle())
+            .help(L("Tambah \(step) menit", "\(step) min longer"))
+        }
+        .background(Capsule().fill(Color.white.opacity(0.08)))
+    }
+
+    // 25/5 · 50/10 · 90/15
+    private var presets: some View {
+        HStack(spacing: 2) {
+            ForEach(StudyTimer.presets, id: \.focus) { preset in
+                let selected = timer.focusMinutes == preset.focus && timer.restMinutes == preset.rest
+                Button { withAnimation(.notch) { timer.setMinutes(focus: preset.focus, rest: preset.rest) } } label: {
+                    Text("\(preset.focus)/\(preset.rest)")
+                        .font(.system(size: 10.5, weight: .semibold).monospacedDigit())
+                        .padding(.horizontal, 8).padding(.vertical, 5)
+                        .background(Capsule().stroke(Color.white.opacity(selected ? 0.35 : 0), lineWidth: 1))
+                        .foregroundStyle(.white.opacity(selected ? 0.95 : 0.45))
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    // Satu titik per sesi fokus hari ini.
+    private var sessions: some View {
+        HStack(spacing: 7) {
+            HStack(spacing: 4) {
+                ForEach(0..<max(4, min(8, timer.sessionsToday)), id: \.self) { i in
+                    Circle().fill(i < timer.sessionsToday ? Color.accent : Color.white.opacity(0.14)).frame(width: 6, height: 6)
+                }
+            }
+            Text(timer.sessionsToday == 0 ? L("Belum ada sesi fokus hari ini", "No focus sessions yet today")
+                                          : L("\(timer.sessionsToday) sesi fokus hari ini", "\(timer.sessionsToday) focus sessions today"))
+                .font(.system(size: 10.5))
+                .foregroundStyle(.white.opacity(0.5))
+        }
+    }
+
+    // Tombol mulai/jeda besar + ulang.
+    private var controls: some View {
+        VStack(spacing: 10) {
+            Button(action: { timer.toggle() }) {
+                Image(systemName: timer.running ? "pause.fill" : "play.fill")
+                    .font(.system(size: 20, weight: .bold))
+                    .offset(x: timer.running ? 0 : 2)
+                    .frame(width: 58, height: 58)
+                    .background(Circle().fill(tint))
+                    .shadow(color: tint.opacity(0.45), radius: 10, y: 3)
+                    .contentShape(Circle())
+            }
+            .buttonStyle(PressableStyle())
+            .help(timer.running ? L("Jeda", "Pause") : (timer.isIdle ? L("Mulai", "Start") : L("Lanjut", "Resume")))
+            Button(action: { timer.reset() }) {
+                Label(L("Ulang", "Reset"), systemImage: "arrow.counterclockwise")
+                    .font(.system(size: 10.5, weight: .semibold))
+                    .foregroundStyle(.white.opacity(timer.isIdle ? 0.3 : 0.7))
+            }
+            .buttonStyle(.plain)
+            .disabled(timer.isIdle)
+        }
+        .padding(.trailing, 6)
+    }
+
+    private static func endTime(_ remaining: TimeInterval) -> String {
+        let f = DateFormatter()
+        f.dateFormat = Lang.english ? "h:mm a" : "HH.mm"
+        return f.string(from: Date().addingTimeInterval(remaining))
+    }
 }
 
 // MARK: - Catatan (app mandiri)
@@ -582,9 +721,9 @@ struct NotesPanel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            SectionLabel(text: notes.items.isEmpty ? "Catatan" : "Catatan · \(notes.items.count)")
+            SectionLabel(text: notes.items.isEmpty ? L("Catatan", "Notes") : L("Catatan", "Notes") + " · \(notes.items.count)")
             if notes.items.isEmpty {
-                Placeholder(icon: "note.text", text: "Belum ada catatan. Tulis di Beranda → Catatan cepat.")
+                Placeholder(icon: "note.text", text: L("Belum ada catatan. Tulis di Beranda → Catatan cepat.", "No notes yet. Write one in Home → Quick note."))
             } else if snapshot {
                 list
             } else {
@@ -614,10 +753,10 @@ struct NoteRow: View {
             }
             Spacer(minLength: 8)
             if hover {
-                Button { notes.copy(note); model.show(.done("Catatan disalin")) } label: { Image(systemName: "doc.on.doc") }
-                    .buttonStyle(.plain).help("Salin")
+                Button { notes.copy(note); model.show(.done(L("Catatan disalin", "Note copied"))) } label: { Image(systemName: "doc.on.doc") }
+                    .buttonStyle(.plain).help(L("Salin", "Copy"))
                 Button { notes.remove(note) } label: { Image(systemName: "trash") }
-                    .buttonStyle(.plain).help("Hapus")
+                    .buttonStyle(.plain).help(L("Hapus", "Delete"))
             }
         }
         .font(.system(size: 11.5))
@@ -628,8 +767,8 @@ struct NoteRow: View {
 
     static func format(_ date: Date) -> String {
         let f = DateFormatter()
-        f.locale = Locale(identifier: "id_ID")
-        f.dateFormat = Calendar.current.isDateInToday(date) ? "'Hari ini' HH.mm" : "EEE d MMM, HH.mm"
+        f.locale = Locale(identifier: Lang.english ? "en_US" : "id_ID")
+        f.dateFormat = Calendar.current.isDateInToday(date) ? (Lang.english ? "'Today' h:mm a" : "'Hari ini' HH.mm") : (Lang.english ? "EEE MMM d, h:mm a" : "EEE d MMM, HH.mm")
         return f.string(from: date)
     }
 }
@@ -664,8 +803,11 @@ struct ToastBanner: View {
                 switch action {
                 case .startTimer(let label):
                     Button(label) { model.toast = nil; model.timer.start() }.buttonStyle(PillButtonStyle(prominent: true, large: true))
+                case .join(let url):
+                    Button(L("Gabung", "Join")) { model.toast = nil; NSWorkspace.shared.open(url); model.setExpanded(false) }
+                        .buttonStyle(PillButtonStyle(prominent: true, large: true))
                 case .open(let path):
-                    Button("Buka") { model.toast = nil; model.open(path) }.buttonStyle(PillButtonStyle(prominent: true, large: true))
+                    Button(L("Buka", "Open")) { model.toast = nil; model.open(path) }.buttonStyle(PillButtonStyle(prominent: true, large: true))
                 }
             }
         }
@@ -678,6 +820,7 @@ struct ToastBanner: View {
         case .done: return "checkmark"
         case .failed: return "exclamationmark.triangle.fill"
         case .alert(_, _, .startTimer?): return "timer"
+        case .alert(_, _, .join?): return "video.fill"
         default: return "bell.fill"
         }
     }
@@ -699,7 +842,7 @@ struct ToastBanner: View {
 
     private var detail: String? {
         if case .alert(_, let detail, _) = toast { return detail }
-        if case .failed = toast { return "Coba lagi, atau buka Cognify untuk detailnya." }
+        if case .failed = toast { return model.appMode ? nil : L("Coba lagi, atau buka Cognify untuk detailnya.", "Try again, or open Cognify for details.") }
         return nil
     }
 }

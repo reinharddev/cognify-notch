@@ -10,6 +10,7 @@ enum DeviceNotice: Equatable {
     case lowBattery(percent: Int)
     case audioConnected(name: String, battery: String?)
     case audioDisconnected(name: String)
+    case downloadDone(String)
 }
 
 // MARK: - Baterai & charger
@@ -196,12 +197,18 @@ final class AudioDeviceMonitor {
 
 // MARK: - Shortcut keyboard
 
-/// Shortcut global ⌃⌥N (Carbon hot key: tidak perlu izin Aksesibilitas).
+/// Shortcut global pembuka notch, default ⌃⌥N (Carbon hot key: tidak perlu izin Aksesibilitas).
 @MainActor
 final class HotKey {
-    static let label = "⌃⌥N"
-
     var onPress: (() -> Void)?
+    /// Kombinasi tombol (jendela Pengaturan). Mengubahnya mendaftarkan ulang bila aktif.
+    var choice: Preferences.HotKeyChoice = .ctrlOptN {
+        didSet {
+            guard choice != oldValue, ref != nil else { return }
+            setEnabled(false)
+            setEnabled(true)
+        }
+    }
     private var ref: EventHotKeyRef?
     private var handler: EventHandlerRef?
 
@@ -216,12 +223,209 @@ final class HotKey {
                 return noErr
             }, 1, &spec, context, &handler)
             let id = EventHotKeyID(signature: OSType(0x434E_4F54), id: 1) // "CNOT"
-            RegisterEventHotKey(UInt32(kVK_ANSI_N), UInt32(controlKey | optionKey), id, GetApplicationEventTarget(), 0, &ref)
+            RegisterEventHotKey(UInt32(choice.keyCode), UInt32(choice.modifiers), id, GetApplicationEventTarget(), 0, &ref)
         } else if !enabled {
             if let ref { UnregisterEventHotKey(ref) }
             if let handler { RemoveEventHandler(handler) }
             ref = nil
             handler = nil
+        }
+    }
+}
+
+// MARK: - Progress download
+
+/// File yang sedang diunduh ke folder Downloads. Browser (Safari, Chrome, Firefox) mengumumkan
+/// progress unduhan lewat `NSProgress` per file (yang juga dipakai Finder untuk ikon berprogress);
+/// notch berlangganan pengumuman itu, tanpa membaca isi folder.
+@MainActor
+final class DownloadWatcher: ObservableObject {
+    struct Item: Equatable {
+        let name: String
+        let percent: Int? // nil: ukuran total belum diketahui
+    }
+
+    @Published private(set) var active: Item?
+    var onFinish: ((String) -> Void)?
+
+    private final class Tracked {
+        let progress: Progress
+        var name: String
+        var observation: NSKeyValueObservation?
+        var percent: Int?
+        init(progress: Progress, name: String) {
+            self.progress = progress
+            self.name = name
+        }
+    }
+
+    private var token: Any?
+    private var tracked: [ObjectIdentifier: Tracked] = [:]
+    private var order: [ObjectIdentifier] = []
+
+    func setEnabled(_ enabled: Bool) {
+        if enabled, token == nil, let folder = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first {
+            token = Progress.addSubscriber(forFileURL: folder) { [weak self] progress in
+                let box = UncheckedBox(progress)
+                DispatchQueue.main.async { self?.track(box.value) }
+                return {
+                    DispatchQueue.main.async { self?.untrack(box.value) }
+                }
+            }
+        } else if !enabled, let token {
+            Progress.removeSubscriber(token)
+            self.token = nil
+            tracked = [:]
+            order = []
+            active = nil
+        }
+    }
+
+    /// Pada salinan progress milik pelanggan, `fileURL` bisa kosong sementara userInfo sudah berisi.
+    private static func fileURL(_ progress: Progress) -> URL? {
+        progress.userInfo[.fileURLKey] as? URL ?? progress.fileURL
+    }
+
+    /// "laporan.pdf.crdownload" → "laporan.pdf".
+    static func cleanName(_ url: URL?) -> String {
+        guard var name = url?.lastPathComponent, !name.isEmpty else { return L("File", "File") }
+        for suffix in [".crdownload", ".download", ".part", ".partial"] where name.lowercased().hasSuffix(suffix) {
+            name = String(name.dropLast(suffix.count))
+        }
+        return name
+    }
+
+    private func track(_ progress: Progress) {
+        let id = ObjectIdentifier(progress)
+        guard tracked[id] == nil else { return }
+        let item = Tracked(progress: progress, name: Self.cleanName(Self.fileURL(progress)))
+        item.observation = progress.observe(\.fractionCompleted) { [weak self] progress, _ in
+            let fraction = progress.fractionCompleted
+            let known = progress.totalUnitCount > 0
+            DispatchQueue.main.async { self?.update(id, fraction: known ? fraction : nil) }
+        }
+        tracked[id] = item
+        order.append(id)
+        update(id, fraction: progress.totalUnitCount > 0 ? progress.fractionCompleted : nil)
+    }
+
+    private func update(_ id: ObjectIdentifier, fraction: Double?) {
+        guard let item = tracked[id] else { return }
+        // Info file pada salinan progress kadang baru tiba sesudah pengumuman pertama.
+        if let url = Self.fileURL(item.progress) { item.name = Self.cleanName(url) }
+        item.percent = fraction.map { Int(($0 * 100).rounded(.down)) }
+        publish()
+    }
+
+    private func untrack(_ progress: Progress) {
+        let id = ObjectIdentifier(progress)
+        guard let item = tracked.removeValue(forKey: id) else { return }
+        order.removeAll { $0 == id }
+        item.observation?.invalidate()
+        if !progress.isCancelled, (item.percent ?? 100) >= 95 { onFinish?(item.name) }
+        publish()
+    }
+
+    /// Unduhan terbaru yang masih berjalan.
+    private func publish() {
+        let next = order.last.flatMap { tracked[$0] }.map { Item(name: $0.name, percent: $0.percent) }
+        if next != active { active = next }
+    }
+
+    // Untuk snapshot.
+    func preview(_ item: Item) { active = item }
+}
+
+/// Membawa objek non-Sendable antar antrean (Progress aman dibaca dari antrean mana pun).
+struct UncheckedBox<T>: @unchecked Sendable {
+    let value: T
+    init(_ value: T) { self.value = value }
+}
+
+// MARK: - Output suara & volume
+
+struct OutputDevice: Identifiable, Hashable {
+    let id: AudioObjectID
+    let name: String
+    let bluetooth: Bool
+}
+
+/// Daftar perangkat output suara, pilih output default, dan atur volumenya (Core Audio).
+enum AudioOutputs {
+    private static func address(_ selector: AudioObjectPropertySelector, _ scope: AudioObjectPropertyScope = kAudioObjectPropertyScopeGlobal,
+                                _ element: AudioObjectPropertyElement = kAudioObjectPropertyElementMain) -> AudioObjectPropertyAddress {
+        AudioObjectPropertyAddress(mSelector: selector, mScope: scope, mElement: element)
+    }
+
+    static func current() -> AudioObjectID? {
+        var id = AudioObjectID(kAudioObjectUnknown)
+        var size = UInt32(MemoryLayout<AudioObjectID>.size)
+        var a = address(kAudioHardwarePropertyDefaultOutputDevice)
+        guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &a, 0, nil, &size, &id) == noErr,
+              id != kAudioObjectUnknown else { return nil }
+        return id
+    }
+
+    static func all() -> [OutputDevice] {
+        var a = address(kAudioHardwarePropertyDevices)
+        var size: UInt32 = 0
+        guard AudioObjectGetPropertyDataSize(AudioObjectID(kAudioObjectSystemObject), &a, 0, nil, &size) == noErr else { return [] }
+        var ids = [AudioObjectID](repeating: 0, count: Int(size) / MemoryLayout<AudioObjectID>.size)
+        guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &a, 0, nil, &size, &ids) == noErr else { return [] }
+        return ids.compactMap { id in
+            var streams = address(kAudioDevicePropertyStreams, kAudioDevicePropertyScopeOutput)
+            var streamSize: UInt32 = 0
+            guard AudioObjectGetPropertyDataSize(id, &streams, 0, nil, &streamSize) == noErr, streamSize > 0 else { return nil }
+            var transport: UInt32 = 0
+            var transportSize = UInt32(MemoryLayout<UInt32>.size)
+            var t = address(kAudioDevicePropertyTransportType)
+            AudioObjectGetPropertyData(id, &t, 0, nil, &transportSize, &transport)
+            // Perangkat agregat/virtual privat (mis. equalizer Cognify) tidak ditampilkan.
+            if transport == kAudioDeviceTransportTypeAggregate || transport == kAudioDeviceTransportTypeAutoAggregate { return nil }
+            var name: Unmanaged<CFString>?
+            var nameSize = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
+            var n = address(kAudioObjectPropertyName)
+            guard AudioObjectGetPropertyData(id, &n, 0, nil, &nameSize, &name) == noErr, let name else { return nil }
+            let bluetooth = transport == kAudioDeviceTransportTypeBluetooth || transport == kAudioDeviceTransportTypeBluetoothLE
+            return OutputDevice(id: id, name: name.takeRetainedValue() as String, bluetooth: bluetooth)
+        }
+    }
+
+    static func select(_ id: AudioObjectID) {
+        var device = id
+        var a = address(kAudioHardwarePropertyDefaultOutputDevice)
+        AudioObjectSetPropertyData(AudioObjectID(kAudioObjectSystemObject), &a, 0, nil, UInt32(MemoryLayout<AudioObjectID>.size), &device)
+    }
+
+    /// Elemen volume yang tersedia: kanal utama, atau kanal kiri & kanan.
+    private static func volumeElements(_ id: AudioObjectID) -> [AudioObjectPropertyElement] {
+        var main = address(kAudioDevicePropertyVolumeScalar, kAudioDevicePropertyScopeOutput)
+        if AudioObjectHasProperty(id, &main) { return [kAudioObjectPropertyElementMain] }
+        return [1, 2].filter { element in
+            var a = address(kAudioDevicePropertyVolumeScalar, kAudioDevicePropertyScopeOutput, element)
+            return AudioObjectHasProperty(id, &a)
+        }
+    }
+
+    static func volume() -> Float? {
+        guard let id = current(), let element = volumeElements(id).first else { return nil }
+        var value: Float32 = 0
+        var size = UInt32(MemoryLayout<Float32>.size)
+        var a = address(kAudioDevicePropertyVolumeScalar, kAudioDevicePropertyScopeOutput, element)
+        return AudioObjectGetPropertyData(id, &a, 0, nil, &size, &value) == noErr ? value : nil
+    }
+
+    static func setVolume(_ value: Float) {
+        guard let id = current() else { return }
+        var v = Float32(max(0, min(1, value)))
+        for element in volumeElements(id) {
+            var a = address(kAudioDevicePropertyVolumeScalar, kAudioDevicePropertyScopeOutput, element)
+            AudioObjectSetPropertyData(id, &a, 0, nil, UInt32(MemoryLayout<Float32>.size), &v)
+        }
+        if v > 0 { // menaikkan volume = batal bisu
+            var muted: UInt32 = 0
+            var m = address(kAudioDevicePropertyMute, kAudioDevicePropertyScopeOutput)
+            if AudioObjectHasProperty(id, &m) { AudioObjectSetPropertyData(id, &m, 0, nil, UInt32(MemoryLayout<UInt32>.size), &muted) }
         }
     }
 }
