@@ -48,6 +48,8 @@ enum Snapshot {
             ("a-beranda-media-kalender", make { $0.expanded = true; $0.preview(level: nil, features: all); $0.media.preview(song); $0.calendar.preview(calendarSample) }),
             ("b-sayap-media", make { $0.state = NotchState(events: [], overdue: 0, processing: 0); $0.media.preview(song) }),
             ("c-sayap-volume", make { $0.preview(level: .volume(0.62, muted: false)) }),
+            ("p-sayap-lagu-baru", make { $0.state = NotchState(events: [], overdue: 0, processing: 0); $0.media.preview(song); $0.preview(songBanner: "Ada Selamanya (Versi Akustik Live di Jakarta)") }),
+            ("q-sayap-lagu-pendek", make { $0.state = NotchState(events: [], overdue: 0, processing: 0); $0.media.preview(song); $0.preview(songBanner: "Ada Selamanya") }),
             ("m-sayap-charger", make { $0.state = NotchState(events: [], overdue: 0, processing: 0); $0.preview(notice: .charging(percent: 53, full: false)) }),
             ("n-sayap-airpods", make { $0.state = NotchState(events: [], overdue: 0, processing: 0); $0.preview(notice: .audioConnected(name: "AirPods Pro milik Reinhard", battery: "L 80% R 75%")) }),
             ("o-sayap-baterai-lemah", make { $0.preview(notice: .lowBattery(percent: 10)) }),

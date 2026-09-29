@@ -59,6 +59,7 @@ struct NotchRoot: View {
                     .clipShape(NotchShape(top: model.expanded ? 12 : 6, bottom: model.expanded ? 24 : 12))
             }
             .frame(width: model.size.width, height: model.size.height)
+            .offset(x: model.shapeOffset)
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -76,7 +77,8 @@ struct NotchRoot: View {
                     removal: .opacity.animation(.easeOut(duration: 0.12))
                 ))
         } else if let live = model.live {
-            LiveWings(live: live, gap: model.notchSize.width, media: model.media, spectrum: model.spectrum)
+            LiveWings(live: live, gap: model.notchSize.width, wings: model.wings, media: model.media, spectrum: model.spectrum,
+                      onBannerDone: { model.endSongBanner($0) })
                 .frame(height: model.notchSize.height)
                 .transition(.opacity.combined(with: .scale(scale: 0.9)))
         }
@@ -88,13 +90,21 @@ struct NotchRoot: View {
 struct LiveWings: View {
     let live: NotchModel.Live
     let gap: CGFloat
+    let wings: (left: CGFloat, right: CGFloat)
     @ObservedObject var media: MediaMonitor
     let spectrum: Spectrum
+    var onBannerDone: (String) -> Void = { _ in }
 
     var body: some View {
         HStack(spacing: 0) {
             Group {
-                if live.media {
+                if live.media, let title = live.title {
+                    HStack(spacing: 8) {
+                        Artwork(media: media, size: 20)
+                        SongTitle(text: title, onFinish: { onBannerDone(title) })
+                    }
+                    .padding(.leading, 8)
+                } else if live.media {
                     Artwork(media: media, size: 20)
                 } else if let title = live.title {
                     HStack(spacing: 6) {
@@ -114,8 +124,8 @@ struct LiveWings: View {
                         .foregroundStyle(live.tint)
                 }
             }
-            .frame(maxWidth: .infinity)
-            Color.clear.frame(width: gap - 12) // area notch fisik
+            .frame(width: max(0, wings.left - 6))
+            Color.clear.frame(width: gap) // area notch fisik
             Group {
                 if live.media {
                     Equalizer(playing: true, spectrum: spectrum)
@@ -130,8 +140,58 @@ struct LiveWings: View {
                         .contentTransition(.numericText())
                 }
             }
-            .frame(maxWidth: .infinity)
+            .frame(width: max(0, wings.right - 6))
         }
+    }
+}
+
+/// Judul lagu baru di sayap kiri: bergulir sekali bila terlalu panjang, lalu `onFinish`.
+struct SongTitle: View {
+    let text: String
+    let onFinish: () -> Void
+    @State private var textWidth: CGFloat = 0
+    @State private var boxWidth: CGFloat = 0
+    @State private var offset: CGFloat = 0
+    @Environment(\.snapshot) private var snapshot
+
+    private let font = Font.system(size: 12, weight: .semibold, design: .rounded)
+
+    var body: some View {
+        // Teks di overlay: panjang judul tidak ikut menentukan lebar sayap.
+        Color.clear
+            .frame(maxWidth: .infinity, maxHeight: 16)
+            .overlay(alignment: .leading) {
+                Text(text)
+                    .font(font)
+                    .foregroundStyle(.white)
+                    .fixedSize()
+                    .background(GeometryReader { t in
+                        Color.clear.onAppear { textWidth = t.size.width }.onChange(of: t.size.width) { textWidth = $0 }
+                    })
+                    .offset(x: offset)
+            }
+            .background(GeometryReader { b in
+                Color.clear.onAppear { boxWidth = b.size.width }.onChange(of: b.size.width) { boxWidth = $0 }
+            })
+            .clipped()
+            .mask(LinearGradient(stops: [.init(color: .black, location: 0), .init(color: .black, location: 0.88),
+                                         .init(color: .clear, location: 1)], startPoint: .leading, endPoint: .trailing))
+            .task(id: text) {
+                guard !snapshot else { return }
+                offset = 0
+                try? await Task.sleep(nanoseconds: 600_000_000) // tunggu sayap selesai melebar
+                let overflow = textWidth - boxWidth + 16 // + ruang pudar di kanan
+                if overflow > 17 {
+                    try? await Task.sleep(nanoseconds: 900_000_000)
+                    let duration = Double(overflow) / 32
+                    withAnimation(.linear(duration: duration)) { offset = -overflow }
+                    try? await Task.sleep(nanoseconds: UInt64((duration + 1.4) * 1_000_000_000))
+                } else {
+                    try? await Task.sleep(nanoseconds: 3_200_000_000)
+                }
+                guard !Task.isCancelled else { return }
+                onFinish()
+            }
     }
 }
 

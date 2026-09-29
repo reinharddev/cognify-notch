@@ -107,7 +107,7 @@ final class NotchController {
     private func hotRect(margin: CGFloat) -> NSRect {
         guard let frame = screen?.frame else { return .zero }
         let size = model.size
-        return NSRect(x: frame.midX - size.width / 2, y: frame.maxY - size.height, width: size.width, height: size.height)
+        return NSRect(x: frame.midX - size.width / 2 + model.shapeOffset, y: frame.maxY - size.height, width: size.width, height: size.height)
             .insetBy(dx: -margin, dy: -margin)
     }
 

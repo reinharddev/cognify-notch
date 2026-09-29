@@ -170,7 +170,8 @@ final class NotchModel: ObservableObject {
         let tint: Color
         var level: Double? = nil // bar volume/kecerahan menggantikan teks
         var media = false // sampul + equalizer
-        var title: String? = nil // teks di sayap kiri (nama perangkat); sayap jadi lebar
+        var title: String? = nil // teks di sayap kiri (nama perangkat / judul lagu); sayap kiri jadi lebar
+        var wideRight = true // false: hanya sayap kiri yang melebar (judul lagu baru)
     }
 
     @Published var expanded = false
@@ -187,6 +188,10 @@ final class NotchModel: ObservableObject {
     @Published private(set) var features = Features()
     @Published private(set) var level: Level?
     @Published private(set) var notice: DeviceNotice?
+    /// Judul lagu yang baru mulai: sayap kiri melebar menampilkannya sampai selesai bergulir.
+    @Published private(set) var songBanner: String?
+    private var lastSong: String?
+    private var bannerTask: Task<Void, Never>?
 
     /// App mandiri "Cognify Notch" (tanpa Cognify): agenda dari Kalender saja, catatan cepat
     /// disimpan di notch, seret file langsung ke tray, pengaturan lewat ikon menu bar.
@@ -231,7 +236,10 @@ final class NotchModel: ObservableObject {
         audioDevices.onNotice = { [weak self] notice in self?.showNotice(notice) }
         hotKey.onPress = { [weak self] in self?.toggleFromKeyboard() }
         media.$nowPlaying.sink { [weak self] now in
-            DispatchQueue.main.async { self?.updateSpectrum(playing: now?.playing == true) }
+            DispatchQueue.main.async {
+                self?.updateSpectrum(playing: now?.playing == true)
+                self?.announceSong(now)
+            }
         }.store(in: &changes)
         timer.onFinish = { [weak self] mode in
             NSSound(named: "Glass")?.play()
@@ -249,10 +257,21 @@ final class NotchModel: ObservableObject {
     static let expandedSize = CGSize(width: 680, height: 222)
     static let wing: CGFloat = 76
     static let wideWing: CGFloat = 150
+    static let songWing: CGFloat = 210
+
+    /// Lebar sayap kiri & kanan saat tertutup.
+    var wings: (left: CGFloat, right: CGFloat) {
+        guard !expanded, let live else { return (0, 0) }
+        guard let _ = live.title else { return (Self.wing, Self.wing) }
+        return live.wideRight ? (Self.wideWing, Self.wideWing) : (Self.songWing, Self.wing)
+    }
+
+    /// Geser horizontal bentuk notch dari tengah layar (sayap kiri lebih lebar → bergeser ke kiri).
+    var shapeOffset: CGFloat { (wings.right - wings.left) / 2 }
 
     var size: CGSize {
         if expanded { return CGSize(width: Self.expandedSize.width, height: Self.expandedSize.height + notchSize.height - 32) }
-        if let live { return CGSize(width: notchSize.width + (live.title == nil ? Self.wing : Self.wideWing) * 2, height: notchSize.height) }
+        if live != nil { return CGSize(width: notchSize.width + wings.left + wings.right, height: notchSize.height) }
         return notchSize
     }
 
@@ -282,7 +301,7 @@ final class NotchModel: ObservableObject {
             return Live(icon: next.kind == "deadline" ? "calendar.badge.clock" : "bell", text: Relative.short(next.due, now: now), tint: .orange)
         }
         if features.media, media.nowPlaying?.playing == true {
-            return Live(icon: "music.note", tint: .accent, media: true)
+            return Live(icon: "music.note", tint: .accent, media: true, title: songBanner, wideRight: false)
         }
         return nil
     }
@@ -360,6 +379,30 @@ final class NotchModel: ObservableObject {
     }
 
     func preview(notice next: DeviceNotice) { notice = next }
+    func preview(songBanner next: String) { songBanner = next }
+
+    /// Lagu baru mulai diputar (ganti lagu, lagu pertama) → judulnya tampil di sayap kiri.
+    private func announceSong(_ now: NowPlaying?) {
+        guard features.media, let now, now.playing else { return }
+        let key = now.title + "\u{1F}" + (now.artist ?? "")
+        guard key != lastSong else { return }
+        lastSong = key
+        withAnimation(.notch) { songBanner = now.title }
+        bannerTask?.cancel()
+        bannerTask = Task { [weak self] in
+            // Batas aman bila judul tidak selesai bergulir (mis. notch sedang terbuka).
+            try? await Task.sleep(nanoseconds: 25_000_000_000)
+            guard !Task.isCancelled else { return }
+            self?.endSongBanner(now.title)
+        }
+    }
+
+    /// Dipanggil sayap setelah judul selesai bergulir.
+    func endSongBanner(_ title: String) {
+        guard songBanner == title else { return }
+        bannerTask?.cancel()
+        withAnimation(.notch) { songBanner = nil }
+    }
 
     private func showNotice(_ next: DeviceNotice) {
         noticeTask?.cancel()
