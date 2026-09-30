@@ -8,11 +8,15 @@ import SwiftUI
 final class StatusMenu: NSObject, NSMenuDelegate {
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     private let model: NotchModel
-    private let updater = Updater()
+    private let updater: Updater?
     private var settings: NSWindow?
 
     init(model: NotchModel) {
         self.model = model
+        // Update otomatis dipasang hanya saat notch tertutup dan tidak sedang merekam suara.
+        updater = Updater(canRestart: { [weak model] in
+            MainActor.assumeIsolated { model.map { !$0.expanded && !$0.voice.recording } ?? true }
+        })
         super.init()
         if let button = item.button {
             button.image = NSImage(systemSymbolName: "rectangle.topthird.inset.filled", accessibilityDescription: "Cognify Notch")
@@ -49,7 +53,11 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         login.target = self
         login.state = SMAppService.mainApp.status == .enabled ? .on : .off
         menu.addItem(login)
-        if updater != nil {
+        if let updater {
+            let auto = NSMenuItem(title: L("Pasang update otomatis", "Install updates automatically"), action: #selector(toggleAutoUpdate), keyEquivalent: "")
+            auto.target = self
+            auto.state = updater.automatic ? .on : .off
+            menu.addItem(auto)
             let update = NSMenuItem(title: L("Periksa update…", "Check for updates…"), action: #selector(checkUpdates), keyEquivalent: "")
             update.target = self
             menu.addItem(update)
@@ -91,6 +99,11 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         settings?.title = L("Pengaturan Cognify Notch", "Cognify Notch Settings")
         NSApp.activate(ignoringOtherApps: true)
         settings?.makeKeyAndOrderFront(nil)
+    }
+
+    @objc private func toggleAutoUpdate() {
+        guard let updater else { return }
+        updater.automatic.toggle()
     }
 
     @objc private func checkUpdates() {

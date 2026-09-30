@@ -63,6 +63,7 @@ plist "Add :SUFeedURL string $FEED_URL"
 plist "Add :SUPublicEDKey string $ED_PUBLIC_KEY"
 plist "Add :SUEnableAutomaticChecks bool true"
 plist "Add :SUScheduledCheckInterval integer 86400"
+plist "Add :SUAutomaticallyUpdate bool true" # unduh & pasang tanpa bertanya (bisa dimatikan di menu bar)
 plist "Add :SUEnableSystemProfiling bool false"
 
 echo "3/5 Tanda tangan…"
