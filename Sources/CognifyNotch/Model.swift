@@ -363,7 +363,7 @@ final class NotchModel: ObservableObject {
             return Live(icon: "mic.fill", text: L("Merekam", "Recording"), tint: .red)
         }
         if features.downloads, let download = downloads.active {
-            return Live(icon: "arrow.down.circle.fill", text: download.percent.map { "\($0)%" } ?? "…", tint: .accent, title: download.name)
+            return Live(icon: "arrow.down.circle.fill", text: download.progressText, tint: .accent, title: download.name)
         }
         if timer.running {
             return Live(icon: timer.mode == .focus ? "brain.head.profile" : "cup.and.saucer.fill",

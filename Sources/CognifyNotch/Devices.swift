@@ -243,6 +243,14 @@ final class DownloadWatcher: ObservableObject {
     struct Item: Equatable {
         let name: String
         let percent: Int? // nil: ukuran total belum diketahui
+        var bytes: Int64 = 0 // yang sudah terunduh (dipakai bila persen tidak diketahui)
+
+        /// Teks sayap kanan: "42%", "104 MB", atau "…".
+        var progressText: String {
+            if let percent { return "\(percent)%" }
+            if bytes > 0 { return ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file) }
+            return "…"
+        }
     }
 
     @Published private(set) var active: Item?
@@ -251,8 +259,9 @@ final class DownloadWatcher: ObservableObject {
     private final class Tracked {
         let progress: Progress
         var name: String
-        var observation: NSKeyValueObservation?
+        var observations: [NSKeyValueObservation] = []
         var percent: Int?
+        var bytes: Int64 = 0
         init(progress: Progress, name: String) {
             self.progress = progress
             self.name = name
@@ -286,12 +295,14 @@ final class DownloadWatcher: ObservableObject {
         progress.userInfo[.fileURLKey] as? URL ?? progress.fileURL
     }
 
-    /// "laporan.pdf.crdownload" → "laporan.pdf".
+    /// "laporan.pdf.crdownload" → "laporan.pdf". Nama sementara Chrome/Brave/Edge
+    /// ("Unconfirmed 481234.crdownload", nama asli baru dipakai saat selesai) → "Mengunduh".
     static func cleanName(_ url: URL?) -> String {
-        guard var name = url?.lastPathComponent, !name.isEmpty else { return L("File", "File") }
+        guard var name = url?.lastPathComponent, !name.isEmpty else { return L("Mengunduh", "Downloading") }
         for suffix in [".crdownload", ".download", ".part", ".partial"] where name.lowercased().hasSuffix(suffix) {
             name = String(name.dropLast(suffix.count))
         }
+        if name.range(of: #"^Unconfirmed \d+$"#, options: .regularExpression) != nil { return L("Mengunduh", "Downloading") }
         return name
     }
 
@@ -299,21 +310,27 @@ final class DownloadWatcher: ObservableObject {
         let id = ObjectIdentifier(progress)
         guard tracked[id] == nil else { return }
         let item = Tracked(progress: progress, name: Self.cleanName(Self.fileURL(progress)))
-        item.observation = progress.observe(\.fractionCompleted) { [weak self] progress, _ in
-            let fraction = progress.fractionCompleted
-            let known = progress.totalUnitCount > 0
-            DispatchQueue.main.async { self?.update(id, fraction: known ? fraction : nil) }
+        // Sebagian browser hanya memperbarui jumlah byte (total belum diketahui), jadi keduanya diikuti.
+        let changed: (Progress) -> Void = { [weak self] _ in
+            DispatchQueue.main.async { self?.update(id) }
         }
+        item.observations = [
+            progress.observe(\.fractionCompleted) { p, _ in changed(p) },
+            progress.observe(\.completedUnitCount) { p, _ in changed(p) },
+        ]
         tracked[id] = item
         order.append(id)
-        update(id, fraction: progress.totalUnitCount > 0 ? progress.fractionCompleted : nil)
+        update(id)
     }
 
-    private func update(_ id: ObjectIdentifier, fraction: Double?) {
+    private func update(_ id: ObjectIdentifier) {
         guard let item = tracked[id] else { return }
-        // Info file pada salinan progress kadang baru tiba sesudah pengumuman pertama.
-        if let url = Self.fileURL(item.progress) { item.name = Self.cleanName(url) }
-        item.percent = fraction.map { Int(($0 * 100).rounded(.down)) }
+        let progress = item.progress
+        // Info file pada salinan progress kadang baru tiba sesudah pengumuman pertama, dan nama
+        // sementara browser bisa berganti ke nama asli.
+        if let url = Self.fileURL(progress) { item.name = Self.cleanName(url) }
+        item.percent = progress.totalUnitCount > 0 ? Int((progress.fractionCompleted * 100).rounded(.down)) : nil
+        item.bytes = max(0, progress.completedUnitCount)
         publish()
     }
 
@@ -321,14 +338,16 @@ final class DownloadWatcher: ObservableObject {
         let id = ObjectIdentifier(progress)
         guard let item = tracked.removeValue(forKey: id) else { return }
         order.removeAll { $0 == id }
-        item.observation?.invalidate()
-        if !progress.isCancelled, (item.percent ?? 100) >= 95 { onFinish?(item.name) }
+        item.observations.forEach { $0.invalidate() }
+        if let url = Self.fileURL(progress) { item.name = Self.cleanName(url) }
+        let finished = item.percent.map { $0 >= 95 } ?? (progress.completedUnitCount > 0)
+        if !progress.isCancelled, finished { onFinish?(item.name) }
         publish()
     }
 
     /// Unduhan terbaru yang masih berjalan.
     private func publish() {
-        let next = order.last.flatMap { tracked[$0] }.map { Item(name: $0.name, percent: $0.percent) }
+        let next = order.last.flatMap { tracked[$0] }.map { Item(name: $0.name, percent: $0.percent, bytes: $0.bytes) }
         if next != active { active = next }
     }
 
