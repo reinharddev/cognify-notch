@@ -11,6 +11,8 @@ enum DeviceNotice: Equatable {
     case audioConnected(name: String, battery: String?)
     case audioDisconnected(name: String)
     case downloadDone(String)
+    case downloadFailed(String)
+    case downloadCanceled(String)
 }
 
 // MARK: - Baterai & charger
@@ -253,8 +255,24 @@ final class DownloadWatcher: ObservableObject {
         }
     }
 
+    enum Outcome: Equatable {
+        case done(String), failed(String), canceled(String)
+    }
+
     @Published private(set) var active: Item?
-    var onFinish: ((String) -> Void)?
+    var onResult: ((Outcome) -> Void)?
+
+    /// Unduhan yang progress-nya baru berhenti; hasilnya diputuskan sesudah jeda singkat.
+    private struct Ended {
+        let name: String
+        let temp: URL?
+        let percent: Int?
+        let cancelled: Bool
+        let decide: DispatchWorkItem
+    }
+
+    private var ended: Ended?
+    private var finishObserver: NSObjectProtocol?
 
     private final class Tracked {
         let progress: Progress
@@ -281,8 +299,20 @@ final class DownloadWatcher: ObservableObject {
                     DispatchQueue.main.async { self?.untrack(box.value) }
                 }
             }
+            // Chrome, Brave, Edge, dan Safari mengumumkan unduhan yang selesai (sinyal yang juga
+            // membuat ikon Downloads di Dock memantul), berisi path file akhir.
+            finishObserver = DistributedNotificationCenter.default().addObserver(
+                forName: NSNotification.Name("com.apple.DownloadFileFinished"), object: nil, queue: .main
+            ) { [weak self] note in
+                let path = note.object as? String
+                MainActor.assumeIsolated { self?.finished(path: path) }
+            }
         } else if !enabled, let token {
             Progress.removeSubscriber(token)
+            if let finishObserver { DistributedNotificationCenter.default().removeObserver(finishObserver) }
+            finishObserver = nil
+            ended?.decide.cancel()
+            ended = nil
             self.token = nil
             tracked = [:]
             order = []
@@ -339,10 +369,47 @@ final class DownloadWatcher: ObservableObject {
         guard let item = tracked.removeValue(forKey: id) else { return }
         order.removeAll { $0 == id }
         item.observations.forEach { $0.invalidate() }
-        if let url = Self.fileURL(progress) { item.name = Self.cleanName(url) }
-        let finished = item.percent.map { $0 >= 95 } ?? (progress.completedUnitCount > 0)
-        if !progress.isCancelled, finished { onFinish?(item.name) }
+        let temp = Self.fileURL(progress)
+        if let temp { item.name = Self.cleanName(temp) }
         publish()
+        // Progress berhenti: bisa selesai, gagal, atau dibatalkan. Browser mengumumkan "selesai"
+        // sesaat sesudahnya (Chromium berhenti mengirim progress begitu semua data tersimpan,
+        // lalu mengganti nama file), jadi hasilnya ditunggu sebentar.
+        ended?.decide.cancel()
+        let decide = DispatchWorkItem { [weak self] in
+            MainActor.assumeIsolated { self?.decideEnded() }
+        }
+        ended = Ended(name: item.name, temp: temp, percent: item.percent, cancelled: progress.isCancelled, decide: decide)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2, execute: decide)
+    }
+
+    /// Sinyal "unduhan selesai" dari browser.
+    private func finished(path: String?) {
+        let name = path.map { Self.cleanName(URL(fileURLWithPath: $0)) } ?? ended?.name ?? L("Unduhan", "Download")
+        ended?.decide.cancel()
+        ended = nil
+        onResult?(.done(name))
+    }
+
+    /// Tidak ada sinyal selesai. Browser menghapus file sementara bila unduhan dibatalkan, dan
+    /// menyimpannya (untuk dilanjutkan) bila unduhan gagal, mis. internet putus. Yang diperiksa
+    /// hanya ada-tidaknya file, isinya tidak dibaca.
+    private func decideEnded() {
+        guard let item = ended else { return }
+        ended = nil
+        let files = FileManager.default
+        if item.cancelled {
+            onResult?(.canceled(item.name))
+        } else if let temp = item.temp, temp.lastPathComponent != item.name,
+                  files.fileExists(atPath: temp.deletingLastPathComponent().appendingPathComponent(item.name).path) {
+            onResult?(.done(item.name)) // file akhir sudah ada (mis. Safari tanpa sinyal selesai)
+        } else if let percent = item.percent, percent >= 99 {
+            onResult?(.done(item.name))
+        } else if let temp = item.temp, files.fileExists(atPath: temp.path) {
+            onResult?(.failed(item.name))
+        } else {
+            onResult?(.canceled(item.name))
+        }
     }
 
     /// Unduhan terbaru yang masih berjalan.

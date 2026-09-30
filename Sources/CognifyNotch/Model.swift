@@ -287,7 +287,13 @@ final class NotchModel: ObservableObject {
             DispatchQueue.main.async { self?.hotKey.choice = choice }
         }.store(in: &changes)
         hotKey.choice = self.prefs.hotKey
-        downloads.onFinish = { [weak self] name in self?.showNotice(.downloadDone(name)) }
+        downloads.onResult = { [weak self] outcome in
+            switch outcome {
+            case .done(let name): self?.showNotice(.downloadDone(name))
+            case .failed(let name): self?.showNotice(.downloadFailed(name))
+            case .canceled(let name): self?.showNotice(.downloadCanceled(name))
+            }
+        }
         voice.onText = { [weak self] text in
             guard let self else { return }
             self.note = self.noteBeforeVoice.isEmpty ? text : self.noteBeforeVoice + " " + text
@@ -393,6 +399,10 @@ final class NotchModel: ObservableObject {
             return Live(icon: audioIcon(name), text: L("Terputus", "Disconnected"), tint: .gray, title: shortName(name))
         case .downloadDone(let name):
             return Live(icon: "checkmark.circle.fill", text: L("Selesai", "Done"), tint: .green, title: name)
+        case .downloadFailed(let name):
+            return Live(icon: "exclamationmark.triangle.fill", text: L("Gagal", "Failed"), tint: .orange, title: name)
+        case .downloadCanceled(let name):
+            return Live(icon: "xmark.circle.fill", text: L("Dibatalkan", "Canceled"), tint: .gray, title: name)
         }
     }
 
@@ -489,7 +499,7 @@ final class NotchModel: ObservableObject {
         let seconds: Double
         switch next {
         case .lowBattery: seconds = 6
-        case .audioConnected: seconds = 4
+        case .audioConnected, .downloadFailed: seconds = 4
         default: seconds = 3
         }
         noticeTask = Task { [weak self] in

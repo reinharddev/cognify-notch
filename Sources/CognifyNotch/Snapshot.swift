@@ -57,6 +57,8 @@ enum Snapshot {
             ("r-clipboard", make(app: true) { $0.expanded = true; $0.tab = .clipboard; $0.clipboard.preview(["https://meet.google.com/abc-defg-hij", "Rumus luas lingkaran: L = π × r²", "Kumpul di gerbang sekolah jam 06.30 ya", "https://id.wikipedia.org/wiki/Fotosintesis", "Bab 4 halaman 88 nomor 1-10", "Nomor kelompok 3"]) }),
             ("s-timer-atur", make(app: true) { $0.expanded = true; $0.tab = .timer; $0.timer.preview(focus: 50, rest: 10) }),
             ("t-rapat-gabung", make(app: true) { $0.expanded = true; $0.preview(level: nil, features: all); $0.calendar.preview(meetingSample) }),
+            ("u2-sayap-download-gagal", make { $0.state = NotchState(events: [], overdue: 0, processing: 0); $0.preview(notice: .downloadFailed("Modul Biologi Bab 3.pdf")) }),
+            ("u3-sayap-download-batal", make { $0.state = NotchState(events: [], overdue: 0, processing: 0); $0.preview(notice: .downloadCanceled("Modul Biologi Bab 3.pdf")) }),
             ("u-sayap-download", make { $0.state = NotchState(events: [], overdue: 0, processing: 0); $0.downloads.preview(.init(name: "Modul Biologi Bab 3.pdf", percent: 42)) }),
             ("v-media-lengkap", make(app: true) { $0.expanded = true; $0.preview(level: nil, features: all); $0.media.preview(song) }),
             ("w-rapat-alert", make(app: true) { $0.expanded = true; $0.toast = .alert(title: "Kelas online Fisika", detail: "Mulai 5 menit lagi", action: .join(URL(string: "https://meet.google.com/abc")!)) }),
