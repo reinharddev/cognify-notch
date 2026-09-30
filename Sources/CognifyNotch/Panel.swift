@@ -33,8 +33,11 @@ final class NotchController {
     private let panel = NotchPanel()
     private let model: NotchModel
     private var poller: Timer?
+    private var fallback: Timer?
     private var screen: NSScreen?
+    private var ignoring = true
     private var dragChangeCount = NSPasteboard(name: .drag).changeCount
+    private var dragCountNow = 0
     private var mouseWasDown = false
     private var dropHide: DispatchWorkItem?
     private var swipeX: CGFloat = 0
@@ -52,11 +55,26 @@ final class NotchController {
         NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.place() }
         }
-        // Kursor dibaca 20x per detik: lebih andal daripada event monitor untuk hover + seret
-        // file (event seret dari app lain tidak sampai ke monitor), dan bebannya kecil.
-        poller = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.track() }
+        // Kursor dibaca 20x per detik, tapi hanya selama perlu: kursor dekat notch, notch terbuka,
+        // atau tombol mouse ditekan (seret file dari app lain tidak mengirim event ke monitor, jadi
+        // saat menyeret posisi tetap dibaca berkala). Di luar itu tidak ada timer: gerakan mouse
+        // (monitor global) yang membangunkan pembacaan lagi, jadi notch diam tidak memakai CPU.
+        NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved, .leftMouseDown, .leftMouseDragged]) { [weak self] _ in
+            MainActor.assumeIsolated { self?.wake() }
         }
+        NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved, .leftMouseDown]) { [weak self] event in
+            MainActor.assumeIsolated { self?.wake() }
+            return event
+        }
+        // Cadangan bila ada gerakan yang tidak terlapor (mis. saat input aman aktif).
+        fallback = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.wake() }
+        }
+        fallback?.tolerance = 0.5
+        model.$expanded.removeDuplicates().sink { [weak self] _ in
+            DispatchQueue.main.async { self?.wake() }
+        }.store(in: &cancellables)
+        wake()
         model.$expanded.removeDuplicates().sink { [weak self] expanded in
             if !expanded { self?.returnFocus() }
         }.store(in: &cancellables)
@@ -111,15 +129,33 @@ final class NotchController {
             .insetBy(dx: -margin, dy: -margin)
     }
 
+    /// Kursor dekat notch (atau sedang ada yang perlu diikuti) → pembacaan 20x per detik menyala.
+    private func needsTracking(_ mouse: NSPoint) -> Bool {
+        model.expanded || model.dropTargeted || NSEvent.pressedMouseButtons & 1 == 1 || mouseWasDown
+            || hotRect(margin: 90).contains(mouse)
+    }
+
+    private func wake() {
+        guard poller == nil, needsTracking(NSEvent.mouseLocation) else { return }
+        poller = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.track() }
+        }
+        track()
+    }
+
     private func track() {
         let mouse = NSEvent.mouseLocation
         let down = NSEvent.pressedMouseButtons & 1 == 1
-        let drag = NSPasteboard(name: .drag)
-        if down && !mouseWasDown { dragChangeCount = drag.changeCount }
+        // Pasteboard seret hanya dibaca saat tombol ditekan (setiap pembacaan = panggilan ke sistem).
+        if down {
+            let count = NSPasteboard(name: .drag).changeCount
+            if !mouseWasDown { dragChangeCount = count }
+            dragCountNow = count
+        }
         mouseWasDown = down
         // Seret berisi (file/tautan/teks) = isi pasteboard seret berubah sejak tombol ditekan.
         // Menggeser jendela lain di dekat notch tidak mengubahnya, jadi notch tidak ikut terbuka.
-        let draggingContent = down && drag.changeCount != dragChangeCount
+        let draggingContent = down && dragCountNow != dragChangeCount
 
         let inside: Bool
         if model.expanded {
@@ -131,10 +167,17 @@ final class NotchController {
         } else {
             inside = hotRect(margin: model.hasNotch ? 4 : 2).contains(mouse)
         }
-        panel.ignoresMouseEvents = !(inside || model.expanded && hotRect(margin: 6).contains(mouse))
+        let ignore = !(inside || model.expanded && hotRect(margin: 6).contains(mouse))
+        if ignore != ignoring { // setiap penggantian = transaksi ke window server
+            ignoring = ignore
+            panel.ignoresMouseEvents = ignore
+        }
         updateDrop(draggingContent && inside)
-        if model.dropTargeted { return } // tetap terbuka selama file berada di atas notch
-        model.setHover(inside)
+        if !model.dropTargeted { model.setHover(inside) } // tetap terbuka selama file berada di atas notch
+        if !needsTracking(mouse) {
+            poller?.invalidate()
+            poller = nil
+        }
     }
 
     /// Pilihan "Knowledge / tray" tampil selama isi diseret di atas notch. Disembunyikan sedikit

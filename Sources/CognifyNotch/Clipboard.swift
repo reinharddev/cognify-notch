@@ -50,9 +50,10 @@ final class ClipboardHistory: ObservableObject {
         timer = nil
         guard enabled else { return }
         lastChange = pasteboard.changeCount // yang di-copy sebelum fitur dinyalakan tidak dicatat
-        timer = Timer.scheduledTimer(withTimeInterval: 0.6, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.poll() }
+        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.poll() }
         }
+        timer?.tolerance = 0.3 // boleh digabung dengan bangun lain oleh macOS
     }
 
     private func poll() {

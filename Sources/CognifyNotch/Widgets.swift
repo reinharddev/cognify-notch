@@ -376,6 +376,8 @@ final class SystemLevels {
     private var lastMuted: Bool?
     private var lastBrightness: Float?
     private var brightnessTimer: Timer?
+    private var brightnessFast = false
+    private var lastBrightnessChange = Date.distantPast
     private let listener: AudioObjectPropertyListenerBlock
     private let deviceListener: AudioObjectPropertyListenerBlock
 
@@ -401,9 +403,7 @@ final class SystemLevels {
             AudioObjectAddPropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &address, .main, deviceListener)
             bindDevice()
             lastBrightness = brightness()
-            brightnessTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
-                Task { @MainActor in self?.readBrightness() }
-            }
+            scheduleBrightness(fast: false)
         } else {
             var address = Self.address(kAudioHardwarePropertyDefaultOutputDevice, scope: kAudioObjectPropertyScopeGlobal)
             AudioObjectRemovePropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &address, .main, deviceListener)
@@ -470,9 +470,25 @@ final class SystemLevels {
         return getBrightness(CGMainDisplayID(), &value) == 0 ? value : nil
     }
 
+    /// Kecerahan dibaca 2x per detik saat diam (tiap pembacaan = panggilan ke layanan sistem),
+    /// lalu 10x per detik selama 2 detik setelah berubah supaya bar di notch mengikuti tombol.
+    private func scheduleBrightness(fast: Bool) {
+        brightnessTimer?.invalidate()
+        brightnessTimer = Timer.scheduledTimer(withTimeInterval: fast ? 0.1 : 0.5, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.readBrightness() }
+        }
+        brightnessFast = fast
+    }
+
     private func readBrightness() {
         guard let value = brightness() else { return }
-        if let last = lastBrightness, abs(last - value) > 0.004 { onChange?(.brightness(Double(value))) }
+        if let last = lastBrightness, abs(last - value) > 0.004 {
+            onChange?(.brightness(Double(value)))
+            lastBrightnessChange = Date()
+            if !brightnessFast { scheduleBrightness(fast: true) }
+        } else if brightnessFast, Date().timeIntervalSince(lastBrightnessChange) > 2 {
+            scheduleBrightness(fast: false)
+        }
         lastBrightness = value
     }
 }
