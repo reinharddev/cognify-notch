@@ -81,9 +81,12 @@ struct NotchRoot: View {
                     insertion: .opacity.combined(with: .scale(scale: 0.96, anchor: .top)).animation(.notch.delay(0.06)),
                     removal: .opacity.animation(.easeOut(duration: 0.12))
                 ))
+        } else if let card = model.card {
+            NoticeCard(card: card, notchHeight: model.notchSize.height)
+                .transition(.opacity.combined(with: .scale(scale: 0.94, anchor: .top)))
         } else if let live = model.live {
             LiveWings(live: live, gap: model.notchSize.width, wings: model.wings, media: model.media, spectrum: model.spectrum,
-                      onBannerDone: { model.endSongBanner($0) })
+                      face: model.face, onBannerDone: { model.endSongBanner($0) })
                 .frame(height: model.notchSize.height)
                 .transition(.opacity.combined(with: .scale(scale: 0.9)))
         }
@@ -98,9 +101,25 @@ struct LiveWings: View {
     let wings: (left: CGFloat, right: CGFloat)
     @ObservedObject var media: MediaMonitor
     let spectrum: Spectrum
+    var face: NotchModel.Face? = nil
     var onBannerDone: (String) -> Void = { _ in }
 
     var body: some View {
+        if live.eyes {
+            // Notch fisik sebagai wajah: satu mata di tiap sisinya.
+            HStack(spacing: 0) {
+                if let face {
+                    Eye(face: face, right: false).frame(width: max(0, wings.left - 6), alignment: .trailing)
+                    Color.clear.frame(width: gap)
+                    Eye(face: face, right: true).frame(width: max(0, wings.right - 6), alignment: .leading)
+                }
+            }
+        } else {
+            wingsBody
+        }
+    }
+
+    private var wingsBody: some View {
         HStack(spacing: 0) {
             Group {
                 if live.media, let title = live.title {
@@ -200,6 +219,69 @@ struct SongTitle: View {
     }
 }
 
+/// Satu mata. Terbuka (berkedip sesekali), tertutup saat tidur (dengan "z" kecil), dan
+/// melengkung senang saat menyapa.
+struct Eye: View {
+    @ObservedObject var face: NotchModel.Face
+    let right: Bool
+
+    var body: some View {
+        let mood = face.mood
+        ZStack {
+            switch mood {
+            case .awake, .blink:
+                RoundedRectangle(cornerRadius: 3.5, style: .continuous)
+                    .fill(Color.white)
+                    .frame(width: 8, height: mood == .blink ? 1.5 : 12)
+                    .shadow(color: Color.accent.opacity(0.9), radius: 4)
+            case .asleep:
+                Capsule().fill(Color.white.opacity(0.75)).frame(width: 9, height: 2).offset(y: 2)
+                if right {
+                    Text("z").font(.system(size: 8, weight: .heavy, design: .rounded)).foregroundStyle(.white.opacity(0.6))
+                        .offset(x: 9, y: -6)
+                }
+            case .hello:
+                Image(systemName: "chevron.up").font(.system(size: 9, weight: .heavy)).foregroundStyle(.white)
+                    .shadow(color: Color.accent.opacity(0.9), radius: 4)
+            }
+        }
+        .frame(width: 14, height: 16)
+        .padding(.horizontal, 4)
+    }
+}
+
+/// Kartu kabar di bawah notch fisik: ikon, judul, keterangan, dan nilai (mis. persen baterai).
+struct NoticeCard: View {
+    let card: NotchModel.Card
+    let notchHeight: CGFloat
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Color.clear.frame(height: notchHeight)
+            HStack(spacing: 10) {
+                Image(systemName: card.icon)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(card.tint)
+                    .frame(width: 30, height: 30)
+                    .background(Circle().fill(card.tint.opacity(0.18)))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(card.title).font(.system(size: 12.5, weight: .semibold)).lineLimit(1)
+                    if !card.subtitle.isEmpty {
+                        Text(card.subtitle).font(.system(size: 10.5)).foregroundStyle(.white.opacity(0.55)).lineLimit(1)
+                    }
+                }
+                Spacer(minLength: 6)
+                if let value = card.value {
+                    Text(value).font(.system(size: 18, weight: .semibold, design: .rounded).monospacedDigit())
+                }
+            }
+            .foregroundStyle(.white)
+            .padding(.horizontal, 14)
+            .frame(maxHeight: .infinity)
+        }
+    }
+}
+
 struct LevelBar: View {
     let value: Double
     let tint: Color
@@ -224,117 +306,230 @@ struct ExpandedView: View {
             header.frame(height: model.notchSize.height)
             Group {
                 if model.dropTargeted {
-                    DropChoice(model: model)
+                    DropChoice(model: model).padding(.horizontal, 14)
                 } else if let toast = model.toast, toast.isBanner {
-                    ToastBanner(model: model, toast: toast)
+                    ToastBanner(model: model, toast: toast).padding(.horizontal, 14)
                 } else {
-                    switch model.tab {
-                    case .home: HomePanel(model: model, media: model.media, calendar: model.calendar)
-                    case .notes: NotesPanel(model: model, notes: model.notes)
-                    case .clipboard: ClipboardPanel(model: model, history: model.clipboard)
-                    case .tray: TrayPanel(model: model, tray: model.tray)
-                    case .timer: TimerPanel(timer: model.timer)
-                    case .mirror: MirrorPanel(camera: model.camera)
-                    case .shortcuts: ShortcutsPanel(model: model, shortcuts: model.shortcuts)
-                    }
+                    page
+                        .id(model.tab)
+                        .transition(.asymmetric(
+                            insertion: .opacity.combined(with: .offset(x: model.pageForward ? 24 : -24)),
+                            removal: .opacity.animation(.easeOut(duration: 0.1))))
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                        .padding(.horizontal, 16)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .padding(.horizontal, 14)
             .padding(.top, 8)
-            .padding(.bottom, 14)
+            if !model.dropTargeted, !(model.toast?.isBanner ?? false) {
+                PageDock(tabs: model.tabs, current: model.tab) { model.go(to: $0) }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 7)
+                    .zIndex(1) // ikon yang membesar boleh menutupi isi halaman di atasnya
+            } else {
+                Spacer().frame(height: 12)
+            }
         }
         .foregroundStyle(.white)
     }
 
-    /// Baris setinggi notch: kiri & kanan notch fisik, tengahnya dibiarkan kosong. Kedua sisi
-    /// dibuat sama lebar supaya tidak ada yang masuk ke bawah notch fisik; tombol tab mengecil bila
-    /// tabnya banyak.
+    @ViewBuilder private var page: some View {
+        switch model.tab {
+        case .home: HomePanel(model: model, calendar: model.calendar)
+        case .music: MusicPanel(model: model, media: model.media)
+        case .water: WaterPanel(water: model.water)
+        case .todo: TodoPanel(model: model, todo: model.todo)
+        case .notes: NotesPanel(model: model, notes: model.notes)
+        case .clipboard: ClipboardPanel(model: model, history: model.clipboard)
+        case .tray: TrayPanel(model: model, tray: model.tray)
+        case .timer: TimerPanel(timer: model.timer)
+        case .mirror: MirrorPanel(camera: model.camera)
+        case .shortcuts: ShortcutsPanel(model: model, shortcuts: model.shortcuts)
+        }
+    }
+
+    /// Baris setinggi notch: judul halaman di kiri notch fisik; tanggal, jam, baterai, dan
+    /// equalizer di kanannya. Tengahnya (notch fisik) dibiarkan kosong.
     private var header: some View {
         GeometryReader { geo in
             // Lebar notch fisik dalam koordinat isi (isi diperbesar `scale` kali saat ukuran Besar).
             let gap = model.notchSize.width / CGFloat(model.prefs.scale) + 10
             let side = max(0, (geo.size.width - gap) / 2)
-            let count = CGFloat(max(1, model.tabs.count))
-            let tabWidth = min(30, max(20, (side - 10) / count - 2))
             HStack(spacing: 0) {
                 HStack(spacing: 6) {
                     if !model.appMode {
-                        Circle().fill(model.connected ? Color.accent : .gray).frame(width: 7, height: 7)
+                        Circle().fill(model.connected ? Color.accent : .gray).frame(width: 6, height: 6)
                     }
-                    Text("Cognify").font(.system(size: 12, weight: .semibold))
-                    if !model.appMode, let overdue = model.state?.overdue, overdue > 0 {
+                    Text(model.tab.label).font(.system(size: 13, weight: .bold, design: .rounded)).lineLimit(1)
+                    if !model.appMode, model.tab == .home, let overdue = model.state?.overdue, overdue > 0 {
                         Text(L("\(overdue) terlambat", "\(overdue) overdue"))
-                            .font(.system(size: 10.5, weight: .semibold))
+                            .font(.system(size: 10, weight: .semibold))
                             .padding(.horizontal, 6).padding(.vertical, 2)
                             .background(Capsule().fill(Color.red.opacity(0.28)))
                             .foregroundStyle(Color(red: 1, green: 0.62, blue: 0.6))
                             .lineLimit(1)
                     }
                 }
-                .padding(.leading, 12)
+                .padding(.leading, 14)
                 .frame(width: side, alignment: .leading)
                 Color.clear.frame(width: gap)
-                HStack(spacing: 2) {
-                    ForEach(model.tabs, id: \.self) { tab in
-                        TabButton(icon: tab.icon, label: tab.label, selected: model.tab == tab, width: tabWidth,
-                                  badge: tab == .tray && !model.tray.items.isEmpty ? model.tray.items.count : nil) { model.tab = tab }
+                HStack(spacing: 8) {
+                    if let battery = model.battery { BatteryRing(battery: battery) }
+                    Text(Self.dateTime(model.now))
+                        .font(.system(size: 11.5, weight: .semibold).monospacedDigit())
+                        .foregroundStyle(.white.opacity(0.8))
+                        .lineLimit(1)
+                    if model.features.media, model.media.nowPlaying?.playing == true {
+                        Equalizer(playing: true, spectrum: model.spectrum)
                     }
                 }
-                .padding(.trailing, 8)
+                .padding(.trailing, 14)
                 .frame(width: side, alignment: .trailing)
             }
             .frame(height: geo.size.height)
         }
     }
+
+    static func dateTime(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: Lang.english ? "en_US" : "id_ID")
+        f.dateFormat = Lang.english ? "EEE d MMM  h:mm" : "EEE d MMM  HH.mm"
+        return f.string(from: date)
+    }
 }
 
-struct TabButton: View {
-    let icon: String
-    let label: String
-    let selected: Bool
-    var width: CGFloat = 30
-    var badge: Int? = nil
-    let action: () -> Void
+/// Cincin baterai kecil (hijau saat dicas, merah di bawah 20%).
+struct BatteryRing: View {
+    let battery: NotchModel.Battery
 
     var body: some View {
-        Button(action: { withAnimation(.notch) { action() } }) {
-            Image(systemName: icon)
-                .font(.system(size: width < 26 ? 10.5 : 11.5, weight: .semibold))
-                .frame(width: width, height: 22)
-                .background(Capsule().fill(Color.white.opacity(selected ? 0.16 : 0)))
-                .foregroundStyle(selected ? .white : .white.opacity(0.55))
-                .overlay(alignment: .topTrailing) {
-                    if let badge {
-                        Text("\(badge)").font(.system(size: 8.5, weight: .bold)).padding(.horizontal, 3.5).padding(.vertical, 0.5)
-                            .background(Capsule().fill(Color.accent)).offset(x: 3, y: -2)
+        let tint: Color = battery.charging ? .green : battery.percent <= 20 ? .red : .white
+        ZStack {
+            Circle().stroke(Color.white.opacity(0.15), lineWidth: 2.2)
+            Circle().trim(from: 0, to: CGFloat(battery.percent) / 100)
+                .stroke(tint, style: StrokeStyle(lineWidth: 2.2, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+            if battery.charging {
+                Image(systemName: "bolt.fill").font(.system(size: 6, weight: .bold)).foregroundStyle(tint)
+            }
+        }
+        .frame(width: 13, height: 13)
+        .help(L("Baterai \(battery.percent)%", "Battery \(battery.percent)%"))
+    }
+}
+
+/// Titik halaman di bawah panel. Saat diarahkan kursor berubah seperti Dock macOS: titik jadi
+/// ikon halaman, yang paling dekat kursor membesar paling besar dan namanya muncul di atasnya.
+/// Klik untuk lompat ke halaman itu.
+struct PageDock: View {
+    let tabs: [NotchModel.Tab]
+    let current: NotchModel.Tab
+    let select: (NotchModel.Tab) -> Void
+    var previewPointer: CGFloat? = nil // untuk snapshot
+    @State private var hoverPointer: CGFloat? // posisi x kursor di baris ikon (nil = tidak diarahkan)
+    private var pointer: CGFloat? { hoverPointer ?? previewPointer }
+
+    private static let base: CGFloat = 20   // ukuran ikon tanpa pembesaran
+    private static let peak: CGFloat = 34   // ukuran ikon tepat di bawah kursor
+    private static let reach: CGFloat = 64  // jarak (pt) pengaruh pembesaran
+    private static let gap: CGFloat = 4
+
+    var body: some View {
+        ZStack(alignment: .bottom) {
+            if let pointer {
+                icons(pointer)
+                    .transition(.opacity.combined(with: .scale(scale: 0.6, anchor: .bottom)))
+            } else {
+                dots.transition(.opacity)
+            }
+        }
+        .frame(height: 6, alignment: .bottom)
+        // Area hover setinggi ikon terbesar supaya kursor tidak "jatuh" saat ikon membesar.
+        .background(alignment: .bottom) {
+            Color.clear
+                .frame(width: hoverWidth, height: Self.peak + 14)
+                .notchPointer { point in
+                    guard let point else {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { hoverPointer = nil }
+                        return
+                    }
+                    let x = point.x - (hoverWidth - restWidth) / 2
+                    if hoverPointer == nil {
+                        withAnimation(.spring(response: 0.28, dampingFraction: 0.8)) { hoverPointer = x }
+                    } else {
+                        // Posisi kursor datang 20x per detik: animasi pendek menghaluskan pembesaran.
+                        withAnimation(.easeOut(duration: 0.09)) { hoverPointer = x }
                     }
                 }
-                .contentShape(Capsule())
         }
-        .buttonStyle(.plain)
-        .help(label)
     }
+
+    private var restWidth: CGFloat { CGFloat(tabs.count) * (Self.base + Self.gap) - Self.gap }
+    private var hoverWidth: CGFloat { restWidth + 2 * (Self.peak - Self.base) }
+
+    private var dots: some View {
+        HStack(spacing: 5) {
+            ForEach(tabs, id: \.self) { tab in
+                Capsule()
+                    .fill(Color.white.opacity(tab == current ? 0.9 : 0.25))
+                    .frame(width: tab == current ? 14 : 5, height: 5)
+            }
+        }
+        .animation(.notch, value: current)
+    }
+
+    /// Ukuran ikon ke-i menurut jaraknya dari kursor (kurva kosinus, seperti Dock).
+    private func size(_ index: Int, _ pointer: CGFloat) -> CGFloat {
+        let center = CGFloat(index) * (Self.base + Self.gap) + Self.base / 2
+        let distance = min(1, abs(pointer - center) / Self.reach)
+        return Self.base + (Self.peak - Self.base) * (cos(distance * .pi) + 1) / 2
+    }
+
+    private func icons(_ pointer: CGFloat) -> some View {
+        let nearest = tabs.indices.min { abs(pointer - centerX($0)) < abs(pointer - centerX($1)) }
+        return HStack(alignment: .bottom, spacing: Self.gap) {
+            ForEach(Array(tabs.enumerated()), id: \.element) { index, tab in
+                let side = size(index, pointer)
+                Button { select(tab) } label: {
+                    Image(systemName: tab.icon)
+                        .font(.system(size: side * 0.46, weight: .semibold))
+                        .frame(width: side, height: side)
+                        .background(RoundedRectangle(cornerRadius: side * 0.28, style: .continuous)
+                            .fill(tab == current ? Color.accent : Color(white: 0.2)))
+                        .foregroundStyle(.white)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .overlay(alignment: .top) {
+                    if index == nearest {
+                        Text(tab.label)
+                            .font(.system(size: 10.5, weight: .semibold))
+                            .lineLimit(1)
+                            .fixedSize()
+                            .padding(.horizontal, 7).padding(.vertical, 3)
+                            .background(Capsule().fill(Color(white: 0.16)))
+                            .foregroundStyle(.white)
+                            .offset(y: -22)
+                    }
+                }
+            }
+        }
+        .fixedSize()
+    }
+
+    private func centerX(_ index: Int) -> CGFloat { CGFloat(index) * (Self.base + Self.gap) + Self.base / 2 }
 }
 
 // MARK: - Beranda: deadline + catatan cepat
 
 struct HomePanel: View {
     @ObservedObject var model: NotchModel
-    @ObservedObject var media: MediaMonitor
     @ObservedObject var calendar: CalendarFeed
 
     var body: some View {
         HStack(alignment: .top, spacing: 14) {
-            if model.features.media, media.nowPlaying != nil {
-                MediaCard(media: media, spectrum: model.spectrum).frame(width: 186)
-                Divider().overlay(Color.white.opacity(0.08))
-                AgendaList(model: model, calendar: calendar, rows: 3, compact: true).frame(width: 222)
-                QuickNote(model: model, compact: true)
-            } else {
-                AgendaList(model: model, calendar: calendar, rows: 3).frame(width: 340)
-                QuickNote(model: model, compact: false)
-            }
+            AgendaList(model: model, calendar: calendar, rows: 3).frame(width: 318)
+            QuickNote(model: model, compact: false)
         }
     }
 }
@@ -440,7 +635,7 @@ struct EventRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .onHover { hover = $0 }
+        .notchHover { hover = $0 }
     }
 
     private var soon: Bool { !event.allDay && event.due.timeIntervalSince(now) < 60 * 60 }
@@ -496,7 +691,7 @@ struct CalendarRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .onHover { hover = $0 }
+        .notchHover { hover = $0 }
         .help(L("Buka app Kalender", "Open Calendar"))
     }
 }
@@ -762,7 +957,7 @@ struct NoteRow: View {
         .font(.system(size: 11.5))
         .padding(.horizontal, 10).padding(.vertical, 7)
         .background(RoundedRectangle(cornerRadius: 9).fill(Color.white.opacity(hover ? 0.1 : 0.06)))
-        .onHover { hover = $0 }
+        .notchHover { hover = $0 }
     }
 
     static func format(_ date: Date) -> String {
@@ -803,6 +998,12 @@ struct ToastBanner: View {
                 switch action {
                 case .startTimer(let label):
                     Button(label) { model.toast = nil; model.timer.start() }.buttonStyle(PillButtonStyle(prominent: true, large: true))
+                case .drink:
+                    Button(L("Minum \(model.water.glass) ml", "Drink \(model.water.glass) ml")) { model.toast = nil; model.water.drink(); model.setExpanded(false) }
+                        .buttonStyle(PillButtonStyle(prominent: true, large: true))
+                case .todoDone(let id):
+                    Button(L("Selesai", "Done")) { model.toast = nil; model.todo.toggle(id); model.setExpanded(false) }
+                        .buttonStyle(PillButtonStyle(prominent: true, large: true))
                 case .join(let url):
                     Button(L("Gabung", "Join")) { model.toast = nil; NSWorkspace.shared.open(url); model.setExpanded(false) }
                         .buttonStyle(PillButtonStyle(prominent: true, large: true))
@@ -821,6 +1022,8 @@ struct ToastBanner: View {
         case .failed: return "exclamationmark.triangle.fill"
         case .alert(_, _, .startTimer?): return "timer"
         case .alert(_, _, .join?): return "video.fill"
+        case .alert(_, _, .drink?): return "drop.fill"
+        case .alert(_, _, .todoDone?): return "checklist"
         default: return "bell.fill"
         }
     }

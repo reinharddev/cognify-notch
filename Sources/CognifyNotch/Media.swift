@@ -169,6 +169,16 @@ final class MediaMonitor: ObservableObject {
     func next() { send("next") }
     func previous() { send("prev") }
     func cycleShuffle() { send("shuffle") }
+
+    /// Lompat ke detik tertentu (klik baris lirik).
+    func seek(to seconds: Double) {
+        send("seek:\(max(0, seconds))")
+        if var current = nowPlaying {
+            current.elapsed = max(0, seconds)
+            current.timestamp = Date()
+            nowPlaying = current
+        }
+    }
     func cycleRepeat() { send("repeat") }
 
     /// Ikon app pemutar (dipakai bila lagu tidak punya sampul, mis. Spotify).
@@ -391,7 +401,7 @@ struct ControlButton: View {
                 .contentShape(Circle())
         }
         .buttonStyle(PressableStyle())
-        .onHover { hover = $0 }
+        .notchHover { hover = $0 }
     }
 }
 

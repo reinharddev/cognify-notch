@@ -182,7 +182,7 @@ struct TrayTile: View {
         .frame(width: 84, height: 108, alignment: .top)
         .padding(.top, 4)
         .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(hover ? 0.08 : 0)))
-        .onHover { hover = $0 }
+        .notchHover { hover = $0 }
         .onTapGesture(count: 2) { tray.open(item) }
         .onDrag { url.map { NSItemProvider(object: $0 as NSURL) } ?? NSItemProvider() } // seret keluar ke app lain
         .contextMenu {

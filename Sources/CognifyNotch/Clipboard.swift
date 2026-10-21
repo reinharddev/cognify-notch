@@ -203,7 +203,7 @@ private struct ClipboardTile: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(PressableStyle())
-        .onHover { hover = $0 }
+        .notchHover { hover = $0 }
         .help(L("Klik untuk copy lagi", "Click to copy again"))
     }
 }

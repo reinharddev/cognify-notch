@@ -136,12 +136,16 @@ final class StudyTimer: ObservableObject {
 
 @MainActor
 final class NotchModel: ObservableObject {
+    /// Halaman panel terbuka (digeser dengan panah, titik, atau dua jari).
     enum Tab: String, CaseIterable {
-        case home, notes, clipboard, tray, timer, mirror, shortcuts
+        case home, music, timer, water, todo, notes, clipboard, tray, mirror, shortcuts
 
         var icon: String {
             switch self {
             case .home: return "house.fill"
+            case .music: return "music.note"
+            case .water: return "drop.fill"
+            case .todo: return "checklist"
             case .notes: return "note.text"
             case .clipboard: return "doc.on.clipboard"
             case .tray: return "tray.full.fill"
@@ -154,10 +158,13 @@ final class NotchModel: ObservableObject {
         var label: String {
             switch self {
             case .home: return L("Beranda", "Home")
+            case .music: return L("Musik", "Music")
+            case .water: return L("Pengingat Minum", "Water Reminder")
+            case .todo: return L("Daftar Tugas", "To-do")
             case .notes: return L("Catatan", "Notes")
             case .clipboard: return "Clipboard"
             case .tray: return "Tray"
-            case .timer: return "Timer"
+            case .timer: return "Pomodoro"
             case .mirror: return L("Cermin", "Mirror")
             case .shortcuts: return L("Pintasan", "Shortcuts")
             }
@@ -178,6 +185,35 @@ final class NotchModel: ObservableObject {
         var clipboard = true // tab riwayat clipboard
         var downloads = true // progress download di sayap
         var voice = true // tombol mikrofon di catatan cepat
+        var lyrics = true // lirik tersinkron dari LRCLIB (internet)
+        var water = true // halaman & pengingat minum
+        var todo = true // halaman tugas + pengingat
+        var companion = true // mata saat notch diam
+        var keyboard = true // kabar Caps Lock & bahasa keyboard
+        var network = true // kabar internet putus/tersambung
+        var hideFullscreen = true // menyingkir saat app layar penuh
+    }
+
+    /// Kartu kabar singkat di bawah notch (charger, AirPods, unduhan, Caps Lock, internet).
+    struct Card: Equatable {
+        let icon: String
+        let tint: Color
+        let title: String
+        var subtitle: String = ""
+        var value: String? = nil
+    }
+
+    /// Ekspresi mata saat notch diam.
+    enum Mood: Equatable { case awake, blink, asleep, hello }
+
+    @MainActor
+    final class Face: ObservableObject {
+        @Published var mood: Mood = .awake
+    }
+
+    struct Battery: Equatable {
+        let percent: Int
+        let charging: Bool
     }
 
     /// Perubahan volume / kecerahan yang sedang ditampilkan.
@@ -198,6 +234,8 @@ final class NotchModel: ObservableObject {
         case startTimer(String) // label tombol
         case open(path: String)
         case join(URL) // rapat online dari Kalender
+        case drink // pengingat minum
+        case todoDone(UUID) // pengingat tugas
     }
 
     /// Isi "sayap" kiri-kanan notch saat tertutup (mirip Live Activity).
@@ -209,6 +247,7 @@ final class NotchModel: ObservableObject {
         var media = false // sampul + equalizer
         var title: String? = nil // teks di sayap kiri (nama perangkat / judul lagu); sayap kiri jadi lebar
         var wideRight = true // false: hanya sayap kiri yang melebar (judul lagu baru)
+        var eyes = false // mata (notch diam)
     }
 
     @Published var expanded = false
@@ -227,6 +266,17 @@ final class NotchModel: ObservableObject {
     @Published private(set) var notice: DeviceNotice?
     /// Judul lagu yang baru mulai: sayap kiri melebar menampilkannya sampai selesai bergulir.
     @Published private(set) var songBanner: String?
+    /// Ekspresi mata; objek terpisah supaya kedipan hanya menggambar ulang kedua mata.
+    let face = Face()
+    private var mood: Mood {
+        get { face.mood }
+        set { face.mood = newValue }
+    }
+    @Published private(set) var battery: Battery? = PowerMonitor.current()
+    /// Arah pindah halaman terakhir (untuk animasi geser).
+    @Published private(set) var pageForward = true
+    private var lastActivity = Date()
+    private var companionTask: Task<Void, Never>?
     private var lastSong: String?
     private var bannerTask: Task<Void, Never>?
 
@@ -244,7 +294,12 @@ final class NotchModel: ObservableObject {
     let clipboard = ClipboardHistory()
     let downloads = DownloadWatcher()
     let voice = VoiceNote()
+    let lyrics = LyricsService()
+    let water = WaterTracker()
+    let todo = TodoStore()
     let prefs: Preferences
+    private let keyboard = KeyboardWatcher()
+    private let network = NetworkWatcher()
     private let levels = SystemLevels()
     private var levelTask: Task<Void, Never>?
     private let power = PowerMonitor()
@@ -276,11 +331,25 @@ final class NotchModel: ObservableObject {
         for publisher in [timer.objectWillChange.eraseToAnyPublisher(), media.objectWillChange.eraseToAnyPublisher(),
                           tray.objectWillChange.eraseToAnyPublisher(), calendar.objectWillChange.eraseToAnyPublisher(),
                           notes.objectWillChange.eraseToAnyPublisher(), downloads.objectWillChange.eraseToAnyPublisher(),
-                          clipboard.objectWillChange.eraseToAnyPublisher(), self.prefs.objectWillChange.eraseToAnyPublisher()] {
+                          clipboard.objectWillChange.eraseToAnyPublisher(), self.prefs.objectWillChange.eraseToAnyPublisher(),
+                          lyrics.objectWillChange.eraseToAnyPublisher(), water.objectWillChange.eraseToAnyPublisher(),
+                          todo.objectWillChange.eraseToAnyPublisher()] {
             publisher.sink { [weak self] in self?.objectWillChange.send() }.store(in: &changes)
         }
         levels.onChange = { [weak self] level in self?.showLevel(level) }
-        power.onNotice = { [weak self] notice in self?.showNotice(notice) }
+        power.onNotice = { [weak self] notice in
+            self?.showNotice(notice)
+            self?.battery = PowerMonitor.current()
+        }
+        keyboard.onCapsLock = { [weak self] on in self?.showNotice(.capsLock(on)) }
+        keyboard.onInputSource = { [weak self] name in self?.showNotice(.inputSource(name)) }
+        network.onChange = { [weak self] online in self?.showNotice(.network(online)) }
+        companionTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: UInt64(Double.random(in: 5...10) * 1_000_000_000))
+                self?.companionStep()
+            }
+        }
         audioDevices.onNotice = { [weak self] notice in self?.showNotice(notice) }
         hotKey.onPress = { [weak self] in self?.toggleFromKeyboard() }
         self.prefs.$hotKey.dropFirst().sink { [weak self] choice in
@@ -324,14 +393,16 @@ final class NotchModel: ObservableObject {
 
     // MARK: Ukuran
 
-    static let expandedSize = CGSize(width: 680, height: 222)
+    static let expandedSize = CGSize(width: 680, height: 236)
+    static let eyeWing: CGFloat = 30
     static let wing: CGFloat = 76
     static let wideWing: CGFloat = 150
     static let songWing: CGFloat = 210
 
     /// Lebar sayap kiri & kanan saat tertutup.
     var wings: (left: CGFloat, right: CGFloat) {
-        guard !expanded, let live else { return (0, 0) }
+        guard !expanded, card == nil, let live else { return (0, 0) }
+        if live.eyes { return (Self.eyeWing, Self.eyeWing) }
         guard let _ = live.title else { return (Self.wing, Self.wing) }
         return live.wideRight ? (Self.wideWing, Self.wideWing) : (Self.songWing, Self.wing)
     }
@@ -344,8 +415,15 @@ final class NotchModel: ObservableObject {
             let scale = CGFloat(prefs.scale)
             return CGSize(width: Self.expandedSize.width * scale, height: (Self.expandedSize.height + notchSize.height - 32) * scale)
         }
+        if card != nil { return CGSize(width: max(notchSize.width + 220, 380), height: notchSize.height + 48) }
         if live != nil { return CGSize(width: notchSize.width + wings.left + wings.right, height: notchSize.height) }
         return notchSize
+    }
+
+    /// Kartu kabar yang sedang tampil (volume/kecerahan didahulukan sebagai sayap).
+    var card: Card? {
+        guard !expanded, level == nil, let notice else { return nil }
+        return Self.card(for: notice)
     }
 
     var live: Live? {
@@ -357,7 +435,6 @@ final class NotchModel: ObservableObject {
             return Live(icon: value < 0.5 ? "sun.min.fill" : "sun.max.fill", tint: .yellow, level: value)
         case nil: break
         }
-        if let notice { return Self.live(for: notice) }
         switch toast {
         case .working(let text)?: return Live(icon: "arrow.down.circle", text: text, tint: .accent)
         case .done?: return Live(icon: "checkmark.circle.fill", text: L("Tersimpan", "Saved"), tint: .green)
@@ -382,27 +459,42 @@ final class NotchModel: ObservableObject {
         if features.media, media.nowPlaying?.playing == true {
             return Live(icon: "music.note", tint: .accent, media: true, title: songBanner, wideRight: false)
         }
+        if features.companion { return Live(icon: "", tint: .white, eyes: true) }
         return nil
     }
 
-    private static func live(for notice: DeviceNotice) -> Live {
+    private static func card(for notice: DeviceNotice) -> Card {
         switch notice {
         case .charging(let percent, let full):
-            return Live(icon: "battery.100percent.bolt", text: full ? L("Penuh", "Full") : "\(percent)%", tint: .green)
+            return Card(icon: "bolt.fill", tint: .green, title: full ? L("Baterai penuh", "Fully charged") : L("Mengisi daya", "Charging"),
+                        subtitle: L("Charger tersambung", "Charger connected"), value: "\(percent)%")
         case .unplugged(let percent):
-            return Live(icon: batteryIcon(percent), text: "\(percent)%", tint: .white)
+            return Card(icon: batteryIcon(percent), tint: .white, title: L("Charger dicabut", "Charger unplugged"),
+                        subtitle: L("Memakai baterai", "On battery"), value: "\(percent)%")
         case .lowBattery(let percent):
-            return Live(icon: "battery.25percent", text: "\(percent)%", tint: .red)
+            return Card(icon: "battery.25percent", tint: .red, title: L("Baterai lemah", "Low battery"),
+                        subtitle: L("Colok charger sebentar lagi", "Plug in the charger soon"), value: "\(percent)%")
         case .audioConnected(let name, let battery):
-            return Live(icon: audioIcon(name), text: battery ?? L("Tersambung", "Connected"), tint: .white, title: shortName(name))
+            return Card(icon: audioIcon(name), tint: .white, title: shortName(name),
+                        subtitle: L("Tersambung", "Connected") + (battery.map { " · " + $0 } ?? ""))
         case .audioDisconnected(let name):
-            return Live(icon: audioIcon(name), text: L("Terputus", "Disconnected"), tint: .gray, title: shortName(name))
+            return Card(icon: audioIcon(name), tint: .gray, title: shortName(name), subtitle: L("Terputus", "Disconnected"))
         case .downloadDone(let name):
-            return Live(icon: "checkmark.circle.fill", text: L("Selesai", "Done"), tint: .green, title: name)
+            return Card(icon: "checkmark.circle.fill", tint: .green, title: L("Unduhan selesai", "Download complete"), subtitle: name)
         case .downloadFailed(let name):
-            return Live(icon: "exclamationmark.triangle.fill", text: L("Gagal", "Failed"), tint: .orange, title: name)
+            return Card(icon: "exclamationmark.triangle.fill", tint: .orange, title: L("Unduhan gagal", "Download failed"), subtitle: name)
         case .downloadCanceled(let name):
-            return Live(icon: "xmark.circle.fill", text: L("Dibatalkan", "Canceled"), tint: .gray, title: name)
+            return Card(icon: "xmark.circle.fill", tint: .gray, title: L("Unduhan dibatalkan", "Download canceled"), subtitle: name)
+        case .capsLock(let on):
+            return Card(icon: on ? "capslock.fill" : "capslock", tint: on ? .accent : .gray,
+                        title: on ? L("Caps Lock nyala", "Caps Lock on") : L("Caps Lock mati", "Caps Lock off"),
+                        subtitle: on ? L("HURUF BESAR SEMUA", "TYPING IN CAPITALS") : L("Huruf biasa lagi", "Back to normal"))
+        case .inputSource(let name):
+            return Card(icon: "keyboard.fill", tint: .accent, title: name, subtitle: L("Bahasa keyboard", "Keyboard language"))
+        case .network(let online):
+            return Card(icon: online ? "wifi" : "wifi.slash", tint: online ? .green : .orange,
+                        title: online ? L("Internet tersambung", "Back online") : L("Internet terputus", "Offline"),
+                        subtitle: online ? L("Koneksi pulih", "Connection restored") : L("Periksa Wi-Fi atau kabel", "Check Wi-Fi or cable"))
         }
     }
 
@@ -436,6 +528,9 @@ final class NotchModel: ObservableObject {
             case .mirror: return features.camera
             case .shortcuts: return features.shortcuts
             case .clipboard: return features.clipboard
+            case .music: return features.media
+            case .water: return features.water
+            case .todo: return features.todo
             case .notes: return appMode
             default: return true
             }
@@ -458,8 +553,63 @@ final class NotchModel: ObservableObject {
         clipboard.setEnabled(next.clipboard)
         downloads.setEnabled(next.downloads)
         if !next.voice { voice.stop() }
+        if !next.lyrics { lyrics.reset() }
+        keyboard.setEnabled(next.keyboard)
+        network.setEnabled(next.network)
+        if !next.companion { mood = .awake }
         if !tabs.contains(tab) { tab = .home }
     }
+
+    // MARK: Halaman
+
+    /// Pindah ke halaman sebelum/berikutnya (melingkar).
+    func page(_ delta: Int) {
+        let list = tabs
+        guard !list.isEmpty else { return }
+        let index = list.firstIndex(of: tab) ?? 0
+        pageForward = delta > 0
+        withAnimation(.notch) { tab = list[(index + delta + list.count) % list.count] }
+    }
+
+    func go(to next: Tab) {
+        let list = tabs
+        pageForward = (list.firstIndex(of: next) ?? 0) >= (list.firstIndex(of: tab) ?? 0)
+        withAnimation(.notch) { tab = next }
+    }
+
+    // MARK: Mata
+
+    /// Gerakan mouse/klik (dari NotchController). Mata yang tertidur bangun dan menyapa.
+    func noteActivity() {
+        lastActivity = Date()
+        keyboard.checkCaps()
+        guard mood == .asleep else { return }
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) { mood = .hello }
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 1_600_000_000)
+            guard self?.mood == .hello else { return }
+            withAnimation(.easeInOut(duration: 0.2)) { self?.mood = .awake }
+        }
+    }
+
+    /// Tiap beberapa detik: berkedip, atau tertidur setelah 2,5 menit tanpa gerakan mouse.
+    private func companionStep() {
+        guard features.companion, !expanded, live?.eyes == true, mood != .hello else { return }
+        if Date().timeIntervalSince(lastActivity) > 150 {
+            if mood != .asleep { withAnimation(.easeInOut(duration: 0.6)) { mood = .asleep } }
+            return
+        }
+        guard mood == .awake else { return }
+        withAnimation(.easeInOut(duration: 0.07)) { mood = .blink }
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 140_000_000)
+            guard self?.mood == .blink else { return }
+            withAnimation(.easeInOut(duration: 0.09)) { self?.mood = .awake }
+        }
+    }
+
+    // Untuk snapshot.
+    func preview(mood next: Mood) { mood = next }
 
     // Untuk snapshot.
     func preview(level next: Level?, features next2: Features? = nil) {
@@ -499,7 +649,7 @@ final class NotchModel: ObservableObject {
         let seconds: Double
         switch next {
         case .lowBattery: seconds = 6
-        case .audioConnected, .downloadFailed: seconds = 4
+        case .audioConnected, .downloadFailed, .network(false): seconds = 4
         default: seconds = 3
         }
         noticeTask = Task { [weak self] in
@@ -636,7 +786,20 @@ final class NotchModel: ObservableObject {
 
     private func tick() {
         now = Date()
+        let next = PowerMonitor.current()
+        if next != battery { battery = next }
         announceMeetings()
+        if features.water, water.reminderDue(at: now) {
+            NSSound(named: "Tink")?.play()
+            show(.alert(title: L("Waktunya minum", "Time for some water"),
+                        detail: L("Hari ini \(WaterPanel.liters(water.total)) dari \(WaterPanel.liters(water.goal)) L",
+                                  "Today \(WaterPanel.liters(water.total)) of \(WaterPanel.liters(water.goal)) L"),
+                        action: .drink))
+        }
+        if features.todo, let item = todo.dueNow(now).first {
+            NSSound(named: "Glass")?.play()
+            show(.alert(title: item.text, detail: L("Pengingat tugas", "Task reminder"), action: .todoDone(item.id)))
+        }
     }
 
     /// Rapat online (Kalender) yang mulai dalam 5 menit → notch terbuka dengan tombol Gabung.

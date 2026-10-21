@@ -46,6 +46,24 @@ enum Snapshot {
         all.calendar = true
 
         let cases: [(String, NotchModel)] = [
+            ("n1-musik-lirik", make(app: true) { $0.expanded = true; $0.tab = .music; $0.preview(level: nil, features: all); $0.media.preview(song)
+                $0.lyrics.preview(.synced(LyricsService.parse("[00:10.00]Morning folds the city light\n[00:20.00]into paper birds tonight\n[01:15.00]If I could be by your side\n[01:24.00]I'd give you all my seasons\n[01:33.00]every summer, every rain\n[01:41.00]calling out your name"))) }),
+            ("n2-air", make(app: true) { $0.expanded = true; $0.tab = .water; $0.water.preview([(hour: 8, ml: 250), (hour: 9, ml: 250), (hour: 11, ml: 500), (hour: 13, ml: 250), (hour: 15, ml: 250)]) }),
+            ("n3-todo", make(app: true) { $0.expanded = true; $0.tab = .todo
+                $0.todo.preview([
+                    .init(id: UUID(), text: "Kumpul laporan praktikum", due: now.addingTimeInterval(2 * 3600)),
+                    .init(id: UUID(), text: "Balas chat Dina", done: true, doneAt: now),
+                    .init(id: UUID(), text: "Revisi esai bahasa", done: true, doneAt: now),
+                    .init(id: UUID(), text: "Beli kertas folio", due: now.addingTimeInterval(-600)),
+                ]) }),
+            ("n4-mata", make(app: true) { $0.state = NotchState(events: [], overdue: 0, processing: 0) }),
+            ("n5-mata-tidur", make(app: true) { $0.state = NotchState(events: [], overdue: 0, processing: 0); $0.preview(mood: .asleep) }),
+            ("n6-mata-menyapa", make(app: true) { $0.state = NotchState(events: [], overdue: 0, processing: 0); $0.preview(mood: .hello) }),
+            ("n7-kartu-charger", make(app: true) { $0.preview(notice: .charging(percent: 70, full: false)) }),
+            ("n8-kartu-airpods", make(app: true) { $0.preview(notice: .audioConnected(name: "AirPods Pro milik Reinhard", battery: "L 80% R 75%")) }),
+            ("n9-kartu-capslock", make(app: true) { $0.preview(notice: .capsLock(true)) }),
+            ("na-kartu-internet", make(app: true) { $0.preview(notice: .network(false)) }),
+            ("nb-alert-minum", make(app: true) { $0.expanded = true; $0.toast = .alert(title: "Waktunya minum", detail: "Hari ini 1 dari 2 L", action: .drink) }),
             ("s2-timer-jalan", make(app: true) { $0.expanded = true; $0.tab = .timer; $0.timer.start() }),
             ("i-app-beranda", make(app: true) { $0.expanded = true; $0.preview(level: nil, features: all); $0.media.preview(song); $0.calendar.preview(calendarSample) }),
             ("j-app-catatan", make(app: true) { $0.expanded = true; $0.tab = .notes; $0.notes.preview(["Beli kertas folio + map biru", "Ide lagu: bridge pakai akor Am-F-C-G", "Tanya Bu Rina soal remedial"]) }),
@@ -98,6 +116,19 @@ enum Snapshot {
                 try? png.write(to: folder.appendingPathComponent("\(name).png"))
             }
             model.timer.reset()
+        }
+        // Baris halaman saat diarahkan kursor (efek Dock).
+        let dock = ZStack(alignment: .bottom) {
+            Color.black
+            PageDock(tabs: NotchModel.Tab.allCases, current: .music, select: { _ in }, previewPointer: 70).padding(.bottom, 12)
+        }
+        .frame(width: 420, height: 90)
+        .environment(\.colorScheme, .dark)
+        let renderer = ImageRenderer(content: dock)
+        renderer.scale = 2
+        if let image = renderer.nsImage, let tiff = image.tiffRepresentation,
+           let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) {
+            try? png.write(to: folder.appendingPathComponent("z-dock-hover.png"))
         }
         Lang.english = false
         print("snapshot → \(folder.path)")

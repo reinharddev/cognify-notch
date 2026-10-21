@@ -13,6 +13,9 @@ enum DeviceNotice: Equatable {
     case downloadDone(String)
     case downloadFailed(String)
     case downloadCanceled(String)
+    case capsLock(Bool)
+    case inputSource(String)
+    case network(Bool)
 }
 
 // MARK: - Baterai & charger
@@ -66,6 +69,11 @@ final class PowerMonitor {
                 break
             }
         }
+    }
+
+    /// Baterai saat ini untuk header panel; nil di Mac tanpa baterai.
+    static func current() -> NotchModel.Battery? {
+        read().map { NotchModel.Battery(percent: $0.percent, charging: $0.onAC) }
     }
 
     private static func read() -> Reading? {

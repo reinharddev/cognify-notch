@@ -36,12 +36,14 @@ final class NotchController {
     private var fallback: Timer?
     private var screen: NSScreen?
     private var ignoring = true
+    private var hiddenForFullscreen = false
     private var dragChangeCount = NSPasteboard(name: .drag).changeCount
     private var dragCountNow = 0
     private var mouseWasDown = false
     private var dropHide: DispatchWorkItem?
     private var swipeX: CGFloat = 0
     private var swiped = false
+    private var nextSwipe = Date.distantPast
     private var cancellables = Set<AnyCancellable>()
 
     init(model: NotchModel) {
@@ -93,7 +95,16 @@ final class NotchController {
                 self.model.setExpanded(false)
             }
         }
-        // Geser dua jari ke kiri/kanan di notch = lagu berikutnya/sebelumnya.
+        // Layar penuh: diperiksa saat app aktif atau Space berganti (tanpa polling).
+        for name in [NSWorkspace.didActivateApplicationNotification, NSWorkspace.activeSpaceDidChangeNotification] {
+            NSWorkspace.shared.notificationCenter.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    // Animasi masuk/keluar layar penuh perlu waktu sebelum ukuran jendela final.
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { self?.checkFullscreen() }
+                }
+            }
+        }
+        // Geser dua jari: pindah halaman (di halaman Musik: ganti lagu).
         NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
             MainActor.assumeIsolated { self?.scroll(event) }
             return event
@@ -136,6 +147,7 @@ final class NotchController {
     }
 
     private func wake() {
+        model.noteActivity()
         guard poller == nil, needsTracking(NSEvent.mouseLocation) else { return }
         poller = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.track() }
@@ -174,6 +186,7 @@ final class NotchController {
         }
         updateDrop(draggingContent && inside)
         if !model.dropTargeted { model.setHover(inside) } // tetap terbuka selama file berada di atas notch
+        HoverRegistry.shared.update(model.expanded ? mouse : nil) // hover di dalam panel (lihat Hover.swift)
         if !needsTracking(mouse) {
             poller?.invalidate()
             poller = nil
@@ -198,16 +211,40 @@ final class NotchController {
         }
     }
 
+    /// Geser dua jari ke kiri/kanan di panel terbuka: di halaman Musik ganti lagu, di halaman lain
+    /// pindah halaman.
     private func scroll(_ event: NSEvent) {
-        guard model.expanded, model.tab == .home, model.media.nowPlaying != nil, event.hasPreciseScrollingDeltas else { return }
+        guard model.expanded, event.hasPreciseScrollingDeltas else { return }
+        // Hanya saat kursor di dalam panel, dan sisa dorongan (inersia) setelah jari diangkat
+        // diabaikan: satu geseran = satu halaman, tidak bisa terlewat dua sekaligus.
+        guard event.momentumPhase.isEmpty, hotRect(margin: 0).contains(NSEvent.mouseLocation) else { return }
         if event.phase == .began { swipeX = 0; swiped = false }
         swipeX += event.scrollingDeltaX
-        guard !swiped, abs(swipeX) > 60, abs(swipeX) > abs(event.scrollingDeltaY) * 2 else { return }
+        guard !swiped, abs(swipeX) > 60, abs(swipeX) > abs(event.scrollingDeltaY) * 2,
+              Date() >= nextSwipe else { return }
         swiped = true
+        nextSwipe = Date().addingTimeInterval(0.35)
         // "Natural scrolling": konten mengikuti jari, jadi arah delta terbalik.
         let fingersLeft = event.isDirectionInvertedFromDevice ? swipeX < 0 : swipeX > 0
-        fingersLeft ? model.media.next() : model.media.previous()
+        if model.tab == .music, model.media.nowPlaying != nil {
+            fingersLeft ? model.media.next() : model.media.previous()
+        } else {
+            model.page(fingersLeft ? 1 : -1)
+        }
         NSHapticFeedbackManager.defaultPerformer.perform(.levelChange, performanceTime: .now)
+    }
+
+    /// App layar penuh di layar notch → notch disembunyikan sampai app itu keluar dari layar penuh.
+    private func checkFullscreen() {
+        let hide = model.features.hideFullscreen && FullscreenCheck.active(on: screen)
+        guard hide != hiddenForFullscreen else { return }
+        hiddenForFullscreen = hide
+        if hide {
+            model.setExpanded(false)
+            panel.orderOut(nil)
+        } else {
+            panel.orderFrontRegardless()
+        }
     }
 
     /// Setelah notch menutup, kembalikan keyboard ke app yang sedang dipakai.
@@ -257,6 +294,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     f.clipboard = flags["clipboard"] ?? f.clipboard
                     f.downloads = flags["downloads"] ?? f.downloads
                     f.voice = flags["voice"] ?? f.voice
+                    f.lyrics = flags["lyrics"] ?? f.lyrics
+                    f.water = flags["water"] ?? f.water
+                    f.todo = flags["todo"] ?? f.todo
+                    f.companion = flags["companion"] ?? f.companion
+                    f.keyboard = flags["keyboard"] ?? f.keyboard
+                    f.network = flags["network"] ?? f.network
+                    f.hideFullscreen = flags["hide_fullscreen"] ?? f.hideFullscreen
                     model.apply(f)
                 }
             }
