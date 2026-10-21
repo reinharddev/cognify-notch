@@ -49,6 +49,7 @@ enum Snapshot {
             ("n1-musik-lirik", make(app: true) { $0.expanded = true; $0.tab = .music; $0.preview(level: nil, features: all); $0.media.preview(song)
                 $0.lyrics.preview(.synced(LyricsService.parse("[00:10.00]Morning folds the city light\n[00:20.00]into paper birds tonight\n[01:15.00]If I could be by your side\n[01:24.00]I'd give you all my seasons\n[01:33.00]every summer, every rain\n[01:41.00]calling out your name"))) }),
             ("n2-air", make(app: true) { $0.expanded = true; $0.tab = .water; $0.water.preview([(hour: 8, ml: 250), (hour: 9, ml: 250), (hour: 11, ml: 500), (hour: 13, ml: 250), (hour: 15, ml: 250)]) }),
+            ("n2-air-en", make(app: true) { $0.prefs.language = .en; $0.expanded = true; $0.tab = .water; $0.water.preview([(hour: 8, ml: 250)]) }),
             ("n3-todo", make(app: true) { $0.expanded = true; $0.tab = .todo
                 $0.todo.preview([
                     .init(id: UUID(), text: "Kumpul laporan praktikum", due: now.addingTimeInterval(2 * 3600)),

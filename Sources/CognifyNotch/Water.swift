@@ -119,12 +119,15 @@ struct WaterPanel: View {
                 .font(.system(size: 11))
                 ProgressBar(value: water.progress, tint: .cyan).frame(width: 190)
                 HStack(spacing: 6) {
-                    Button { water.drink() } label: { Label(L("Minum \(water.glass) ml", "Drink \(water.glass) ml"), systemImage: "drop.fill") }
-                        .buttonStyle(PillButtonStyle(prominent: true))
+                    Button { water.drink() } label: {
+                        Label(L("Minum \(water.glass) ml", "Drink \(water.glass) ml"), systemImage: "drop.fill").lineLimit(1).fixedSize()
+                    }
+                    .buttonStyle(PillButtonStyle(prominent: true))
                     Button { withAnimation(.notch) { editing.toggle() } } label: {
-                        Label(editing ? L("Grafik", "Chart") : L("Atur", "Settings"), systemImage: editing ? "chart.bar.fill" : "slider.horizontal.3")
+                        Image(systemName: editing ? "chart.bar.fill" : "slider.horizontal.3")
                     }
                     .buttonStyle(PillButtonStyle(prominent: false))
+                    .help(editing ? L("Tampilkan grafik", "Show chart") : L("Atur target dan pengingat", "Set goal and reminders"))
                     if !water.today.isEmpty {
                         Button { water.undo() } label: { Image(systemName: "arrow.uturn.backward") }
                             .buttonStyle(PillButtonStyle(prominent: false)).help(L("Batalkan minum terakhir", "Undo last drink"))
@@ -132,12 +135,13 @@ struct WaterPanel: View {
                 }
                 Toggle(isOn: $water.reminders) {
                     Text(L("Ingatkan tiap \(water.interval) menit, \(water.startHour).00-\(water.endHour).00",
-                           "Remind every \(water.interval) min, \(water.startHour):00-\(water.endHour):00"))
+                           "Every \(water.interval) min, \(water.startHour):00-\(water.endHour):00"))
                         .font(.system(size: 10.5)).foregroundStyle(.white.opacity(0.55))
+                        .lineLimit(1).minimumScaleFactor(0.85)
                 }
                 .toggleStyle(MiniSwitch())
             }
-            .frame(width: 240, alignment: .leading)
+            .frame(width: 250, alignment: .leading)
             if editing {
                 settings
             } else {

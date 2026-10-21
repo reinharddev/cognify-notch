@@ -4,6 +4,8 @@ Notch ala Dynamic Island untuk MacBook: arahkan kursor ke notch, lalu notch memb
 
 **[Unduh versi terbaru (DMG)](https://github.com/reinharddev/cognify-notch/releases/latest)** · macOS 13 atau lebih baru · Apple Silicon dan Intel
 
+Situs: [reinharddev.github.io/cognify-notch](https://reinharddev.github.io/cognify-notch/) (sumbernya di folder `docs/`).
+
 Cognify Notch adalah bagian dari Cognify, aplikasi catatan dan belajar berbasis AI yang berjalan offline. Versi ini berdiri sendiri: tidak perlu memasang Cognify.
 
 ## Fitur

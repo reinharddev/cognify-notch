@@ -1,0 +1,546 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Cognify Notch</title>
+<meta name="description" content="Cognify Notch mengubah notch MacBook jadi panel kecil untuk lagu, lirik, agenda, timer belajar, catatan, clipboard, dan file. Gratis, open source, tanpa akun.">
+<meta property="og:title" content="Cognify Notch: notch MacBook yang ada isinya">
+<meta property="og:description" content="Lagu, lirik tersinkron, agenda, timer belajar, pengingat minum, daftar tugas, dan tray file di notch MacBook.">
+<meta property="og:image" content="https://reinharddev.github.io/cognify-notch/icon.png">
+<meta property="og:url" content="https://reinharddev.github.io/cognify-notch/">
+<meta name="twitter:card" content="summary">
+<meta name="theme-color" content="#f4efe6">
+<link rel="icon" type="image/png" href="favicon.png">
+<link rel="preload" href="bricolage.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="style.css?v=2">
+</head>
+<body>
+
+<!-- Sudut terbalik dipakai ulang oleh notch dan pil navigasi -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="ear" viewBox="0 0 10 10"><path d="M0 0H10V10A10 10 0 0 0 0 0Z"/></symbol>
+</svg>
+
+<header class="nav">
+  <a class="nav-pill left" href="#top">
+    <svg class="ear l"><use href="#ear"/></svg>
+    <img src="icon.png" alt="" width="20" height="20"><span>Cognify Notch</span>
+    <svg class="ear r"><use href="#ear"/></svg>
+  </a>
+  <div class="nav-pill right">
+    <svg class="ear l"><use href="#ear"/></svg>
+    <a href="#fitur">Fitur</a>
+    <a href="#cara">Cara pakai</a>
+    <a href="#data">Data</a>
+    <a href="#tanya">Tanya jawab</a>
+    <a class="nav-get dl" href="https://github.com/reinharddev/cognify-notch/releases/latest">Unduh</a>
+    <svg class="ear r"><use href="#ear"/></svg>
+  </div>
+</header>
+
+<div id="notch" data-view="idle" aria-label="Pratinjau Cognify Notch">
+  <div class="shell">
+    <svg class="ear l"><use href="#ear"/></svg>
+    <svg class="ear r"><use href="#ear"/></svg>
+
+    <div class="v v-idle"><span class="eyes"><i></i><i></i></span></div>
+
+    <div class="v v-music">
+      <span class="side l"><span class="art sm"></span></span>
+      <span class="gap"></span>
+      <span class="side r"><span class="eq"><i></i><i></i><i></i><i></i><i></i></span></span>
+    </div>
+
+    <div class="v v-title">
+      <span class="side l wide"><span class="art sm"></span><span class="marquee"><span>Jalan Pulang · Teras Senja</span></span></span>
+      <span class="gap"></span>
+      <span class="side r"><span class="eq"><i></i><i></i><i></i><i></i><i></i></span></span>
+    </div>
+
+    <div class="v v-lyric">
+      <span class="side l"><span class="art sm"></span></span>
+      <span class="gap"></span>
+      <span class="side r wide"><span class="wing-lyric" id="wingLyric">lampu jalan mulai menyala</span></span>
+    </div>
+
+    <div class="v v-hud">
+      <span class="side l"><i data-lucide="volume-2"></i></span>
+      <span class="gap"></span>
+      <span class="side r"><span class="hudbar"><b id="hudLevel"></b></span></span>
+    </div>
+
+    <div class="v v-card">
+      <div class="card-row">
+        <span class="card-icon" id="cardIcon"><i data-lucide="battery-charging"></i></span>
+        <span class="card-text"><b id="cardTitle">Mengisi daya</b><small id="cardDetail">Charger tersambung · 70%</small></span>
+        <span class="card-end" id="cardEnd"></span>
+      </div>
+    </div>
+
+    <div class="v v-open">
+      <div class="head">
+        <b id="pageTitle">Beranda</b>
+        <span class="head-r">
+          <span class="wx"><i data-lucide="cloud-sun"></i>29°</span>
+          <svg class="ring" viewBox="0 0 20 20"><circle class="t" cx="10" cy="10" r="7"/><circle class="p" cx="10" cy="10" r="7" pathLength="100" stroke-dasharray="70 100"/></svg>
+          <span id="headClock">Rab 21 Okt 13.13</span>
+        </span>
+      </div>
+
+      <div class="pages">
+        <section class="page" data-tab="home">
+          <div class="col">
+            <span class="label">Agenda</span>
+            <ul class="agenda">
+              <li><i class="dot" style="--c:#4c9bff"></i><span><b>Upacara bendera</b><small>07.00 · Sekolah</small></span></li>
+              <li class="now"><i class="dot" style="--c:#f2a33a"></i><span><b>Kelas online Fisika</b><small>10.00 · 5 menit lagi</small></span><button class="pill accent">Gabung</button></li>
+              <li><i class="dot" style="--c:#4c9bff"></i><span><b>Ulangan Biologi</b><small>Besok 08.00</small></span></li>
+            </ul>
+          </div>
+          <div class="col">
+            <span class="label">Catatan cepat</span>
+            <div class="input"><span id="noteText">Kumpul tugas biologi besok jam 10</span><span class="caret"></span><i data-lucide="mic" class="mic"></i></div>
+            <div class="calc"><span>= 3.750.000</span><small>Tekan Enter untuk menyimpan hasilnya</small></div>
+            <small class="muted" id="noteHint">Enter menyimpan ke Catatan</small>
+          </div>
+        </section>
+
+        <section class="page" data-tab="music">
+          <div class="col player">
+            <div class="now-playing">
+              <span class="art lg"></span>
+              <span><b>Jalan Pulang</b><small>Teras Senja</small></span>
+            </div>
+            <div class="seek"><span id="seekPos">1.12</span><span class="bar"><b id="seekBar"></b></span><span>3.40</span></div>
+            <div class="controls">
+              <i data-lucide="shuffle" class="dim"></i>
+              <i data-lucide="skip-back"></i>
+              <button class="play" id="playBtn" aria-label="Putar atau jeda"><i data-lucide="pause"></i></button>
+              <i data-lucide="skip-forward"></i>
+              <i data-lucide="repeat" class="dim"></i>
+            </div>
+            <div class="vol"><i data-lucide="volume-1"></i><span class="bar"><b style="width:60%"></b></span><i data-lucide="airplay"></i></div>
+          </div>
+          <div class="col lyrics" id="lyrics">
+            <p>lampu jalan mulai menyala</p>
+            <p>langkah pelan menuju rumah</p>
+            <p>ada cerita di saku jaket</p>
+            <p>kubawa pulang malam ini</p>
+            <p>biar hujan ikut bernyanyi</p>
+            <p>sampai pintu terbuka lagi</p>
+          </div>
+        </section>
+
+        <section class="page" data-tab="timer">
+          <div class="col center">
+            <div class="big-ring">
+              <svg viewBox="0 0 120 120"><circle class="t" cx="60" cy="60" r="54"/><circle class="p" id="pomoRing" cx="60" cy="60" r="54" pathLength="100" stroke-dasharray="62 100"/></svg>
+              <span><b id="pomo">15.32</b><small>Fokus</small></span>
+            </div>
+          </div>
+          <div class="col">
+            <span class="label">Durasi</span>
+            <div class="chips"><span class="chip on">25/5</span><span class="chip">50/10</span><span class="chip">90/15</span><span class="chip">Atur sendiri</span></div>
+            <div class="row"><button class="pill accent" id="pomoBtn"><i data-lucide="pause"></i>Jeda</button><button class="pill">Ulang</button></div>
+            <span class="label">Hari ini</span>
+            <div class="sessions"><i class="on"></i><i class="on"></i><i></i><i></i><small>2 dari 4 sesi</small></div>
+          </div>
+        </section>
+
+        <section class="page" data-tab="clock">
+          <div class="col">
+            <span class="label">Stopwatch</span>
+            <b class="digits" id="stopwatch">00:42.3</b>
+            <div class="row"><button class="pill accent"><i data-lucide="pause"></i>Jeda</button><button class="pill">Lap</button><button class="pill">Ulang</button></div>
+            <small class="muted">Lap 2 &nbsp; 00:31.8<br>Lap 1 &nbsp; 00:14.2</small>
+          </div>
+          <div class="col">
+            <span class="label">Hitung mundur</span>
+            <div class="chips tight"><span class="chip">1m</span><span class="chip">3m</span><span class="chip">5m</span><span class="chip">10m</span><span class="chip">15m</span><span class="chip">30m</span></div>
+            <div class="row"><button class="pill sq"><i data-lucide="minus"></i></button><b class="mins">20 menit</b><button class="pill sq"><i data-lucide="plus"></i></button><button class="pill accent"><i data-lucide="play"></i>Mulai</button></div>
+            <div class="cd">
+              <svg class="ring" viewBox="0 0 20 20"><circle class="t" cx="10" cy="10" r="7"/><circle class="p o" id="cdRing" cx="10" cy="10" r="7" pathLength="100" stroke-dasharray="23 100"/></svg>
+              <span>10 menit</span><b id="cd1">07.42</b><i data-lucide="x"></i>
+            </div>
+          </div>
+        </section>
+
+        <section class="page" data-tab="water">
+          <div class="col">
+            <div class="water-total"><b id="waterNow">1,5</b><span>/ 2 L</span></div>
+            <small><span class="muted">Hari ini</span> <b id="waterPct">75%</b></small>
+            <span class="bar water"><b id="waterBar" style="width:75%"></b></span>
+            <div class="row"><button class="pill accent" id="drinkBtn"><i data-lucide="droplet"></i>Minum 250 ml</button><button class="pill sq"><i data-lucide="sliders-horizontal"></i></button><button class="pill sq"><i data-lucide="undo-2"></i></button></div>
+            <span class="switch-row"><span class="switch"></span><small class="muted">Ingatkan tiap 60 menit, 8.00 sampai 21.00</small></span>
+          </div>
+          <div class="col chart" id="waterChart"></div>
+        </section>
+
+        <section class="page" data-tab="todo">
+          <div class="col wide">
+            <div class="input"><span class="muted">Tambah tugas, mis. kerjakan PR jam 7</span></div>
+            <ul class="todos">
+              <li><button class="check" aria-label="Tandai selesai"></button><span>Kerjakan PR matematika</span><small class="due">19.00</small></li>
+              <li class="done"><button class="check" aria-label="Tandai belum selesai"></button><span>Balas chat kelompok</span><small class="due">selesai</small></li>
+              <li><button class="check" aria-label="Tandai selesai"></button><span>Bawa jas lab</span><small class="due">Besok 07.00</small></li>
+            </ul>
+          </div>
+        </section>
+
+        <section class="page" data-tab="notes">
+          <div class="col wide">
+            <ul class="list">
+              <li><i data-lucide="file-text"></i><span>Kumpul tugas biologi besok jam 10</span><small>2 menit lalu</small></li>
+              <li><i data-lucide="mic"></i><span>Ide presentasi: mulai dari contoh sehari-hari</span><small>tadi pagi</small></li>
+              <li><i data-lucide="file-text"></i><span>Rumus luas lingkaran: L = π × r²</span><small>kemarin</small></li>
+            </ul>
+          </div>
+        </section>
+
+        <section class="page" data-tab="clipboard">
+          <div class="col wide">
+            <div class="input"><i data-lucide="search" class="dim"></i><span class="muted">Cari</span></div>
+            <ul class="list clip">
+              <li class="pinned"><i data-lucide="link"></i><span>https://meet.google.com/abc-defg-hij</span><button class="pin" aria-label="Sematkan"><i data-lucide="pin"></i></button></li>
+              <li><i data-lucide="type"></i><span>Bab 4 halaman 88 nomor 1 sampai 10</span><button class="pin" aria-label="Sematkan"><i data-lucide="pin"></i></button></li>
+              <li><i data-lucide="image"></i><span>Gambar · 1280 × 720</span><button class="pin" aria-label="Sematkan"><i data-lucide="pin"></i></button></li>
+            </ul>
+          </div>
+        </section>
+
+        <section class="page" data-tab="tray">
+          <div class="col wide">
+            <div class="files">
+              <span class="file"><i data-lucide="file-text"></i><b>laporan-biologi.pdf</b><small>2,4 MB</small></span>
+              <span class="file"><i data-lucide="image"></i><b>foto-kelompok.jpg</b><small>3,1 MB</small></span>
+              <span class="file"><i data-lucide="folder"></i><b>Tugas Fisika</b><small>Folder</small></span>
+              <span class="file drop"><i data-lucide="plus"></i><b>Seret file ke sini</b><small>lalu seret keluar kapan saja</small></span>
+            </div>
+          </div>
+        </section>
+
+        <section class="page" data-tab="mirror">
+          <div class="col wide center">
+            <div class="mirror"><i data-lucide="user-round"></i><small>Pratinjau kamera depan. Tidak ada yang direkam.</small></div>
+          </div>
+        </section>
+
+        <section class="page" data-tab="shortcuts">
+          <div class="col wide">
+            <div class="shortcuts">
+              <button><i data-lucide="book-open"></i>Mode belajar</button>
+              <button><i data-lucide="bell-off"></i>Matikan notifikasi</button>
+              <button><i data-lucide="graduation-cap"></i>Buka Classroom</button>
+              <button><i data-lucide="clock"></i>Catat jam belajar</button>
+              <button><i data-lucide="headphones"></i>Putar lo-fi</button>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div class="dots" id="dots" aria-label="Halaman"></div>
+    </div>
+  </div>
+</div>
+
+<main id="top">
+  <!-- ========== Pembuka ========== -->
+  <section class="hero" data-bg="#f4efe6">
+    <div class="hero-copy">
+      <h1>Notch di MacBook&#8209;mu,<br><span class="hl">akhirnya ada isinya.</span></h1>
+      <p class="lead">Lagu, lirik, agenda, timer belajar, catatan, dan file. Semuanya muncul di notch saat kursor mendekat, lalu menghilang lagi.</p>
+      <div class="cta">
+        <a class="btn primary dl" href="https://github.com/reinharddev/cognify-notch/releases/latest"><i data-lucide="download"></i>Unduh untuk Mac</a>
+        <a class="btn" href="https://github.com/reinharddev/cognify-notch"><i data-lucide="code-xml"></i>Kode sumber</a>
+      </div>
+      <p class="meta"><span class="ver">Versi terbaru</span> · Gratis · macOS 13 atau lebih baru · Apple Silicon dan Intel</p>
+    </div>
+
+    <div class="laptop" aria-hidden="true">
+      <div class="lid">
+        <div class="display" id="display">
+          <div class="d-menubar">
+            <span class="d-left"><b>Cognify</b><span>Berkas</span><span>Edit</span><span>Tampilan</span></span>
+            <span class="d-right"><i data-lucide="wifi"></i><i data-lucide="battery-medium"></i><span id="displayClock">Rab 13.13</span></span>
+          </div>
+          <span class="shape sun"></span>
+          <span class="shape hill a"></span>
+          <span class="shape hill b"></span>
+          <span class="shape hill c"></span>
+          <div class="win note">
+            <div class="win-bar"><i></i><i></i><i></i><b>Catatan</b></div>
+            <p class="w-title">Fotosintesis</p>
+            <span class="line" style="width:88%"></span><span class="line" style="width:72%"></span><span class="line" style="width:80%"></span><span class="line" style="width:46%"></span>
+          </div>
+          <div class="win cal">
+            <div class="win-bar"><i></i><i></i><i></i><b>Kalender</b></div>
+            <div class="ev" style="--c:#4c9bff"><b>Upacara</b><small>07.00</small></div>
+            <div class="ev" style="--c:#f2a33a"><b>Kelas Fisika</b><small>10.00</small></div>
+            <div class="ev" style="--c:#3fb27f"><b>Les gitar</b><small>16.00</small></div>
+          </div>
+          <div class="d-dock"><i style="--c:#ff7a59"></i><i style="--c:#4c9bff"></i><i style="--c:#ffd23f"></i><i style="--c:#3fb27f"></i><i style="--c:#8f87ff"></i><i style="--c:#141414"></i></div>
+        </div>
+      </div>
+      <div class="base"><span></span></div>
+    </div>
+    <p class="try"><span class="hover-only">Arahkan kursor ke notch di layar ini. Bisa dicoba.</span><span class="touch-only">Ketuk notch di layar ini. Bisa dicoba.</span></p>
+  </section>
+
+  <!-- ========== Fitur ========== -->
+  <section id="fitur" class="steps">
+    <header class="steps-head" data-bg="#f4efe6">
+      <h2>Sebelas halaman.<br>Satu notch.</h2>
+      <p>Gulir pelan-pelan. Notch di atas berubah mengikuti fitur yang sedang kamu baca. Isinya contoh, bukan datamu.</p>
+    </header>
+
+    <article class="step" data-notch="music" data-bg="#ffc9b5">
+      <div class="step-in">
+        <div class="step-main"><span class="tag"><i data-lucide="music"></i>Musik</span><h3>Lagu dari app apa saja.</h3><p>Spotify, Apple Music, YouTube di browser, VLC, dan lainnya. Sampul di kiri, equalizer di kanan yang mengikuti suara: kiri nada rendah, kanan nada tinggi.</p></div>
+        <aside class="how"><b>Cara pakai</b><ol><li>Putar lagu seperti biasa.</li><li>Arahkan kursor ke notch.</li><li>Putar, jeda, ganti lagu, acak, ulangi, atur volume, pilih speaker atau AirPods.</li></ol></aside>
+      </div>
+    </article>
+
+    <article class="step" data-notch="title" data-bg="#ffc9b5">
+      <div class="step-in">
+        <div class="step-main"><span class="tag"><i data-lucide="text"></i>Judul lagu</span><h3>Lagu baru, judulnya mampir.</h3><p>Saat lagu berganti, sisi kiri notch melebar dan menampilkan judulnya. Judul yang panjang bergulir sekali, lalu notch kembali seperti biasa.</p></div>
+        <aside class="how"><b>Cara pakai</b><ol><li>Otomatis, tidak perlu diatur.</li><li>Bisa dimatikan di Pengaturan.</li></ol></aside>
+      </div>
+    </article>
+
+    <article class="step" data-notch="open:music" data-bg="#c9c4ff">
+      <div class="step-in">
+        <div class="step-main"><span class="tag"><i data-lucide="mic-vocal"></i>Lirik</span><h3>Ikut bernyanyi, baris demi baris.</h3><p>Halaman Musik menampilkan lirik yang menyala mengikuti lagu. Klik satu baris untuk melompat ke bagian itu.</p></div>
+        <aside class="how"><b>Cara pakai</b><ol><li>Buka notch.</li><li>Geser dua jari ke halaman Musik.</li><li>Lirik diambil dari LRCLIB, perpustakaan lirik gratis dari komunitas.</li></ol></aside>
+      </div>
+    </article>
+
+    <article class="step" data-notch="lyric" data-bg="#c9c4ff">
+      <div class="step-in">
+        <div class="step-main"><span class="tag"><i data-lucide="captions"></i>Lirik di sisi notch</span><h3>Tanpa membuka apa-apa.</h3><p>Baris lirik yang sedang dinyanyikan berjalan di sisi kanan notch, jadi kamu tetap bisa bekerja.</p></div>
+        <aside class="how"><b>Cara pakai</b><ol><li>Buka Pengaturan.</li><li>Nyalakan Lirik di sisi notch.</li></ol></aside>
+      </div>
+    </article>
+
+    <article class="step" data-notch="open:home" data-bg="#a9d8ff">
+      <div class="step-in">
+        <div class="step-main"><span class="tag"><i data-lucide="calendar"></i>Agenda</span><h3>Hari ini dan besok, sekilas.</h3><p>Acara dari app Kalender. Rapat Zoom, Google Meet, Teams, atau Webex mendapat tombol Gabung.</p></div>
+        <aside class="how"><b>Cara pakai</b><ol><li>Buka notch, agenda ada di Beranda.</li><li>Izinkan akses Kalender saat diminta.</li></ol></aside>
+      </div>
+    </article>
+
+    <article class="step" data-notch="card:meeting" data-bg="#a9d8ff">
+      <div class="step-in">
+        <div class="step-main"><span class="tag"><i data-lucide="video"></i>Rapat</span><h3>Tidak telat masuk kelas online.</h3><p>Lima menit sebelum rapat mulai, notch terbuka sendiri dengan tombol Gabung. Satu klik dan kamu langsung masuk.</p></div>
+        <aside class="how"><b>Cara pakai</b><ol><li>Otomatis untuk acara Kalender yang punya tautan rapat.</li></ol></aside>
+      </div>
+    </article>
+
+    <article class="step" data-notch="open:home-calc" data-bg="#ffe08a">
+      <div class="step-in">
+        <div class="step-main"><span class="tag"><i data-lucide="pencil-line"></i>Catatan cepat</span><h3>Tulis, ucapkan, atau hitung.</h3><p>Satu baris lalu Enter, catatannya tersimpan. Tombol mikrofon mengubah suara jadi teks di Mac ini. Ketik <em>1.250.000 * 3</em>, <em>15% dari 200</em>, atau <em>5 km ke mil</em> dan hasilnya langsung muncul.</p></div>
+        <aside class="how"><b>Cara pakai</b><ol><li>Buka notch dan langsung mengetik.</li><li>Atau tekan <span class="kbd">⌃⌥N</span> dari mana saja.</li></ol></aside>
+      </div>
+    </article>
+
+    <article class="step" data-notch="open:timer" data-bg="#ffd0a8">
+      <div class="step-in">
+        <div class="step-main"><span class="tag"><i data-lucide="timer"></i>Pomodoro</span><h3>Fokus dulu, istirahat kemudian.</h3><p>Durasi 25/5, 50/10, 90/15, atau atur sendiri. Sisa waktu tampil di sisi notch, dan notch memberi tahu saat waktunya istirahat.</p></div>
+        <aside class="how"><b>Cara pakai</b><ol><li>Buka halaman Pomodoro.</li><li>Pilih durasi, klik Mulai.</li></ol></aside>
+      </div>
+    </article>
+
+    <article class="step" data-notch="open:clock" data-bg="#ffd0a8">
+      <div class="step-in">
+        <div class="step-main"><span class="tag"><i data-lucide="alarm-clock"></i>Stopwatch dan timer</span><h3>Untuk mi instan dan lari pagi.</h3><p>Stopwatch dengan lap, dan beberapa hitung mundur sekaligus. Hitung mundur tetap berjalan walau notch ditutup.</p></div>
+        <aside class="how"><b>Cara pakai</b><ol><li>Buka halaman Stopwatch &amp; Timer.</li><li>Pilih 1 sampai 30 menit atau atur sendiri.</li></ol></aside>
+      </div>
+    </article>
+
+    <article class="step" data-notch="open:water" data-bg="#b8ecf2">
+      <div class="step-in">
+        <div class="step-main"><span class="tag"><i data-lucide="droplet"></i>Minum</span><h3>Dua liter, sedikit demi sedikit.</h3><p>Atur target harian dan ukuran gelas. Notch mengingatkan di jam aktifmu dan menampilkan grafik minum per jam.</p></div>
+        <aside class="how"><b>Cara pakai</b><ol><li>Klik Minum setiap kali minum.</li><li>Atur target, jam aktif, dan jeda pengingat lewat ikon pengaturan.</li></ol></aside>
+      </div>
+    </article>
+
+    <article class="step" data-notch="open:todo" data-bg="#bde8d2">
+      <div class="step-in">
+        <div class="step-main"><span class="tag"><i data-lucide="list-checks"></i>Daftar tugas</span><h3>Tulis seperti bicara.</h3><p>"Kerjakan PR jam 7" atau "bawa jas lab besok pagi". Waktunya dibaca otomatis, dan notch mengingatkan saat waktunya tiba.</p></div>
+        <aside class="how"><b>Cara pakai</b><ol><li>Ketik di halaman Daftar Tugas.</li><li>Nyalakan sinkron Pengingat bila ingin tugasnya ikut ke iPhone.</li></ol></aside>
+      </div>
+    </article>
+
+    <article class="step" data-notch="open:clipboard" data-bg="#e3d9ff">
+      <div class="step-in">
+        <div class="step-main"><span class="tag"><i data-lucide="clipboard-list"></i>Clipboard</span><h3>Yang tadi kamu copy, masih ada.</h3><p>Teks, tautan, dan gambar terakhir. Sematkan yang sering dipakai, cari dengan kata kunci. Isi dari pengelola kata sandi tidak disimpan.</p></div>
+        <aside class="how"><b>Cara pakai</b><ol><li>Buka halaman Clipboard.</li><li>Klik satu baris untuk meng-copy-nya lagi.</li></ol></aside>
+      </div>
+    </article>
+
+    <article class="step" data-notch="open:tray" data-bg="#e3d9ff">
+      <div class="step-in">
+        <div class="step-main"><span class="tag"><i data-lucide="inbox"></i>Tray</span><h3>Tempat parkir file.</h3><p>Taruh file di notch, lalu seret keluar ke chat, email, atau folder lain. File tetap di tempat aslinya, jadi tidak memakan ruang.</p></div>
+        <aside class="how"><b>Cara pakai</b><ol><li>Seret file ke notch.</li><li>Seret keluar, kirim lewat AirDrop, atau ganti namanya.</li></ol></aside>
+      </div>
+    </article>
+
+    <article class="step" data-notch="open:mirror" data-bg="#ffc2d6">
+      <div class="step-in">
+        <div class="step-main"><span class="tag"><i data-lucide="scan-face"></i>Cermin</span><h3>Rapikan rambut sebelum kamera menyala.</h3><p>Kamera hanya menyala selama halaman Cermin terbuka, dan tidak merekam apa pun.</p></div>
+        <aside class="how"><b>Cara pakai</b><ol><li>Buka halaman Cermin.</li></ol></aside>
+      </div>
+    </article>
+
+    <article class="step" data-notch="open:shortcuts" data-bg="#ffc2d6">
+      <div class="step-in">
+        <div class="step-main"><span class="tag"><i data-lucide="zap"></i>Pintasan</span><h3>Satu klik, satu rutinitas.</h3><p>Jalankan Siri Shortcuts favoritmu: mode belajar, matikan notifikasi, atau buka situs kelas.</p></div>
+        <aside class="how"><b>Cara pakai</b><ol><li>Buka halaman Pintasan.</li><li>Daftarnya diambil dari app Shortcuts.</li></ol></aside>
+      </div>
+    </article>
+
+    <article class="step" data-notch="card:cycle" data-bg="#d5f0a8">
+      <div class="step-in">
+        <div class="step-main"><span class="tag"><i data-lucide="bell"></i>Kabar kecil</span><h3>Mac-mu sedikit lebih cerewet.</h3><p>Charger dicolok, AirPods tersambung, unduhan selesai atau gagal, Caps Lock menyala, bahasa keyboard berganti, internet putus. Notch memberi tahu sebentar, lalu diam lagi.</p></div>
+        <aside class="how"><b>Cara pakai</b><ol><li>Otomatis.</li><li>Tiap kabar bisa dimatikan dari ikon notch di menu bar.</li></ol></aside>
+      </div>
+    </article>
+
+    <article class="step" data-notch="hud" data-bg="#d5f0a8">
+      <div class="step-in">
+        <div class="step-main"><span class="tag"><i data-lucide="sun"></i>Volume dan kecerahan</span><h3>Volume dan kecerahan, di notch.</h3><p>Perubahan volume dan kecerahan tampil rapi di sisi notch.</p></div>
+        <aside class="how"><b>Cara pakai</b><ol><li>Tekan tombol volume atau kecerahan seperti biasa.</li></ol></aside>
+      </div>
+    </article>
+
+    <article class="step" data-notch="idle" data-bg="#f4efe6">
+      <div class="step-in">
+        <div class="step-main"><span class="tag"><i data-lucide="eye"></i>Teman kecil</span><h3>Saat sepi, ada yang menemani.</h3><p>Sepasang mata kecil muncul saat notch diam. Mereka mengantuk kalau lama ditinggal, dan notch menyingkir sendiri saat kamu menonton dalam layar penuh.</p></div>
+        <aside class="how"><b>Cara pakai</b><ol><li>Otomatis.</li><li>Keduanya bisa dimatikan di Pengaturan.</li></ol></aside>
+      </div>
+    </article>
+  </section>
+
+  <!-- ========== Cara memakai ========== -->
+  <section id="cara" class="block" data-bg="#2a2559">
+    <h2>Delapan gerakan,<br>sudah hafal.</h2>
+    <div class="gestures">
+      <div style="--c:#c9c4ff"><i data-lucide="mouse-pointer-2"></i><b>Arahkan kursor ke notch</b><p>Panel terbuka. Jauhkan kursor, panel tertutup.</p></div>
+      <div style="--c:#ffc9b5"><i data-lucide="move-horizontal"></i><b>Geser dua jari</b><p>Pindah halaman, satu geser satu halaman. Di halaman Musik, geser untuk ganti lagu.</p></div>
+      <div style="--c:#a9d8ff"><i data-lucide="ellipsis"></i><b>Titik di bawah panel</b><p>Arahkan kursor dan titik membesar jadi ikon seperti Dock. Klik untuk lompat.</p></div>
+      <div style="--c:#ffe08a"><span class="kbd">⌃⌥N</span><b>Buka dari keyboard</b><p>Langsung mengetik. Panah atau angka 1 sampai 9 pindah halaman, Esc menutup.</p></div>
+      <div style="--c:#bde8d2"><i data-lucide="file-up"></i><b>Seret file ke notch</b><p>File masuk Tray.</p></div>
+      <div style="--c:#ffc2d6"><i data-lucide="mouse-pointer-click"></i><b>Buka dengan klik</b><p>Lebih suka klik daripada hover? Nyalakan di Pengaturan.</p></div>
+      <div style="--c:#d5f0a8"><i data-lucide="menu"></i><b>Ikon di menu bar</b><p>Nyalakan atau matikan tiap fitur, update, dan keluar.</p></div>
+      <div style="--c:#ffd0a8"><span class="kbd">⌘,</span><b>Pengaturan</b><p>Ukuran panel, jeda hover, urutan halaman, layar, kota cuaca, bahasa, ekspor dan impor.</p></div>
+    </div>
+  </section>
+
+  <!-- ========== Data ========== -->
+  <section id="data" class="block" data-bg="#f4efe6">
+    <h2>Datamu tinggal<br>di Mac-mu.</h2>
+    <p class="lead">Tidak ada akun, tidak ada analitik, dan tidak ada yang dikirim ke pembuat app. Hanya tiga hal yang memakai internet, dan semuanya terbuka di bawah ini.</p>
+
+    <h3 class="sub">Yang memakai internet</h3>
+    <div class="net">
+      <div style="--c:#c9c4ff">
+        <i data-lucide="mic-vocal"></i>
+        <b>Lirik</b>
+        <dl><dt>Dikirim</dt><dd>Judul, artis, album, dan durasi lagu</dd><dt>Ke</dt><dd><a href="https://lrclib.net">LRCLIB</a> (lrclib.net)</dd><dt>Bawaan</dt><dd>Nyala, bisa dimatikan</dd></dl>
+      </div>
+      <div style="--c:#a9d8ff">
+        <i data-lucide="cloud-sun"></i>
+        <b>Cuaca</b>
+        <dl><dt>Dikirim</dt><dd>Nama kota pilihanmu dan koordinatnya</dd><dt>Ke</dt><dd><a href="https://open-meteo.com">Open-Meteo</a> (open-meteo.com)</dd><dt>Bawaan</dt><dd>Mati</dd></dl>
+      </div>
+      <div style="--c:#bde8d2">
+        <i data-lucide="refresh-cw"></i>
+        <b>Update</b>
+        <dl><dt>Dikirim</dt><dd>Tidak ada info tentang Mac-mu, hanya mengambil daftar versi</dd><dt>Ke</dt><dd>GitHub</dd><dt>Bawaan</dt><dd>Nyala, pasang otomatis bisa dimatikan</dd></dl>
+      </div>
+    </div>
+
+    <h3 class="sub">Yang tidak pernah keluar dari Mac</h3>
+    <ul class="local">
+      <li><i data-lucide="calendar"></i><span><b>Kalender</b>Hanya dibaca untuk agenda hari ini dan besok.</span></li>
+      <li><i data-lucide="clipboard-list"></i><span><b>Clipboard</b>40 teks terakhir. Gambar hanya selama app berjalan. Isi pengelola kata sandi dilewati.</span></li>
+      <li><i data-lucide="notebook-pen"></i><span><b>Catatan, tugas, minum, timer</b>Disimpan di Mac ini. Bisa diekspor dan diimpor sendiri.</span></li>
+      <li><i data-lucide="list-todo"></i><span><b>Pengingat</b>Hanya bila sinkron dinyalakan. Sinkron ke iPhone diatur app Pengingat dan iCloud-mu.</span></li>
+      <li><i data-lucide="mic"></i><span><b>Mikrofon</b>Suara diubah jadi teks di Mac ini. Hanya teksnya yang disimpan.</span></li>
+      <li><i data-lucide="camera"></i><span><b>Kamera</b>Hanya untuk Cermin, tidak direkam.</span></li>
+      <li><i data-lucide="audio-lines"></i><span><b>Suara yang diputar</b>Hanya diubah jadi tinggi batang equalizer di memori.</span></li>
+      <li><i data-lucide="inbox"></i><span><b>File di tray</b>Notch hanya menyimpan letaknya. File tetap di tempat asli.</span></li>
+      <li><i data-lucide="download"></i><span><b>Unduhan</b>Progresnya dibaca dari folder Downloads, tidak disimpan.</span></li>
+    </ul>
+
+    <h3 class="sub">Izin yang diminta</h3>
+    <p class="note">Izin diminta saat fitur itu pertama kali dipakai. Menolak izin hanya mematikan fitur itu.</p>
+    <div class="perms">
+      <span><b>Kalender</b>untuk agenda</span>
+      <span><b>Pengingat</b>untuk sinkron tugas</span>
+      <span><b>Kamera</b>untuk Cermin</span>
+      <span><b>Mikrofon dan Pengenalan Ucapan</b>untuk rekam suara</span>
+      <span><b>Audio dari app lain</b>untuk equalizer</span>
+    </div>
+  </section>
+
+  <!-- ========== Spesifikasi ========== -->
+  <section class="block specs" data-bg="#ffe08a">
+    <div class="facts">
+      <div><b>4 MB</b><span>ukuran unduhan</span></div>
+      <div><b>13+</b><span>macOS Ventura atau lebih baru</span></div>
+      <div><b>0</b><span>akun yang perlu dibuat</span></div>
+      <div><b>2</b><span>bahasa: Indonesia dan Inggris</span></div>
+    </div>
+    <ul class="spec">
+      <li><b>Prosesor</b>Apple Silicon dan Intel.</li>
+      <li><b>Mac tanpa notch</b>Tetap bisa: notch tampil sebagai panel kecil di tengah atas layar. Monitor tambahan bisa dipilih di Pengaturan.</li>
+      <li><b>Keamanan</b>Ditandatangani dan dinotarisasi Apple, jadi terbuka tanpa peringatan.</li>
+      <li><b>Update</b>Otomatis lewat Sparkle, dipasang saat notch tidak dipakai.</li>
+      <li><b>Lisensi</b>AGPL-3.0. Kode sumber terbuka di GitHub.</li>
+    </ul>
+  </section>
+
+  <!-- ========== Tanya jawab ========== -->
+  <section id="tanya" class="block" data-bg="#f4efe6">
+    <h2>Tanya jawab</h2>
+    <div class="faq">
+      <details><summary>Apakah Cognify Notch gratis?</summary><p>Ya. Gratis, open source, tanpa akun, dan tanpa iklan.</p></details>
+      <details><summary>MacBook-ku tidak punya notch. Bisa dipakai?</summary><p>Bisa. Di Mac tanpa notch dan di monitor tambahan, notch tampil sebagai panel kecil di tengah atas layar. Layar yang dipakai bisa dipilih di Pengaturan.</p></details>
+      <details><summary>Kenapa lagu yang diputar tidak muncul?</summary><p>Sejak macOS 15.4, Apple hanya mengizinkan program milik Apple membaca lagu yang sedang diputar. Cognify Notch memakai cara yang sama dengan Boring Notch untuk tetap membacanya. Bila Apple menutup cara ini, bagian lagu disembunyikan dan fitur lain tetap berjalan.</p></details>
+      <details><summary>Kenapa sebuah lagu tidak punya lirik?</summary><p>Lirik berasal dari LRCLIB, perpustakaan lirik gratis yang diisi komunitas. Lagu populer hampir selalu ada; beberapa lagu lokal atau lagu baru mungkin belum.</p></details>
+      <details><summary>Bagaimana cara update?</summary><p>Otomatis. Versi baru diunduh diam-diam lalu dipasang saat notch sedang tidak dipakai; app mulai ulang sekitar satu detik. Bila tertinggal beberapa versi, update langsung lompat ke versi terbaru. Untuk mematikannya, klik ikon notch di menu bar lalu matikan Pasang update otomatis.</p></details>
+      <details><summary>Apakah membuat Mac lambat atau boros baterai?</summary><p>Tidak. Saat diam, notch hanya memeriksa posisi kursor ketika perlu. Di MacBook pengembang, pemakaian CPU saat diam di bawah 0,5%.</p></details>
+      <details><summary>Bagaimana cara berhenti atau menghapusnya?</summary><p>Klik ikon notch di menu bar. Matikan Buka saat Mac dinyalakan agar tidak jalan otomatis, atau pilih Keluar. Untuk menghapus, seret Cognify Notch dari folder Applications ke Tempat Sampah.</p></details>
+      <details><summary>Apa hubungannya dengan Cognify?</summary><p>Cognify Notch adalah bagian dari Cognify, aplikasi catatan dan belajar yang berjalan offline. Versi ini berdiri sendiri; kamu tidak perlu memasang Cognify.</p></details>
+    </div>
+  </section>
+
+  <!-- ========== Unduh: blok berbentuk notch terbuka ========== -->
+  <section id="unduh" class="get-wrap" data-bg="#c9c4ff">
+    <div class="get-notch">
+      <svg class="ear l"><use href="#ear"/></svg>
+      <svg class="ear r"><use href="#ear"/></svg>
+      <img src="icon.png" alt="" width="84" height="84">
+      <h2>Coba sekarang.</h2>
+      <p>Buka file DMG, seret ke Applications, lalu arahkan kursor ke notch.</p>
+      <a class="btn accent dl" href="https://github.com/reinharddev/cognify-notch/releases/latest"><i data-lucide="download"></i>Unduh untuk Mac</a>
+      <p class="meta"><span class="ver">Versi terbaru</span> · macOS 13 atau lebih baru</p>
+      <div class="changes" id="changes" hidden>
+        <b class="changes-title">Yang baru</b>
+        <div id="changeList"></div>
+        <a href="https://github.com/reinharddev/cognify-notch/releases">Semua catatan rilis</a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer data-bg="#c9c4ff">
+  <span>Cognify Notch · <a href="https://github.com/reinharddev/cognify-notch">GitHub</a> · <a href="https://github.com/reinharddev/cognify-notch/blob/main/LICENSE">AGPL-3.0</a></span>
+  <span>Isi notch di halaman ini adalah contoh. Mac dan MacBook adalah merek dagang Apple Inc.</span>
+</footer>
+
+<script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+<script src="app.js?v=2"></script>
+</body>
+</html>
