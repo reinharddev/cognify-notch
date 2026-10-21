@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Kebijakan privasi Cognify Notch</title>
+<meta name="description" content="Apa yang disimpan dan dikirim Cognify Notch: tanpa akun, tanpa analitik, data tetap di komputermu. Berlaku untuk app Mac, app Windows, dan situs ini.">
+<link rel="canonical" href="https://reinharddev.github.io/cognify-notch/privasi.html">
+<meta name="robots" content="index, follow">
+<meta name="author" content="Reinhard Dave Yunardi">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Cognify Notch">
+<meta property="og:title" content="Kebijakan privasi Cognify Notch">
+<meta property="og:description" content="Apa yang disimpan dan dikirim Cognify Notch: tanpa akun, tanpa analitik, data tetap di komputermu. Berlaku untuk app Mac, app Windows, dan situs ini.">
+<meta property="og:image" content="https://reinharddev.github.io/cognify-notch/og.png">
+<meta property="og:url" content="https://reinharddev.github.io/cognify-notch/privasi.html">
+<meta name="theme-color" content="#f4efe6">
+<link rel="icon" type="image/png" href="favicon.png">
+<link rel="apple-touch-icon" href="icon.png">
+<link rel="preload" href="bricolage.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="style.css?v=14">
+<script>
+  (() => {
+    let lang = new URLSearchParams(location.search).get('lang');
+    if (!lang) { try { lang = localStorage.getItem('lang'); } catch (e) {} }
+    if (lang !== 'id' && lang !== 'en') lang = (navigator.languages || [navigator.language]).some((l) => /^(id|ms)\b/i.test(l)) ? 'id' : 'en';
+    document.documentElement.lang = lang;
+  })();
+</script>
+</head>
+<body class="legal-page">
+<header class="legal-top">
+  <a class="legal-back" href="./"><img src="icon.png" alt="" width="30" height="30"><span>Cognify Notch</span></a>
+  <nav class="legal-nav">
+    <a href="privasi.html"><span class="l-id">Privasi</span><span class="l-en">Privacy</span></a>
+    <a href="syarat.html"><span class="l-id">Syarat</span><span class="l-en">Terms</span></a>
+    <button class="lang legal-lang" id="langBtn" type="button" aria-label="Switch language"><span class="l-id">EN</span><span class="l-en">ID</span></button>
+  </nav>
+</header>
+<main class="legal">
+
+<section class="l-id">
+  <h1>Kebijakan privasi</h1>
+  <p class="lead">Cognify Notch dibuat supaya datamu tetap di komputermu. Halaman ini menjelaskan apa yang disimpan, apa yang dikirim ke internet, dan ke mana. Berlaku sejak 21 Oktober 2026 untuk app Mac, app Windows, dan situs ini.</p>
+
+  <h2>Ringkasnya</h2>
+  <ul class="plain">
+    <li>Tidak ada akun, iklan, analitik, atau pelacak, baik di app maupun di situs ini.</li>
+    <li>Pembuat app tidak menerima data apa pun darimu.</li>
+    <li>Catatan, tugas, clipboard, dan data lain tersimpan di komputermu saja.</li>
+    <li>Hanya beberapa fitur yang memakai internet. Semuanya tercantum di bawah.</li>
+  </ul>
+
+  <h2>Yang dikirim ke internet</h2>
+  <div class="net">
+    <div style="--c:#c9c4ff"><i data-lucide="mic-vocal"></i><b>Lirik</b>
+      <dl><dt>Dikirim</dt><dd>Judul, artis, album, dan durasi lagu yang sedang diputar</dd><dt>Ke</dt><dd><a href="https://lrclib.net">LRCLIB</a></dd><dt>Bawaan</dt><dd>Nyala. Bisa dimatikan di Pengaturan.</dd><dt>Di</dt><dd>Mac dan Windows</dd></dl></div>
+    <div style="--c:#a9d8ff"><i data-lucide="cloud-sun"></i><b>Cuaca</b>
+      <dl><dt>Dikirim</dt><dd>Nama kota yang kamu ketik, lalu koordinat kota itu</dd><dt>Ke</dt><dd><a href="https://open-meteo.com">Open-Meteo</a></dd><dt>Bawaan</dt><dd>Mati</dd><dt>Di</dt><dd>Mac dan Windows</dd></dl></div>
+    <div style="--c:#bde8d2"><i data-lucide="refresh-cw"></i><b>Pembaruan</b>
+      <dl><dt>Dikirim</dt><dd>Mac: tidak ada informasi tentang komputermu, app hanya mengambil daftar versi. Windows: permintaan daftar versi memuat versi app, nama app, dan kode acak yang dibuat di komputermu (dipakai untuk rilis bertahap, tidak terhubung dengan identitasmu).</dd><dt>Ke</dt><dd>GitHub</dd><dt>Bawaan</dt><dd>Nyala. Di Windows bisa dimatikan di Pengaturan.</dd></dl></div>
+    <div style="--c:#ffe08a"><i data-lucide="calendar"></i><b>Kalender ICS</b>
+      <dl><dt>Dikirim</dt><dd>Tidak ada. App mengambil tautan yang kamu masukkan sendiri, tiap 15 menit.</dd><dt>Ke</dt><dd>Alamat tautan itu</dd><dt>Bawaan</dt><dd>Mati</dd><dt>Di</dt><dd>Windows. Mac memakai app Kalender macOS tanpa internet dari app ini.</dd></dl></div>
+  </div>
+  <p class="note">Seperti situs web mana pun, GitHub, LRCLIB, dan Open-Meteo melihat alamat IP dan waktu permintaan, dan menyimpannya menurut kebijakan mereka sendiri.</p>
+
+  <h2>Yang tersimpan di komputermu</h2>
+  <ul class="local">
+    <li><i data-lucide="notebook-pen"></i><span><b>Catatan, tugas, minum, dan timer</b>Termasuk jumlah sesi fokus hari ini.</span></li>
+    <li><i data-lucide="clipboard-list"></i><span><b>Riwayat clipboard</b>Hingga 40 teks terakhir. Gambar hanya selama app berjalan. Isi dari pengelola kata sandi dilewati. Mati bawaan di Windows.</span></li>
+    <li><i data-lucide="inbox"></i><span><b>File di tray</b>Hanya lokasinya. File tetap berada di tempat aslinya.</span></li>
+    <li><i data-lucide="settings"></i><span><b>Pengaturan</b>Termasuk nama kota, tautan atau file kalender ICS, dan cache lirik.</span></li>
+  </ul>
+  <p>Mac: berkas pengaturan <code>com.reinhard.cognify.notchapp.plist</code> di folder <code>~/Library/Preferences</code>. Windows: folder <code>%LocalAppData%\io.github.reinharddev.cognify-notch</code> dan <code>%LocalAppData%\CognifyNotch</code>. Untuk menghapus semuanya, hapus app lalu hapus berkas atau folder itu.</p>
+
+  <h2>Yang tidak pernah keluar dari komputer</h2>
+  <ul class="local">
+    <li><i data-lucide="calendar"></i><span><b>Kalender (Mac)</b>Hanya dibaca untuk menampilkan agenda hari ini dan besok.</span></li>
+    <li><i data-lucide="list-todo"></i><span><b>Pengingat (Mac)</b>Hanya jika sinkron dinyalakan. Sinkron ke iPhone diatur oleh app Pengingat dan iCloud-mu.</span></li>
+    <li><i data-lucide="mic"></i><span><b>Mikrofon (Mac)</b>Suara diubah menjadi teks di Mac ini. Bila bahasa belum punya model di perangkat, perekaman ditolak, bukan dikirim ke server. Hanya teksnya yang disimpan.</span></li>
+    <li><i data-lucide="camera"></i><span><b>Kamera</b>Hanya untuk Cermin. Tidak direkam dan tidak dikirim.</span></li>
+    <li><i data-lucide="audio-lines"></i><span><b>Suara yang diputar (Mac)</b>Hanya diubah menjadi tinggi batang equalizer di memori.</span></li>
+    <li><i data-lucide="download"></i><span><b>Unduhan</b>Progres dan selesainya dibaca dari folder Downloads, tidak disimpan.</span></li>
+  </ul>
+
+  <h2>Izin yang diminta</h2>
+  <p>Izin diminta saat sebuah fitur pertama kali dipakai. Jika kamu menolak, hanya fitur itu yang tidak berjalan.</p>
+  <div class="perms">
+    <span><b>macOS: Kalender</b>untuk agenda</span>
+    <span><b>macOS: Pengingat</b>untuk sinkron tugas</span>
+    <span><b>macOS: Kamera</b>untuk Cermin</span>
+    <span><b>macOS: Mikrofon dan Pengenalan Ucapan</b>untuk rekam suara</span>
+    <span><b>macOS: Audio dari app lain</b>untuk equalizer</span>
+    <span><b>Windows: Kamera</b>untuk Cermin</span>
+    <span><b>Windows: Notifikasi</b>untuk pengingat, bila kamu mengizinkan</span>
+  </div>
+
+  <h2>Situs web ini</h2>
+  <p>Situs ini disajikan oleh GitHub Pages. Tidak ada cookie, analitik, atau iklan. Font berasal dari server yang sama. Ikon dimuat dari unpkg.com, dan nomor versi terbaru serta catatan rilis diambil dari api.github.com, sehingga kedua layanan itu melihat alamat IP-mu. Pilihan bahasa dan sistem operasi disimpan di penyimpanan lokal browsermu dan tidak dikirim ke mana pun.</p>
+
+  <h2>Layanan pihak ketiga</h2>
+  <p>GitHub (rilis, pembaruan, dan situs ini), LRCLIB (lirik), Open-Meteo (cuaca), Apple (macOS, dan iCloud bila sinkron Pengingat dinyalakan), serta Microsoft (Windows, komponen WebView2, dan SmartScreen). Masing-masing punya kebijakan privasinya sendiri, dan komponen sistem mengikuti pengaturan privasi sistem operasimu.</p>
+
+  <h2>Anak-anak</h2>
+  <p>App ini tidak mengumpulkan data dari siapa pun, termasuk anak di bawah umur.</p>
+
+  <h2>Kendalimu</h2>
+  <p>Kamu bisa mematikan fitur yang memakai internet di Pengaturan, menghapus data lokal seperti dijelaskan di atas, atau memeriksa sendiri kode sumbernya yang terbuka (AGPL-3.0) di <a href="https://github.com/reinharddev/cognify-notch">GitHub</a>.</p>
+
+  <h2>Perubahan kebijakan</h2>
+  <p>Jika kebijakan ini berubah, halaman ini diperbarui beserta tanggal berlakunya, dan perubahan penting disebut di catatan rilis.</p>
+
+  <h2>Kontak</h2>
+  <p>Pertanyaan atau permintaan tentang privasi bisa disampaikan lewat <a href="https://github.com/reinharddev/cognify-notch/issues">GitHub Issues</a> (Mac) atau <a href="https://github.com/reinharddev/cognify-notch-windows/issues">GitHub Issues untuk Windows</a>.</p>
+</section>
+
+<section class="l-en">
+  <h1>Privacy policy</h1>
+  <p class="lead">Cognify Notch is built so your data stays on your computer. This page explains what is stored, what is sent to the internet, and where it goes. Effective October 21, 2026, for the Mac app, the Windows app, and this website.</p>
+
+  <h2>In short</h2>
+  <ul class="plain">
+    <li>No accounts, ads, analytics, or trackers, in the apps or on this website.</li>
+    <li>The developer receives no data from you.</li>
+    <li>Notes, tasks, clipboard, and other data stay on your computer only.</li>
+    <li>Only a few features use the internet. All of them are listed below.</li>
+  </ul>
+
+  <h2>What is sent to the internet</h2>
+  <div class="net">
+    <div style="--c:#c9c4ff"><i data-lucide="mic-vocal"></i><b>Lyrics</b>
+      <dl><dt>Sent</dt><dd>Title, artist, album, and duration of the song that is playing</dd><dt>To</dt><dd><a href="https://lrclib.net">LRCLIB</a></dd><dt>Default</dt><dd>On. Can be turned off in Settings.</dd><dt>On</dt><dd>Mac and Windows</dd></dl></div>
+    <div style="--c:#a9d8ff"><i data-lucide="cloud-sun"></i><b>Weather</b>
+      <dl><dt>Sent</dt><dd>The city name you type, then that city's coordinates</dd><dt>To</dt><dd><a href="https://open-meteo.com">Open-Meteo</a></dd><dt>Default</dt><dd>Off</dd><dt>On</dt><dd>Mac and Windows</dd></dl></div>
+    <div style="--c:#bde8d2"><i data-lucide="refresh-cw"></i><b>Updates</b>
+      <dl><dt>Sent</dt><dd>Mac: nothing about your computer, the app only fetches a version list. Windows: the version list request includes the app version, the app name, and a random code generated on your computer (used for staged rollouts, not linked to your identity).</dd><dt>To</dt><dd>GitHub</dd><dt>Default</dt><dd>On. On Windows it can be turned off in Settings.</dd></dl></div>
+    <div style="--c:#ffe08a"><i data-lucide="calendar"></i><b>ICS calendar</b>
+      <dl><dt>Sent</dt><dd>Nothing. The app fetches the link you entered yourself, every 15 minutes.</dd><dt>To</dt><dd>The address of that link</dd><dt>Default</dt><dd>Off</dd><dt>On</dt><dd>Windows. The Mac app uses the macOS Calendar app with no internet use from this app.</dd></dl></div>
+  </div>
+  <p class="note">Like any website, GitHub, LRCLIB, and Open-Meteo see your IP address and the time of the request, and keep them under their own policies.</p>
+
+  <h2>What is stored on your computer</h2>
+  <ul class="local">
+    <li><i data-lucide="notebook-pen"></i><span><b>Notes, tasks, water, and timers</b>Including today's focus session count.</span></li>
+    <li><i data-lucide="clipboard-list"></i><span><b>Clipboard history</b>Up to the last 40 texts. Images only while the app runs. Content from password managers is skipped. Off by default on Windows.</span></li>
+    <li><i data-lucide="inbox"></i><span><b>Tray files</b>Only their location. Files stay where they are.</span></li>
+    <li><i data-lucide="settings"></i><span><b>Settings</b>Including your city name, ICS calendar link or file, and the lyrics cache.</span></li>
+  </ul>
+  <p>Mac: the settings file <code>com.reinhard.cognify.notchapp.plist</code> in <code>~/Library/Preferences</code>. Windows: the folders <code>%LocalAppData%\io.github.reinharddev.cognify-notch</code> and <code>%LocalAppData%\CognifyNotch</code>. To remove everything, delete the app and then those files or folders.</p>
+
+  <h2>What never leaves your computer</h2>
+  <ul class="local">
+    <li><i data-lucide="calendar"></i><span><b>Calendar (Mac)</b>Only read to show today's and tomorrow's agenda.</span></li>
+    <li><i data-lucide="list-todo"></i><span><b>Reminders (Mac)</b>Only if sync is on. Syncing to your iPhone is handled by the Reminders app and your iCloud.</span></li>
+    <li><i data-lucide="mic"></i><span><b>Microphone (Mac)</b>Speech is turned into text on this Mac. If a language has no on-device model, recording is refused instead of being sent to a server. Only the text is saved.</span></li>
+    <li><i data-lucide="camera"></i><span><b>Camera</b>Only for Mirror. Not recorded and not sent.</span></li>
+    <li><i data-lucide="audio-lines"></i><span><b>Playing audio (Mac)</b>Only turned into equalizer bar heights in memory.</span></li>
+    <li><i data-lucide="download"></i><span><b>Downloads</b>Progress and completion are read from the Downloads folder and not stored.</span></li>
+  </ul>
+
+  <h2>Permissions requested</h2>
+  <p>Permissions are requested the first time a feature is used. If you decline, only that feature stops working.</p>
+  <div class="perms">
+    <span><b>macOS: Calendars</b>for the agenda</span>
+    <span><b>macOS: Reminders</b>for task sync</span>
+    <span><b>macOS: Camera</b>for Mirror</span>
+    <span><b>macOS: Microphone and Speech Recognition</b>for voice notes</span>
+    <span><b>macOS: Audio from other apps</b>for the equalizer</span>
+    <span><b>Windows: Camera</b>for Mirror</span>
+    <span><b>Windows: Notifications</b>for reminders, if you allow them</span>
+  </div>
+
+  <h2>This website</h2>
+  <p>This site is served by GitHub Pages. There are no cookies, analytics, or ads. Fonts come from the same server. Icons are loaded from unpkg.com, and the latest version number and release notes are fetched from api.github.com, so those two services see your IP address. Your language and operating system choices are kept in your browser's local storage and are not sent anywhere.</p>
+
+  <h2>Third-party services</h2>
+  <p>GitHub (releases, updates, and this site), LRCLIB (lyrics), Open-Meteo (weather), Apple (macOS, and iCloud if Reminders sync is on), and Microsoft (Windows, the WebView2 component, and SmartScreen). Each has its own privacy policy, and system components follow your operating system's privacy settings.</p>
+
+  <h2>Children</h2>
+  <p>The apps do not collect data from anyone, including minors.</p>
+
+  <h2>Your control</h2>
+  <p>You can turn off the features that use the internet in Settings, delete local data as described above, or inspect the open source code (AGPL-3.0) on <a href="https://github.com/reinharddev/cognify-notch">GitHub</a>.</p>
+
+  <h2>Changes to this policy</h2>
+  <p>If this policy changes, this page is updated together with its effective date, and important changes are mentioned in the release notes.</p>
+
+  <h2>Contact</h2>
+  <p>Privacy questions or requests can be sent through <a href="https://github.com/reinharddev/cognify-notch/issues">GitHub Issues</a> (Mac) or <a href="https://github.com/reinharddev/cognify-notch-windows/issues">GitHub Issues for Windows</a>.</p>
+</section>
+</main>
+<footer class="legal-foot">
+  <span>Cognify Notch · <a href="./">Beranda / Home</a> · <a href="privasi.html"><span class="l-id">Kebijakan privasi</span><span class="l-en">Privacy policy</span></a> · <a href="syarat.html"><span class="l-id">Syarat penggunaan</span><span class="l-en">Terms of use</span></a> · <a href="https://github.com/reinharddev/cognify-notch">GitHub</a></span>
+</footer>
+<script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+<script src="legal.js?v=1"></script>
+</body>
+</html>

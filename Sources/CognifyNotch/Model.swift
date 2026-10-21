@@ -395,6 +395,7 @@ final class NotchModel: ObservableObject {
         heartbeat = Timer.scheduledTimer(withTimeInterval: 20, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.tick() }
         }
+        heartbeat?.tolerance = 5
         media.$nowPlaying.sink { [weak self] now in
             DispatchQueue.main.async {
                 self?.updateSpectrum(playing: now?.playing == true)

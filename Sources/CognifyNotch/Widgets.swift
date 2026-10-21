@@ -477,6 +477,7 @@ final class SystemLevels {
         brightnessTimer = Timer.scheduledTimer(withTimeInterval: fast ? 0.1 : 0.5, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.readBrightness() }
         }
+        brightnessTimer?.tolerance = fast ? 0.02 : 0.2 // diam: boleh digabung dengan bangun lain oleh macOS
         brightnessFast = fast
     }
 

@@ -670,3 +670,36 @@ html[data-os="win"] .win-bar::after { content: "\2212   \25A1   \2715"; margin-l
 html[data-os="win"] #notch .ear { display: none; }
 html.motion .d-taskbar > i { animation: dockIn .55s cubic-bezier(.3, 1.6, .5, 1) both; animation-delay: 1.8s; }
 @media (max-width: 760px) { html[data-os="win"] .win.cal { display: none; } }
+
+/* ---------- Halaman hukum (kebijakan privasi dan syarat penggunaan) ---------- */
+.legal-page { background: var(--paper); }
+html[lang="id"] .l-en, html[lang="en"] .l-id { display: none !important; }
+.legal-top { position: sticky; top: 0; z-index: 10; display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px 28px; background: var(--paper); border-bottom: 2px solid var(--ink); }
+.legal-back { display: flex; align-items: center; gap: 10px; color: var(--ink); text-decoration: none; font-family: var(--display); font-weight: 800; font-size: 20px; letter-spacing: -.02em; }
+.legal-back img { border-radius: 8px; }
+.legal-nav { display: flex; align-items: center; gap: 18px; font-weight: 600; }
+.legal-nav a { color: var(--ink); text-decoration: none; }
+.legal-nav a:hover { text-decoration: underline; }
+.legal-lang { color: var(--ink); border-color: var(--ink); }
+.legal { max-width: 900px; margin: 0 auto; padding: 64px 28px 30px; }
+.legal h1 { font-size: clamp(44px, 7vw, 84px); line-height: .98; }
+.legal .lead { margin: 22px 0 8px; max-width: 700px; }
+.legal h2 { font-size: clamp(28px, 4vw, 40px); line-height: 1.02; margin: 56px 0 16px; }
+.legal p, .legal li { font-size: 17px; line-height: 1.55; text-wrap: pretty; }
+.legal a { color: var(--ink); text-underline-offset: 3px; }
+.legal .plain { padding-left: 22px; margin: 0; display: flex; flex-direction: column; gap: 8px; }
+.legal code { font: inherit; font-weight: 600; background: #fffdf8; border: 1.5px solid var(--ink); border-radius: 6px; padding: 1px 6px; word-break: break-all; }
+.legal .net { grid-template-columns: repeat(2, 1fr); }
+.legal .net dl { grid-template-columns: 70px 1fr; }
+.legal .local { grid-template-columns: repeat(2, 1fr); }
+.legal .perms { margin-top: 12px; }
+.legal-foot { max-width: 900px; margin: 0 auto; padding: 30px 28px 70px; color: var(--muted); font-size: 15px; }
+.legal-foot a { color: var(--ink); }
+@media (max-width: 760px) {
+  .legal-top { padding: 12px 16px; }
+  .legal-nav { gap: 12px; font-size: 14px; }
+  .legal-back span { display: none; }
+  .legal { padding: 40px 18px 20px; }
+  .legal .net, .legal .local { grid-template-columns: 1fr; }
+  .legal-foot { padding: 24px 18px 60px; }
+}

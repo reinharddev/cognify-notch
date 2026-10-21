@@ -12,11 +12,26 @@ import SwiftUI
 /// `bands` tetap nil dan Equalizer memakai animasi biasa.
 @MainActor
 final class Spectrum: ObservableObject {
-    /// 0…1 per pita: 40–250 Hz, 250–1000 Hz, 1–4 kHz, 4–12 kHz.
-    @Published private(set) var bands: [Float]?
+    /// 0…1 per pita: 40–250 Hz, 250–1000 Hz, 1–4 kHz, 4–12 kHz. Sengaja bukan @Published: kiriman 30× per detik
+    /// lewat SwiftUI memaksa tata letak ulang seluruh panel. Equalizer berlangganan langsung (lihat `subscribe`).
+    private(set) var bands: [Float]?
 
     private var engine: AnyObject?
     private var wanted = false
+    private var listeners: [ObjectIdentifier: ([Float]?) -> Void] = [:]
+
+    /// Dipanggil tiap pita baru (dan sekali saat berlangganan). `owner` dipakai untuk berhenti berlangganan.
+    func subscribe(_ owner: AnyObject, _ listener: @escaping ([Float]?) -> Void) {
+        listeners[ObjectIdentifier(owner)] = listener
+        listener(bands)
+    }
+
+    func unsubscribe(_ owner: AnyObject) { listeners[ObjectIdentifier(owner)] = nil }
+
+    private func publish(_ values: [Float]?) {
+        bands = values
+        for listener in listeners.values { listener(values) }
+    }
 
     /// Jalan hanya saat musik diputar dan fitur dinyalakan.
     func setActive(_ active: Bool) {
@@ -25,17 +40,19 @@ final class Spectrum: ObservableObject {
         if active {
             if #available(macOS 14.2, *) {
                 let tap = TapEngine { [weak self] values in
-                    Task { @MainActor in
-                        guard let self, self.wanted else { return }
-                        self.bands = values
+                    DispatchQueue.main.async {
+                        MainActor.assumeIsolated {
+                            guard let self, self.wanted else { return }
+                            self.publish(values)
+                        }
                     }
                 }
-                if tap.start() { engine = tap } else { bands = nil }
+                if tap.start() { engine = tap } else { publish(nil) }
             }
         } else {
             if #available(macOS 14.2, *) { (engine as? TapEngine)?.stop() }
             engine = nil
-            bands = nil
+            publish(nil)
         }
     }
 }
@@ -53,7 +70,14 @@ private final class TapEngine {
     private let fft = vDSP.FFT(log2n: vDSP_Length(log2(Double(TapEngine.size))), radix: .radix2, ofType: DSPSplitComplex.self)!
     private let window = vDSP.window(ofType: Float.self, usingSequence: .hanningDenormalized, count: TapEngine.size, isHalfWindow: false)
     private var ring = [Float](repeating: 0, count: TapEngine.size)
+    private var writeIndex = 0
     private var filled = 0
+    // Buffer kerja dipakai ulang tiap analisis (tanpa alokasi array baru ±30× per detik).
+    private var ordered = [Float](repeating: 0, count: TapEngine.size)
+    private var windowed = [Float](repeating: 0, count: TapEngine.size)
+    private var real = [Float](repeating: 0, count: TapEngine.size / 2)
+    private var imag = [Float](repeating: 0, count: TapEngine.size / 2)
+    private var magnitudes = [Float](repeating: 0, count: TapEngine.size / 2)
     private var sampleRate: Float = 48_000
     private var smoothed: [Float] = [0, 0, 0, 0]
     private var peak: [Float] = [0.02, 0.02, 0.02, 0.02]
@@ -138,23 +162,30 @@ private final class TapEngine {
         let channels = Int(max(1, first.mNumberChannels))
         let count = Int(first.mDataByteSize) / MemoryLayout<Float>.size / channels
         let samples = data.assumingMemoryBound(to: Float.self)
+        var w = writeIndex
         for i in 0..<count {
-            ring[filled % Self.size] = samples[i * channels] // kanal kiri cukup untuk bentuk batang
-            filled += 1
+            ring[w] = samples[i * channels] // kanal kiri cukup untuk bentuk batang
+            w += 1
+            if w == Self.size { w = 0 }
         }
+        writeIndex = w
+        filled = min(Self.size, filled + count)
         guard filled >= Self.size, Date().timeIntervalSince(lastEmit) >= 1.0 / 30 else { return }
         lastEmit = Date()
         onBands(analyze())
     }
 
     private func analyze() -> [Float] {
-        let start = filled % Self.size
-        let ordered = Array(ring[start...] + ring[..<start])
-        let windowed = vDSP.multiply(ordered, window)
+        // Urutkan ring buffer dari yang terlama ke terbaru (dua salinan blok, tanpa array sementara).
+        let tail = Self.size - writeIndex
+        ring.withUnsafeBufferPointer { src in
+            ordered.withUnsafeMutableBufferPointer { dst in
+                dst.baseAddress!.update(from: src.baseAddress! + writeIndex, count: tail)
+                if writeIndex > 0 { (dst.baseAddress! + tail).update(from: src.baseAddress!, count: writeIndex) }
+            }
+        }
+        vDSP.multiply(ordered, window, result: &windowed)
         let half = Self.size / 2
-        var real = [Float](repeating: 0, count: half)
-        var imag = [Float](repeating: 0, count: half)
-        var magnitudes = [Float](repeating: 0, count: half)
         real.withUnsafeMutableBufferPointer { r in
             imag.withUnsafeMutableBufferPointer { im in
                 var split = DSPSplitComplex(realp: r.baseAddress!, imagp: im.baseAddress!)

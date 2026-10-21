@@ -544,7 +544,10 @@ struct PageDock: View {
                 let side = size(index, pointer)
                 Button { select(tab) } label: {
                     Image(systemName: tab.icon)
-                        .font(.system(size: side * 0.46, weight: .semibold))
+                        // Ikon digambar pada satu ukuran tetap lalu diskalakan. Ukuran font yang berubah tiap
+                        // gerakan kursor membuat SwiftUI menyimpan ribuan salinan glyph (memori naik berjam-jam).
+                        .font(.system(size: Self.peak * 0.46, weight: .semibold))
+                        .scaleEffect(side / Self.peak)
                         .frame(width: side, height: side)
                         .background(RoundedRectangle(cornerRadius: side * 0.28, style: .continuous)
                             .fill(tab == current ? Color.accent : Color(white: 0.2)))

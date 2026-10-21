@@ -231,28 +231,20 @@ struct Artwork: View {
 }
 
 /// Batang equalizer: pita nada asli dari `Spectrum` (kiri bass → kanan treble) jika tersedia,
-/// selain itu animasi selama musik diputar.
+/// selain itu animasi selama musik diputar. Digambar langsung di lapisan Core Animation: data audio
+/// datang 30 kali per detik, dan lewat SwiftUI tiap kiriman memaksa tata letak ulang seluruh panel.
 struct Equalizer: View {
     let playing: Bool
-    @ObservedObject var spectrum: Spectrum
+    let spectrum: Spectrum
     var tint: Color = .accent
     @Environment(\.snapshot) private var snapshot
 
     var body: some View {
         if snapshot {
-            bars(t: 1.3) // renderer gambar tidak mendukung TimelineView beranimasi
-        } else if let bands = spectrum.bands, playing {
-            HStack(alignment: .center, spacing: 2) {
-                ForEach(0..<4, id: \.self) { i in
-                    Capsule().fill(tint).frame(width: 2.6, height: 3 + 11 * CGFloat(i < bands.count ? bands[i] : 0))
-                }
-            }
-            .frame(height: 14)
-            .animation(.linear(duration: 1 / 30), value: bands)
+            bars(t: 1.3) // renderer gambar tidak mendukung animasi
         } else {
-            TimelineView(.animation(minimumInterval: 1 / 12, paused: !playing)) { context in
-                bars(t: context.date.timeIntervalSinceReferenceDate)
-            }
+            EqualizerBars(spectrum: spectrum, playing: playing, tint: NSColor(tint))
+                .frame(width: EqualizerView.width, height: EqualizerView.height)
         }
     }
 
@@ -265,6 +257,108 @@ struct Equalizer: View {
             }
         }
         .frame(height: 14)
+    }
+}
+
+private struct EqualizerBars: NSViewRepresentable {
+    let spectrum: Spectrum
+    let playing: Bool
+    let tint: NSColor
+
+    func makeNSView(context: Context) -> EqualizerView {
+        let view = EqualizerView()
+        spectrum.subscribe(view) { [weak view] bands in view?.live = bands }
+        view.unsubscribe = { [weak spectrum, weak view] in if let view { spectrum?.unsubscribe(view) } }
+        return view
+    }
+
+    func updateNSView(_ view: EqualizerView, context: Context) {
+        view.tint = tint
+        view.playing = playing
+    }
+
+    static func dismantleNSView(_ view: EqualizerView, coordinator: ()) {
+        view.unsubscribe?()
+    }
+}
+
+/// Empat batang kapsul. Mode "hidup": tinggi tiap batang mengikuti pita nada dan berpindah halus dalam 1/30 detik.
+/// Mode "animasi": gerak berulang yang dijalankan Core Animation sendiri (tanpa kerja di app). Mode "diam": setinggi 3.
+final class EqualizerView: NSView {
+    static let barWidth: CGFloat = 2.6, gap: CGFloat = 2, height: CGFloat = 14
+    static let width: CGFloat = 4 * barWidth + 3 * gap
+
+    private let bars: [CALayer] = (0..<4).map { _ in CALayer() }
+    var unsubscribe: (() -> Void)?
+
+    var tint: NSColor = .controlAccentColor { didSet { if tint != oldValue { applyTint() } } }
+    var playing = false { didSet { if playing != oldValue { refresh() } } }
+    var live: [Float]? { didSet { if (live == nil) != (oldValue == nil) { refresh() } else { updateLive() } } }
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+        layer?.masksToBounds = false
+        for (i, bar) in bars.enumerated() {
+            bar.cornerRadius = Self.barWidth / 2
+            bar.bounds = CGRect(x: 0, y: 0, width: Self.barWidth, height: 3)
+            bar.position = CGPoint(x: Self.barWidth / 2 + CGFloat(i) * (Self.barWidth + Self.gap), y: Self.height / 2)
+            layer?.addSublayer(bar)
+        }
+        applyTint()
+    }
+    required init?(coder: NSCoder) { fatalError() }
+
+    private func applyTint() { bars.forEach { $0.backgroundColor = tint.cgColor } }
+
+    private func setHeight(_ bar: CALayer, _ h: CGFloat, duration: CFTimeInterval) {
+        CATransaction.begin()
+        CATransaction.setAnimationDuration(duration)
+        CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .linear))
+        bar.bounds = CGRect(x: 0, y: 0, width: Self.barWidth, height: h)
+        CATransaction.commit()
+    }
+
+    private func refresh() {
+        bars.forEach { $0.removeAllAnimations() }
+        if !playing {
+            for bar in bars { setHeight(bar, 3, duration: 0.15) }
+        } else if live != nil {
+            updateLive()
+        } else {
+            // Tinggi = 4 + 9·|sin(t·(2,1 + 0,7·i) + i)|, dicuplik sepanjang satu periode lalu diulang tanpa henti.
+            for (i, bar) in bars.enumerated() {
+                let w = 2.1 + Double(i) * 0.7
+                let period = Double.pi / w
+                let steps = 24
+                let values = (0...steps).map { k -> CGFloat in
+                    let t = period * Double(k) / Double(steps)
+                    return CGFloat(4 + 9 * abs(sin(t * w + Double(i))))
+                }
+                let anim = CAKeyframeAnimation(keyPath: "bounds.size.height")
+                anim.values = values
+                anim.duration = period
+                anim.repeatCount = .infinity
+                anim.calculationMode = .linear
+                // Mulai dari fase yang berbeda supaya batang tidak serempak.
+                anim.timeOffset = period * Double(i) / 4
+                bar.add(anim, forKey: "bounce")
+            }
+        }
+    }
+
+    private func updateLive() {
+        guard playing, let live else { return }
+        for (i, bar) in bars.enumerated() {
+            let level = i < live.count ? CGFloat(live[i]) : 0
+            setHeight(bar, 3 + 11 * level, duration: 1.0 / 30)
+        }
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        // Animasi Core Animation berhenti saat view lepas dari jendela; pasang lagi saat kembali.
+        if window != nil { refresh() }
     }
 }
 

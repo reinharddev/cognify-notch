@@ -166,7 +166,7 @@ window.I18N = (() => {
     'd2.p5': '<b>Audio from other apps</b>for the equalizer',
 
     // Spesifikasi
-    'sp.size': 'download size on Mac, 1.3 MB on Windows',
+    'sp.size': 'download size on Mac, 12 MB on Windows',
     'sp.os': 'macOS Ventura or later, or Windows 11 (Beta)',
     'sp.acc': 'accounts to create',
     'sp.lang': 'languages: Indonesian and English',
@@ -184,11 +184,11 @@ window.I18N = (() => {
     'q.3': '<summary>Why does the song I am playing not show up?</summary><p>Since macOS 15.4, Apple only lets its own programs read what is playing. Cognify Notch uses the same method as Boring Notch to keep reading it. If Apple closes that path, the music section is hidden and every other feature keeps working. On Windows, songs are read from the Windows media controls, so Spotify, browsers, and other players that show up there are picked up too.</p>',
     'q.4': '<summary>Why does a song have no lyrics?</summary><p>Lyrics come from LRCLIB, a free lyrics library built by its community. Popular songs are almost always there, but some local or new songs may not be yet.</p>',
     'q.5': '<summary>How do updates work?</summary><p>Automatically. New versions download in the background and install while the notch is not in use, and the app restarts in about a second. If you are several versions behind, it goes straight to the latest one. To turn this off, click the notch icon in the menu bar and turn off Install updates automatically. On Windows it is automatic too: the app checks once a day, downloads in the background, and installs while the notch is not in use. Automatic updates can be turned off in Settings.</p>',
-    'q.6': '<summary>Will it slow down my computer or drain the battery?</summary><p>No. When idle, the notch only checks the cursor position when it needs to. On the developer\'s MacBook, idle CPU use stays under 0.5%.</p>',
+    'q.6': '<summary>Will it slow down my computer or drain the battery?</summary><p>It shouldn\'t. When idle, the notch only checks the cursor position when it needs to, so it uses almost no CPU. While music plays, the equalizer and lyrics add a little. On Windows, the eyes can be hidden in Settings, and the "follow the cursor" option uses slightly more power than plain blinking.</p>',
     'q.9': '<summary>Is there a Windows version?</summary><p>Yes, still in Beta. Cognify Notch for Windows 11 has most of the Mac version\'s features, except dragging files to the Tray and voice notes. Once installed, the app updates itself.</p>',
     'q.10': '<summary>Why does Windows show a SmartScreen warning?</summary><p>The Windows installer is not signed with a paid certificate yet, so Windows warns about apps it does not know. Click More info, then Run anyway. The code is open on GitHub, so you can inspect it or build it yourself.</p>',
     'q.7': '<summary>How do I stop or remove it?</summary><p>Click the notch icon in the menu bar. Turn off Open at login so the app does not start on its own, or choose Quit. To remove it, drag Cognify Notch from the Applications folder to the Trash. On Windows, right-click the notch icon in the tray and choose Quit, then remove it in Windows Settings, Apps.</p>',
-    'q.8': '<summary>Does Cognify Notch collect data?</summary><p>No. There is no account and no analytics. The <a href="#data">Data</a> section above lists every feature that uses the internet.</p>',
+    'q.8': '<summary>Does Cognify Notch collect data?</summary><p>No. There is no account and no analytics. The <a href="#data">Data</a> section above and the <a href="privasi.html">privacy policy</a> list every feature that uses the internet.</p>',
 
     // Unduh
     'get.title': 'Try it now.',
@@ -197,6 +197,12 @@ window.I18N = (() => {
     'get.new': 'What\'s new on Mac',
     'get.newNote': 'Release notes are written in Indonesian.',
     'get.all': 'All release notes',
+    'd2.policy': 'The full details are in the <a href="privasi.html">privacy policy</a>, and the usage rules in the <a href="syarat.html">terms of use</a>.',
+    'foot.priv': 'Privacy policy',
+    'foot.terms': 'Terms of use',
+    'q.11': '<summary>On Windows, how do I hide the notch or make it narrower?</summary><p>Left-click the Cognify Notch icon in the taskbar\'s hidden icons (the small arrow) to hide or show the notch. Right-click opens a menu: Hide or Show notch, Settings, and Quit. In Settings, the "Closed notch width" slider narrows the pill so it does not cover browser tabs. The open panel does not change.</p>',
+    'q.12': '<summary>Can the two dots (eyes) on the notch be turned off?</summary><p>Yes, and notices like charger, volume, and downloads still appear. Windows Settings has a "Show the eyes" switch and an eye movement choice: Blink (default) or Follow cursor. On Mac, turn off "Eyes when idle" in Settings.</p>',
+    'sp.winx': '<b>Windows only</b>Settings live in their own window (the gear button on the notch or the tray icon menu). There is a closed notch width slider, switches and movement for the eyes, and hide or show the notch from the tray icon. Notices, the volume and brightness HUD, and Pomodoro are laid out like the Mac version.',
     'foot': 'The notch content on this page is sample content. Mac and MacBook are trademarks of Apple Inc. Windows is a trademark of Microsoft Corporation.',
   };
 
