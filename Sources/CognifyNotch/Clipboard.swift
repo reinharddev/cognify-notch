@@ -4,7 +4,7 @@ import SwiftUI
 /// Riwayat clipboard: teks, tautan, dan gambar yang terakhir di-copy. Teks & tautan disimpan di
 /// UserDefaults Mac ini (maks. 40); gambar hanya di memori selama app berjalan (maks. 8).
 /// Isi yang ditandai rahasia/sementara oleh pengelola kata sandi (konvensi nspasteboard.org)
-/// tidak pernah dicatat.
+/// tidak pernah dicatat. Item yang disematkan selalu di atas dan tidak pernah tergeser item baru.
 @MainActor
 final class ClipboardHistory: ObservableObject {
     enum Kind: String, Codable { case text, link, image }
@@ -17,8 +17,9 @@ final class ClipboardHistory: ObservableObject {
         let imageData: Data?
         let app: String?
         let date: Date
+        var pinned = false
 
-        static func == (a: Item, b: Item) -> Bool { a.id == b.id }
+        static func == (a: Item, b: Item) -> Bool { a.id == b.id && a.pinned == b.pinned }
     }
 
     private struct Stored: Codable {
@@ -27,6 +28,7 @@ final class ClipboardHistory: ObservableObject {
         let text: String
         let app: String?
         let date: Date
+        var pinned: Bool? // nil di data lama
     }
 
     @Published private(set) var items: [Item] = []
@@ -41,7 +43,8 @@ final class ClipboardHistory: ObservableObject {
 
     init() {
         if let data = UserDefaults.standard.data(forKey: key), let saved = try? JSONDecoder().decode([Stored].self, from: data) {
-            items = saved.map { Item(id: $0.id, kind: $0.kind, text: $0.text, image: nil, imageData: nil, app: $0.app, date: $0.date) }
+            items = saved.map { Item(id: $0.id, kind: $0.kind, text: $0.text, image: nil, imageData: nil, app: $0.app, date: $0.date,
+                                     pinned: $0.pinned ?? false) }
         }
     }
 
@@ -75,11 +78,15 @@ final class ClipboardHistory: ObservableObject {
 
     private func add(_ item: Item) {
         var next = items
-        if let text = item.text { next.removeAll { $0.text == text } }
+        var item = item
+        if let text = item.text, let old = next.first(where: { $0.text == text }) {
+            item.pinned = old.pinned // copy ulang teks yang disematkan tetap tersemat
+            next.removeAll { $0.text == text }
+        }
         next.insert(item, at: 0)
-        let images = next.filter { $0.kind == .image }.dropFirst(Self.maxImages).map(\.id)
+        let images = next.filter { $0.kind == .image && !$0.pinned }.dropFirst(Self.maxImages).map(\.id)
         next.removeAll { images.contains($0.id) }
-        let texts = next.filter { $0.kind != .image }.dropFirst(Self.maxText).map(\.id)
+        let texts = next.filter { $0.kind != .image && !$0.pinned }.dropFirst(Self.maxText).map(\.id)
         next.removeAll { texts.contains($0.id) }
         withAnimation(.notch) { items = next }
         save()
@@ -107,13 +114,31 @@ final class ClipboardHistory: ObservableObject {
         save()
     }
 
+    /// Hapus semua kecuali yang disematkan.
     func clear() {
-        withAnimation(.notch) { items = [] }
+        withAnimation(.notch) { items.removeAll { !$0.pinned } }
         save()
     }
 
+    func togglePin(_ item: Item) {
+        guard let i = items.firstIndex(where: { $0.id == item.id }) else { return }
+        withAnimation(.notch) { items[i].pinned.toggle() }
+        save()
+    }
+
+    /// Tersemat dulu, lalu terbaru; disaring dengan kata kunci (tanpa membedakan huruf besar).
+    func visible(matching query: String) -> [Item] {
+        let q = query.trimmingCharacters(in: .whitespaces)
+        let filtered = q.isEmpty ? items : items.filter {
+            ($0.text ?? "").localizedCaseInsensitiveContains(q) || ($0.app ?? "").localizedCaseInsensitiveContains(q)
+        }
+        return filtered.filter(\.pinned) + filtered.filter { !$0.pinned }
+    }
+
     private func save() {
-        let stored = items.compactMap { item in item.text.map { Stored(id: item.id, kind: item.kind, text: $0, app: item.app, date: item.date) } }
+        let stored = items.compactMap { item in
+            item.text.map { Stored(id: item.id, kind: item.kind, text: $0, app: item.app, date: item.date, pinned: item.pinned) }
+        }
         if let data = try? JSONEncoder().encode(stored) { UserDefaults.standard.set(data, forKey: key) }
     }
 
@@ -121,7 +146,7 @@ final class ClipboardHistory: ObservableObject {
     func preview(_ texts: [String]) {
         items = texts.enumerated().map { i, text in
             Item(id: UUID(), kind: text.hasPrefix("http") ? .link : .text, text: text, image: nil, imageData: nil,
-                 app: ["Safari", "Notes", "Pages"][i % 3], date: Date().addingTimeInterval(Double(-i) * 420))
+                 app: ["Safari", "Notes", "Pages"][i % 3], date: Date().addingTimeInterval(Double(-i) * 420), pinned: i == 2)
         }
     }
 }
@@ -129,14 +154,23 @@ final class ClipboardHistory: ObservableObject {
 struct ClipboardPanel: View {
     @ObservedObject var model: NotchModel
     @ObservedObject var history: ClipboardHistory
+    @State private var query = ""
     @Environment(\.snapshot) private var snapshot
 
     private let columns = [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack {
+            HStack(spacing: 8) {
                 SectionLabel(text: history.items.isEmpty ? L("Clipboard", "Clipboard") : "\(L("Clipboard", "Clipboard")) · \(history.items.count)")
+                if !history.items.isEmpty && !snapshot {
+                    HStack(spacing: 5) {
+                        Image(systemName: "magnifyingglass").font(.system(size: 10)).foregroundStyle(.white.opacity(0.45))
+                        TextField(L("Cari", "Search"), text: $query).textFieldStyle(.plain).font(.system(size: 11))
+                    }
+                    .padding(.horizontal, 8).frame(width: 170, height: 22)
+                    .background(Capsule().fill(Color.white.opacity(0.08)))
+                }
                 Spacer()
                 if !history.items.isEmpty {
                     Button(L("Hapus semua", "Clear all")) { history.clear() }.buttonStyle(PillButtonStyle(prominent: false))
@@ -155,11 +189,11 @@ struct ClipboardPanel: View {
 
     private var grid: some View {
         LazyVGrid(columns: columns, alignment: .leading, spacing: 8) {
-            ForEach(history.items) { item in
+            ForEach(history.visible(matching: query)) { item in
                 ClipboardTile(item: item) {
                     history.copy(item)
                     model.show(.done(L("Disalin ke clipboard", "Copied to clipboard")))
-                } remove: { history.remove(item) }
+                } remove: { history.remove(item) } pin: { history.togglePin(item) }
             }
         }
     }
@@ -169,6 +203,7 @@ private struct ClipboardTile: View {
     let item: ClipboardHistory.Item
     let copy: () -> Void
     let remove: () -> Void
+    let pin: () -> Void
     @State private var hover = false
 
     var body: some View {
@@ -195,9 +230,18 @@ private struct ClipboardTile: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(RoundedRectangle(cornerRadius: 9).fill(Color.white.opacity(hover ? 0.12 : 0.07)))
             .overlay(alignment: .topTrailing) {
-                if hover {
-                    Button(action: remove) { Image(systemName: "xmark").font(.system(size: 8.5, weight: .bold)).padding(5) }
-                        .buttonStyle(.plain).foregroundStyle(.white.opacity(0.6)).help(L("Hapus", "Remove"))
+                HStack(spacing: 0) {
+                    if hover || item.pinned {
+                        Button(action: pin) {
+                            Image(systemName: item.pinned ? "pin.fill" : "pin").font(.system(size: 8.5, weight: .bold)).padding(5)
+                        }
+                        .buttonStyle(.plain).foregroundStyle(item.pinned ? Color.accent : .white.opacity(0.6))
+                        .help(item.pinned ? L("Lepas sematan", "Unpin") : L("Sematkan", "Pin"))
+                    }
+                    if hover && !item.pinned {
+                        Button(action: remove) { Image(systemName: "xmark").font(.system(size: 8.5, weight: .bold)).padding(5) }
+                            .buttonStyle(.plain).foregroundStyle(.white.opacity(0.6)).help(L("Hapus", "Remove"))
+                    }
                 }
             }
             .contentShape(Rectangle())

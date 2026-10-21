@@ -142,6 +142,21 @@ struct SettingsView: View {
                 }
             }
             Section(L("Notch", "Notch")) {
+                Picker(L("Buka notch dengan", "Open the notch by"), selection: $prefs.openOnClick) {
+                    Text(L("Mengarahkan kursor", "Hovering")).tag(false)
+                    Text(L("Klik", "Clicking")).tag(true)
+                }
+                Picker(L("Tampil di", "Show on"), selection: $prefs.display) {
+                    ForEach(Preferences.Display.allCases) { Text($0.label).tag($0) }
+                }
+                LabeledContent(L("Kota untuk cuaca", "City for weather")) {
+                    TextField(L("mis. Jakarta", "e.g. Jakarta"), text: $prefs.weatherCity)
+                        .textFieldStyle(.roundedBorder)
+                        .disabled(!model.features.weather)
+                }
+                if model.features.weather, let problem = model.weather.problem {
+                    Text(problem).font(.caption).foregroundStyle(.orange)
+                }
                 Picker(L("Ukuran panel", "Panel size"), selection: $prefs.scale) {
                     Text(L("Normal", "Normal")).tag(1.0)
                     Text(L("Besar", "Large")).tag(1.12)
@@ -170,6 +185,15 @@ struct SettingsView: View {
                         Button { prefs.move(tab, by: 1) } label: { Image(systemName: "chevron.down") }
                             .buttonStyle(.borderless).disabled(prefs.ordered(NotchModel.Tab.allCases).last == tab)
                     }
+                }
+            }
+            Section(L("Data", "Data")) {
+                HStack {
+                    Text(L("Catatan, tugas, riwayat minum, clipboard, timer, dan pengaturan", "Notes, tasks, water log, clipboard, timers and settings"))
+                        .font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    Button(L("Ekspor…", "Export…")) { DataBackup.export() }
+                    Button(L("Impor…", "Import…")) { DataBackup.importFile() }
                 }
             }
             Section(L("Bahasa", "Language")) {

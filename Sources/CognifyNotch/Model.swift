@@ -138,12 +138,13 @@ final class StudyTimer: ObservableObject {
 final class NotchModel: ObservableObject {
     /// Halaman panel terbuka (digeser dengan panah, titik, atau dua jari).
     enum Tab: String, CaseIterable {
-        case home, music, timer, water, todo, notes, clipboard, tray, mirror, shortcuts
+        case home, music, timer, clock, water, todo, notes, clipboard, tray, mirror, shortcuts
 
         var icon: String {
             switch self {
             case .home: return "house.fill"
             case .music: return "music.note"
+            case .clock: return "stopwatch"
             case .water: return "drop.fill"
             case .todo: return "checklist"
             case .notes: return "note.text"
@@ -159,6 +160,7 @@ final class NotchModel: ObservableObject {
             switch self {
             case .home: return L("Beranda", "Home")
             case .music: return L("Musik", "Music")
+            case .clock: return L("Stopwatch & Timer", "Stopwatch & Timer")
             case .water: return L("Pengingat Minum", "Water Reminder")
             case .todo: return L("Daftar Tugas", "To-do")
             case .notes: return L("Catatan", "Notes")
@@ -192,6 +194,11 @@ final class NotchModel: ObservableObject {
         var keyboard = true // kabar Caps Lock & bahasa keyboard
         var network = true // kabar internet putus/tersambung
         var hideFullscreen = true // menyingkir saat app layar penuh
+        var remindersSync = false // tugas tersinkron dengan Apple Reminders (perlu izin)
+        var lyricsWing = true // baris lirik di sayap saat lagu diputar
+        var weather = false // cuaca di header (internet, perlu nama kota)
+        var calculator = true // hitungan & konversi di catatan cepat
+        var clockTools = true // halaman stopwatch & hitung mundur
     }
 
     /// Kartu kabar singkat di bawah notch (charger, AirPods, unduhan, Caps Lock, internet).
@@ -248,6 +255,8 @@ final class NotchModel: ObservableObject {
         var title: String? = nil // teks di sayap kiri (nama perangkat / judul lagu); sayap kiri jadi lebar
         var wideRight = true // false: hanya sayap kiri yang melebar (judul lagu baru)
         var eyes = false // mata (notch diam)
+        var lyrics = false // baris lirik berjalan di sayap kiri
+        var countdown: Date? = nil // hitung mundur: sisa waktu dihitung saat digambar
     }
 
     @Published var expanded = false
@@ -297,6 +306,8 @@ final class NotchModel: ObservableObject {
     let lyrics = LyricsService()
     let water = WaterTracker()
     let todo = TodoStore()
+    let clock = ClockTools()
+    let weather = WeatherFeed()
     let prefs: Preferences
     private let keyboard = KeyboardWatcher()
     private let network = NetworkWatcher()
@@ -319,7 +330,7 @@ final class NotchModel: ObservableObject {
     private var changes = Set<AnyCancellable>()
 
     private var announcedMeetings = Set<String>()
-    private var clock: Timer?
+    private var heartbeat: Timer?
     /// Isi kolom catatan sebelum mulai merekam suara (teks hasil rekaman ditambahkan di belakangnya).
     private var noteBeforeVoice = ""
 
@@ -333,7 +344,8 @@ final class NotchModel: ObservableObject {
                           notes.objectWillChange.eraseToAnyPublisher(), downloads.objectWillChange.eraseToAnyPublisher(),
                           clipboard.objectWillChange.eraseToAnyPublisher(), self.prefs.objectWillChange.eraseToAnyPublisher(),
                           lyrics.objectWillChange.eraseToAnyPublisher(), water.objectWillChange.eraseToAnyPublisher(),
-                          todo.objectWillChange.eraseToAnyPublisher()] {
+                          todo.objectWillChange.eraseToAnyPublisher(), clock.objectWillChange.eraseToAnyPublisher(),
+                          weather.objectWillChange.eraseToAnyPublisher()] {
             publisher.sink { [weak self] in self?.objectWillChange.send() }.store(in: &changes)
         }
         levels.onChange = { [weak self] level in self?.showLevel(level) }
@@ -342,6 +354,17 @@ final class NotchModel: ObservableObject {
             self?.battery = PowerMonitor.current()
         }
         keyboard.onCapsLock = { [weak self] on in self?.showNotice(.capsLock(on)) }
+        clock.onFinish = { [weak self] countdown in
+            NSSound(named: "Glass")?.play()
+            self?.show(.alert(title: L("Timer \(countdown.label) selesai", "\(countdown.label) timer done"),
+                              detail: L("Waktunya!", "Time's up!"), action: nil))
+        }
+        self.prefs.$weatherCity.dropFirst().removeDuplicates().sink { [weak self] city in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.weather.configure(enabled: self.features.weather, city: city)
+            }
+        }.store(in: &changes)
         keyboard.onInputSource = { [weak self] name in self?.showNotice(.inputSource(name)) }
         network.onChange = { [weak self] online in self?.showNotice(.network(online)) }
         companionTask = Task { [weak self] in
@@ -369,13 +392,14 @@ final class NotchModel: ObservableObject {
         }
         voice.onError = { [weak self] message in self?.show(.failed(message)) }
         // Jam notch: waktu relatif agenda & pengingat rapat tetap segar walau tanpa Cognify.
-        clock = Timer.scheduledTimer(withTimeInterval: 20, repeats: true) { [weak self] _ in
+        heartbeat = Timer.scheduledTimer(withTimeInterval: 20, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.tick() }
         }
         media.$nowPlaying.sink { [weak self] now in
             DispatchQueue.main.async {
                 self?.updateSpectrum(playing: now?.playing == true)
                 self?.announceSong(now)
+                self?.loadWingLyrics(now)
             }
         }.store(in: &changes)
         timer.onFinish = { [weak self] mode in
@@ -452,11 +476,17 @@ final class NotchModel: ObservableObject {
             return Live(icon: timer.mode == .focus ? "brain.head.profile" : "cup.and.saucer.fill",
                         text: StudyTimer.clock(timer.remaining), tint: timer.mode == .focus ? .accent : .green)
         }
+        if features.clockTools, let countdown = clock.nearest {
+            return Live(icon: "hourglass", tint: .orange, countdown: countdown.end)
+        }
         if let next = state?.events.first(where: { !$0.allDay }),
            next.due.timeIntervalSince(now) <= 60 * 60, next.due > now {
             return Live(icon: next.kind == "deadline" ? "calendar.badge.clock" : "bell", text: Relative.short(next.due, now: now), tint: .orange)
         }
         if features.media, media.nowPlaying?.playing == true {
+            if songBanner == nil, wingLyrics, case .synced = lyrics.state {
+                return Live(icon: "music.note", tint: .accent, media: true, title: "", wideRight: false, lyrics: true)
+            }
             return Live(icon: "music.note", tint: .accent, media: true, title: songBanner, wideRight: false)
         }
         if features.companion { return Live(icon: "", tint: .white, eyes: true) }
@@ -521,6 +551,14 @@ final class NotchModel: ObservableObject {
         return "hifispeaker.fill"
     }
 
+    private var wingLyrics: Bool { features.lyrics && features.lyricsWing }
+
+    /// Lirik untuk sayap dimuat begitu lagu berganti (bila lirik di sayap dinyalakan).
+    private func loadWingLyrics(_ now: NowPlaying?) {
+        guard wingLyrics, features.media, let now else { return }
+        lyrics.load(for: now)
+    }
+
     /// Tab yang terlihat sesuai fitur yang dinyalakan.
     var tabs: [Tab] {
         prefs.ordered(Tab.allCases.filter {
@@ -531,6 +569,7 @@ final class NotchModel: ObservableObject {
             case .music: return features.media
             case .water: return features.water
             case .todo: return features.todo
+            case .clock: return features.clockTools
             case .notes: return appMode
             default: return true
             }
@@ -556,6 +595,9 @@ final class NotchModel: ObservableObject {
         if !next.lyrics { lyrics.reset() }
         keyboard.setEnabled(next.keyboard)
         network.setEnabled(next.network)
+        todo.setSync(next.remindersSync)
+        weather.configure(enabled: next.weather, city: prefs.weatherCity)
+        loadWingLyrics(media.nowPlaying)
         if !next.companion { mood = .awake }
         if !tabs.contains(tab) { tab = .home }
     }
@@ -687,6 +729,7 @@ final class NotchModel: ObservableObject {
         hovering = inside
         collapseTask?.cancel()
         if inside {
+            guard !prefs.openOnClick else { return } // dibuka dengan klik (NotchController)
             collapseTask = Task { [weak self] in
                 try? await Task.sleep(nanoseconds: UInt64((self?.prefs.hoverDelay ?? 0.09) * 1_000_000_000)) // lewat sekilas tidak membuka notch
                 guard !Task.isCancelled else { return }

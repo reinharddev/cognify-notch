@@ -1,6 +1,7 @@
 import AppKit
 import Carbon.HIToolbox
 import SwiftUI
+import UniformTypeIdentifiers
 
 // MARK: - Bahasa
 
@@ -68,6 +69,25 @@ final class Preferences: ObservableObject {
             Lang.english = language == .en
         }
     }
+    enum Display: String, CaseIterable, Identifiable {
+        case notch, main, active
+        var id: String { rawValue }
+        var label: String {
+            switch self {
+            case .notch: return L("Layar dengan notch", "Screen with the notch")
+            case .main: return L("Layar utama (menu bar)", "Main screen (menu bar)")
+            case .active: return L("Layar yang sedang dipakai", "Screen you're using")
+            }
+        }
+    }
+
+    /// Notch dibuka dengan klik, bukan saat kursor diarahkan.
+    @Published var openOnClick: Bool { didSet { save("prefs.openOnClick", openOnClick) } }
+    /// Layar tempat notch tampil (penting saat memakai monitor tambahan).
+    @Published var display: Display { didSet { save("prefs.display", display.rawValue) } }
+    /// Kota untuk cuaca di header (dikirim ke Open-Meteo bila fitur cuaca nyala).
+    @Published var weatherCity: String { didSet { save("prefs.weatherCity", weatherCity) } }
+
     /// Urutan tab (rawValue `NotchModel.Tab`).
     @Published var tabOrder: [String] { didSet { save("prefs.tabOrder", tabOrder) } }
 
@@ -83,6 +103,9 @@ final class Preferences: ObservableObject {
         hotKey = (d?.string(forKey: "prefs.hotKey")).flatMap(HotKeyChoice.init) ?? .ctrlOptN
         language = (d?.string(forKey: "prefs.language")).flatMap(Language.init) ?? .id
         tabOrder = d?.stringArray(forKey: "prefs.tabOrder") ?? NotchModel.Tab.allCases.map(\.rawValue)
+        openOnClick = d?.bool(forKey: "prefs.openOnClick") ?? false
+        display = (d?.string(forKey: "prefs.display")).flatMap(Display.init) ?? .notch
+        weatherCity = d?.string(forKey: "prefs.weatherCity") ?? ""
         Lang.english = language == .en
     }
 
@@ -167,6 +190,21 @@ struct FeatureToggle: Identifiable {
         FeatureToggle(key: \.hideFullscreen, defaultsKey: "feature.hideFullscreen",
                       title: { L("Sembunyi saat layar penuh", "Hide in full-screen apps") },
                       hint: { L("Notch menyingkir saat video, game, atau presentasi memenuhi layar.", "Steps aside for full-screen video, games and presentations.") }),
+        FeatureToggle(key: \.lyricsWing, defaultsKey: "feature.lyricsWing",
+                      title: { L("Lirik di notch tertutup", "Lyrics in the closed notch") },
+                      hint: { L("Baris yang sedang dinyanyikan tampil di sisi kiri notch saat lagu diputar.", "The line being sung shows beside the notch while music plays.") }),
+        FeatureToggle(key: \.clockTools, defaultsKey: "feature.clockTools",
+                      title: { L("Stopwatch & hitung mundur", "Stopwatch & countdowns") },
+                      hint: { L("Halaman stopwatch dengan lap dan beberapa hitung mundur sekaligus.", "A stopwatch with laps and several countdowns at once.") }),
+        FeatureToggle(key: \.remindersSync, defaultsKey: "feature.remindersSync",
+                      title: { L("Sinkron Daftar Tugas dengan Pengingat", "Sync to-dos with Reminders") },
+                      hint: { L("Tugas disimpan di daftar Pengingat bawaan, ikut iCloud ke iPhone. macOS akan meminta izin.", "Tasks live in your default Reminders list and sync to iPhone via iCloud. macOS will ask for permission.") }),
+        FeatureToggle(key: \.calculator, defaultsKey: "feature.calculator",
+                      title: { L("Kalkulator di catatan cepat", "Calculator in quick note") },
+                      hint: { L("Ketik 12*3, 15% dari 200, atau 5 km ke mil; hasilnya langsung muncul.", "Type 12*3, 15% of 200 or 5 km to mi; the answer shows up right away.") }),
+        FeatureToggle(key: \.weather, defaultsKey: "feature.weather",
+                      title: { L("Cuaca di header", "Weather in the header") },
+                      hint: { L("Butuh internet dan nama kota (di bawah): kota dan koordinatnya dikirim ke Open-Meteo tiap 30 menit.", "Needs internet and a city (below): the city and its coordinates are sent to Open-Meteo every 30 minutes.") }),
         FeatureToggle(key: \.hotkey, defaultsKey: "feature.hotkey",
                       title: { L("Buka dengan shortcut keyboard", "Open with a keyboard shortcut") },
                       hint: { L("Esc atau klik di luar notch menutupnya.", "Esc or a click outside closes it.") }),
@@ -188,5 +226,63 @@ struct FeatureToggle: Identifiable {
         features[keyPath: toggle.key] = value
         UserDefaults.standard.set(value, forKey: toggle.defaultsKey)
         model.apply(features)
+    }
+}
+
+// MARK: - Cadangan data
+
+/// Ekspor/impor data app mandiri ke satu file (property list): catatan, tugas, riwayat minum,
+/// clipboard (teks), timer, pengaturan, dan pilihan fitur. Tray tidak ikut (bookmark file hanya
+/// berlaku di Mac ini); gambar clipboard tidak disimpan sejak awal.
+@MainActor
+enum DataBackup {
+    private static let prefixes = ["notes.", "todo.", "water.", "clipboard.", "timer.", "clock.", "prefs.", "feature."]
+
+    static func export() {
+        let all = UserDefaults.standard.dictionaryRepresentation().filter { key, _ in prefixes.contains { key.hasPrefix($0) } }
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = L("Cadangan Cognify Notch.plist", "Cognify Notch Backup.plist")
+        panel.allowedContentTypes = [.propertyList]
+        NSApp.activate(ignoringOtherApps: true)
+        guard panel.runModal() == .OK, let url = panel.url,
+              let data = try? PropertyListSerialization.data(fromPropertyList: ["cognifyNotch": 1, "data": all], format: .xml, options: 0)
+        else { return }
+        try? data.write(to: url)
+    }
+
+    /// Mengganti data Mac ini dengan isi file, lalu app dibuka ulang supaya semuanya termuat.
+    static func importFile() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.propertyList]
+        NSApp.activate(ignoringOtherApps: true)
+        guard panel.runModal() == .OK, let url = panel.url, let data = try? Data(contentsOf: url),
+              let root = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
+              root["cognifyNotch"] != nil, let values = root["data"] as? [String: Any]
+        else {
+            let alert = NSAlert()
+            alert.messageText = L("File ini bukan cadangan Cognify Notch", "This file isn't a Cognify Notch backup")
+            alert.runModal()
+            return
+        }
+        let alert = NSAlert()
+        alert.messageText = L("Ganti data di Mac ini dengan isi cadangan?", "Replace this Mac's data with the backup?")
+        alert.informativeText = L("Catatan, tugas, riwayat minum, clipboard, timer, dan pengaturan sekarang akan diganti. Cognify Notch lalu dibuka ulang.",
+                                  "Current notes, tasks, water log, clipboard, timers and settings will be replaced. Cognify Notch will then restart.")
+        alert.addButton(withTitle: L("Ganti", "Replace"))
+        alert.addButton(withTitle: L("Batal", "Cancel"))
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        for (key, value) in values where prefixes.contains(where: { key.hasPrefix($0) }) {
+            UserDefaults.standard.set(value, forKey: key)
+        }
+        UserDefaults.standard.synchronize()
+        relaunch()
+    }
+
+    private static func relaunch() {
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/bin/sh")
+        task.arguments = ["-c", "sleep 1; /usr/bin/open \"$0\"", Bundle.main.bundlePath]
+        try? task.run()
+        NSApp.terminate(nil)
     }
 }

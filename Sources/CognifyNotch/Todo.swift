@@ -1,7 +1,11 @@
+import CryptoKit
+import EventKit
 import SwiftUI
 
-/// Daftar tugas dengan pengingat. Tugas selesai disimpan sampai akhir hari berikutnya, lalu
-/// dibuang; semua di UserDefaults Mac ini.
+/// Daftar tugas dengan pengingat. Tanpa sinkron: tugas di UserDefaults Mac ini, yang selesai
+/// dibuang setelah akhir hari berikutnya. Dengan sinkron Apple Reminders: tugas diambil dari dan
+/// disimpan ke daftar Pengingat bawaan (ikut iCloud ke iPhone); yang tampil = belum selesai +
+/// selesai hari ini.
 @MainActor
 final class TodoStore: ObservableObject {
     struct Item: Codable, Identifiable, Equatable {
@@ -14,9 +18,24 @@ final class TodoStore: ObservableObject {
     }
 
     @Published private(set) var items: [Item] = []
+    /// Tersambung ke Apple Reminders.
+    @Published private(set) var synced = false
+    /// Nama daftar Pengingat yang dipakai (untuk ditampilkan).
+    @Published private(set) var listName: String?
+    @Published private(set) var syncProblem: String?
     private let key = "todo.items"
 
+    private let store = EKEventStore()
+    private var identifiers: [UUID: String] = [:] // Item.id → calendarItemIdentifier
+    private var observer: NSObjectProtocol?
+    private var notifiedExternal: Set<String> = Set(UserDefaults.standard.stringArray(forKey: "todo.notifiedReminders") ?? [])
+
     init() {
+        loadLocal()
+    }
+
+    private func loadLocal() {
+        items = []
         if let data = UserDefaults.standard.data(forKey: key), let saved = try? JSONDecoder().decode([Item].self, from: data) {
             let cutoff = Calendar.current.startOfDay(for: Date()).addingTimeInterval(-86_400)
             items = saved.filter { !$0.done || ($0.doneAt ?? .distantPast) > cutoff }
@@ -24,7 +43,116 @@ final class TodoStore: ObservableObject {
     }
 
     private func save() {
+        guard !synced else { return }
         if let data = try? JSONEncoder().encode(items) { UserDefaults.standard.set(data, forKey: key) }
+    }
+
+    // MARK: Apple Reminders
+
+    func setSync(_ on: Bool) {
+        if on, !synced { Task { await startSync() } }
+        if !on, synced { stopSync() }
+    }
+
+    private func startSync() async {
+        let granted: Bool
+        if #available(macOS 14.0, *) {
+            granted = (try? await store.requestFullAccessToReminders()) ?? false
+        } else {
+            granted = await withCheckedContinuation { c in store.requestAccess(to: .reminder) { ok, _ in c.resume(returning: ok) } }
+        }
+        guard granted, let list = store.defaultCalendarForNewReminders() else {
+            syncProblem = L("Izinkan Pengingat untuk Cognify Notch di Pengaturan Sistem → Privasi.",
+                            "Allow Reminders for Cognify Notch in System Settings → Privacy.")
+            return
+        }
+        // Tugas lokal yang belum selesai dipindah ke Pengingat sekali, saat sinkron dinyalakan.
+        for item in items where !item.done {
+            let reminder = EKReminder(eventStore: store)
+            reminder.calendar = list
+            reminder.title = item.text
+            reminder.dueDateComponents = item.due.map(Self.components)
+            try? store.save(reminder, commit: false)
+        }
+        try? store.commit()
+        UserDefaults.standard.removeObject(forKey: key)
+        syncProblem = nil
+        synced = true
+        listName = list.title
+        observer = NotificationCenter.default.addObserver(forName: .EKEventStoreChanged, object: store, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.reload() }
+        }
+        reload()
+    }
+
+    private func stopSync() {
+        if let observer { NotificationCenter.default.removeObserver(observer) }
+        observer = nil
+        synced = false
+        listName = nil
+        identifiers = [:]
+        loadLocal()
+    }
+
+    private struct Fetched: Sendable {
+        let identifier: String
+        let title: String
+        let due: Date?
+        let done: Bool
+        let doneAt: Date?
+    }
+
+    /// Ambil ulang dari Pengingat (dipanggil juga saat Pengingat berubah di iPhone/app lain).
+    func reload() {
+        guard synced, let list = store.defaultCalendarForNewReminders() else { return }
+        listName = list.title
+        let open = store.predicateForIncompleteReminders(withDueDateStarting: nil, ending: nil, calendars: [list])
+        let today = store.predicateForCompletedReminders(withCompletionDateStarting: Calendar.current.startOfDay(for: Date()),
+                                                          ending: nil, calendars: [list])
+        var collected: [Fetched] = []
+        let group = DispatchGroup()
+        let lock = NSLock()
+        for predicate in [open, today] {
+            group.enter()
+            store.fetchReminders(matching: predicate) { reminders in
+                let mapped = (reminders ?? []).map {
+                    Fetched(identifier: $0.calendarItemIdentifier, title: $0.title ?? "", due: $0.dueDateComponents?.date,
+                            done: $0.isCompleted, doneAt: $0.completionDate)
+                }
+                lock.lock(); collected += mapped; lock.unlock()
+                group.leave()
+            }
+        }
+        group.notify(queue: .main) { [weak self] in
+            MainActor.assumeIsolated { self?.apply(collected) }
+        }
+    }
+
+    private func apply(_ fetched: [Fetched]) {
+        guard synced else { return }
+        var map: [UUID: String] = [:]
+        let next = fetched.map { f -> Item in
+            let id = Self.uuid(for: f.identifier)
+            map[id] = f.identifier
+            return Item(id: id, text: f.title, due: f.due, done: f.done, doneAt: f.doneAt, notified: notifiedExternal.contains(f.identifier))
+        }
+        identifiers = map
+        if next != items { withAnimation(.notch) { items = next } }
+    }
+
+    private func reminder(_ id: UUID) -> EKReminder? {
+        identifiers[id].flatMap { store.calendarItem(withIdentifier: $0) as? EKReminder }
+    }
+
+    /// UUID tetap dari id Pengingat (supaya baris tidak berkedip saat dimuat ulang).
+    private static func uuid(for identifier: String) -> UUID {
+        let bytes = Array(SHA256.hash(data: Data(identifier.utf8)).prefix(16))
+        return UUID(uuid: (bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
+                           bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]))
+    }
+
+    private static func components(_ date: Date) -> DateComponents {
+        Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: date)
     }
 
     /// Urutan tampil: belum selesai (yang ada waktunya duluan, menurut waktu), lalu yang selesai.
@@ -46,11 +174,27 @@ final class TodoStore: ObservableObject {
     func add(_ text: String, due: Date?) {
         let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty else { return }
-        withAnimation(.notch) { items.append(Item(id: UUID(), text: clean, due: due ?? Self.parseDue(clean))) }
+        let when = due ?? Self.parseDue(clean)
+        if synced, let list = store.defaultCalendarForNewReminders() {
+            let reminder = EKReminder(eventStore: store)
+            reminder.calendar = list
+            reminder.title = clean
+            reminder.dueDateComponents = when.map(Self.components)
+            try? store.save(reminder, commit: true)
+            reload()
+            return
+        }
+        withAnimation(.notch) { items.append(Item(id: UUID(), text: clean, due: when)) }
         save()
     }
 
     func toggle(_ id: UUID) {
+        if synced, let reminder = reminder(id) {
+            reminder.isCompleted.toggle()
+            try? store.save(reminder, commit: true)
+            reload()
+            return
+        }
         guard let i = items.firstIndex(where: { $0.id == id }) else { return }
         withAnimation(.notch) {
             items[i].done.toggle()
@@ -60,6 +204,11 @@ final class TodoStore: ObservableObject {
     }
 
     func remove(_ id: UUID) {
+        if synced, let reminder = reminder(id) {
+            try? store.remove(reminder, commit: true)
+            reload()
+            return
+        }
         withAnimation(.notch) { items.removeAll { $0.id == id } }
         save()
     }
@@ -71,9 +220,13 @@ final class TodoStore: ObservableObject {
             if let time = items[i].due, time <= now, now.timeIntervalSince(time) < 6 * 3600 {
                 items[i].notified = true
                 due.append(items[i])
+                if let identifier = identifiers[items[i].id] { notifiedExternal.insert(identifier) }
             }
         }
-        if !due.isEmpty { save() }
+        if !due.isEmpty {
+            save()
+            if synced { UserDefaults.standard.set(Array(notifiedExternal.suffix(200)), forKey: "todo.notifiedReminders") }
+        }
         return due
     }
 
@@ -130,6 +283,12 @@ struct TodoPanel: View {
                     Text("/\(todo.totalToday)").font(.system(size: 17, weight: .semibold, design: .rounded)).foregroundStyle(.white.opacity(0.5))
                 }
                 Text(L("Tugas selesai hari ini", "Tasks done today")).font(.system(size: 11)).foregroundStyle(.white.opacity(0.55))
+                if let list = todo.listName {
+                    Label(L("Tersinkron: \(list)", "Synced: \(list)"), systemImage: "arrow.triangle.2.circlepath")
+                        .font(.system(size: 9.5)).foregroundStyle(Color.accent)
+                } else if let problem = todo.syncProblem {
+                    Text(problem).font(.system(size: 9.5)).foregroundStyle(.orange).lineLimit(2)
+                }
                 field
                 quickTimes
             }

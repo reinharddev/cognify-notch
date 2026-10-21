@@ -86,7 +86,7 @@ struct NotchRoot: View {
                 .transition(.opacity.combined(with: .scale(scale: 0.94, anchor: .top)))
         } else if let live = model.live {
             LiveWings(live: live, gap: model.notchSize.width, wings: model.wings, media: model.media, spectrum: model.spectrum,
-                      face: model.face, onBannerDone: { model.endSongBanner($0) })
+                      face: model.face, lyrics: model.lyrics, onBannerDone: { model.endSongBanner($0) })
                 .frame(height: model.notchSize.height)
                 .transition(.opacity.combined(with: .scale(scale: 0.9)))
         }
@@ -102,6 +102,7 @@ struct LiveWings: View {
     @ObservedObject var media: MediaMonitor
     let spectrum: Spectrum
     var face: NotchModel.Face? = nil
+    var lyrics: LyricsService? = nil
     var onBannerDone: (String) -> Void = { _ in }
 
     var body: some View {
@@ -122,7 +123,13 @@ struct LiveWings: View {
     private var wingsBody: some View {
         HStack(spacing: 0) {
             Group {
-                if live.media, let title = live.title {
+                if live.lyrics, let lyrics {
+                    HStack(spacing: 8) {
+                        Artwork(media: media, size: 20)
+                        WingLyricLine(lyrics: lyrics, media: media)
+                    }
+                    .padding(.leading, 8)
+                } else if live.media, let title = live.title {
                     HStack(spacing: 8) {
                         Artwork(media: media, size: 20)
                         SongTitle(text: title, onFinish: { onBannerDone(title) })
@@ -153,6 +160,12 @@ struct LiveWings: View {
             Group {
                 if live.media {
                     Equalizer(playing: true, spectrum: spectrum)
+                } else if let end = live.countdown {
+                    TimelineView(.periodic(from: .now, by: 1)) { context in
+                        Text(ClockTools.clock(end.timeIntervalSince(context.date)))
+                            .font(.system(size: 12.5, weight: .semibold, design: .rounded).monospacedDigit())
+                            .foregroundStyle(.white)
+                    }
                 } else if let level = live.level {
                     LevelBar(value: level, tint: live.tint)
                 } else {
@@ -216,6 +229,37 @@ struct SongTitle: View {
                 guard !Task.isCancelled else { return }
                 onFinish()
             }
+    }
+}
+
+/// Baris lirik yang sedang dinyanyikan, di sayap kiri notch tertutup (diperbarui 2x per detik).
+struct WingLyricLine: View {
+    @ObservedObject var lyrics: LyricsService
+    @ObservedObject var media: MediaMonitor
+    @Environment(\.snapshot) private var snapshot
+
+    var body: some View {
+        if snapshot {
+            line(at: media.nowPlaying?.timestamp ?? Date())
+        } else {
+            TimelineView(.periodic(from: .now, by: 0.5)) { context in line(at: context.date) }
+        }
+    }
+
+    private func line(at date: Date) -> some View {
+        var text = ""
+        if case .synced(let lines) = lyrics.state, let position = media.nowPlaying?.position(at: date) {
+            text = lines.last { $0.time <= position + 0.25 }?.text ?? ""
+        }
+        return Text(text.isEmpty ? "♪" : text)
+            .font(.system(size: 12, weight: .semibold, design: .rounded))
+            .foregroundStyle(.white)
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .id(text)
+            .transition(.asymmetric(insertion: .opacity.combined(with: .offset(y: 6)), removal: .opacity))
+            .animation(.easeOut(duration: 0.25), value: text)
     }
 }
 
@@ -337,6 +381,7 @@ struct ExpandedView: View {
         switch model.tab {
         case .home: HomePanel(model: model, calendar: model.calendar)
         case .music: MusicPanel(model: model, media: model.media)
+        case .clock: ClockPanel(clock: model.clock)
         case .water: WaterPanel(water: model.water)
         case .todo: TodoPanel(model: model, todo: model.todo)
         case .notes: NotesPanel(model: model, notes: model.notes)
@@ -374,6 +419,13 @@ struct ExpandedView: View {
                 .frame(width: side, alignment: .leading)
                 Color.clear.frame(width: gap)
                 HStack(spacing: 8) {
+                    if model.features.weather, let now = model.weather.now {
+                        HStack(spacing: 3) {
+                            Image(systemName: now.symbol).symbolRenderingMode(.multicolor).font(.system(size: 11))
+                            Text("\(now.temperature)°").font(.system(size: 11.5, weight: .semibold).monospacedDigit())
+                        }
+                        .help(now.place)
+                    }
                     if let battery = model.battery { BatteryRing(battery: battery) }
                     Text(Self.dateTime(model.now))
                         .font(.system(size: 11.5, weight: .semibold).monospacedDigit())
@@ -726,7 +778,18 @@ struct QuickNote: View {
             }
             .frame(height: 66)
             HStack(spacing: 5) {
-                if !compact {
+                if model.features.calculator, let result = QuickCalc.evaluate(model.note) {
+                    Button {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(result, forType: .string)
+                        model.show(.done(L("Hasil disalin", "Result copied")))
+                    } label: {
+                        Text("= " + result).font(.system(size: 12, weight: .bold, design: .rounded).monospacedDigit())
+                            .foregroundStyle(Color.accent).lineLimit(1)
+                    }
+                    .buttonStyle(.plain)
+                    .help(L("Klik untuk menyalin hasil", "Click to copy the result"))
+                } else if !compact {
                     Image(systemName: "tray.and.arrow.down").font(.system(size: 10))
                     Text(model.appMode ? L("Seret file ke notch → tray", "Drop files on the notch → tray") : L("Seret file atau tautan ke notch", "Drop files or links on the notch")).font(.system(size: 10.5))
                 }

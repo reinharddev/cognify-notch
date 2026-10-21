@@ -64,6 +64,17 @@ enum Snapshot {
             ("n9-kartu-capslock", make(app: true) { $0.preview(notice: .capsLock(true)) }),
             ("na-kartu-internet", make(app: true) { $0.preview(notice: .network(false)) }),
             ("nb-alert-minum", make(app: true) { $0.expanded = true; $0.toast = .alert(title: "Waktunya minum", detail: "Hari ini 1 dari 2 L", action: .drink) }),
+            ("o1-stopwatch", make(app: true) { $0.expanded = true; $0.tab = .clock
+                $0.clock.preview(elapsed: 754.3, laps: [612.1, 301.7], countdowns: [
+                    .init(id: UUID(), label: "10 menit", end: now.addingTimeInterval(372), total: 600),
+                    .init(id: UUID(), label: "3 menit", end: now.addingTimeInterval(95), total: 180),
+                ]) }),
+            ("o2-sayap-lirik", make(app: true) { $0.state = nil; $0.preview(level: nil, features: all); $0.media.preview(song)
+                $0.lyrics.preview(.synced(LyricsService.parse("[00:10.00]Morning folds the city light\n[01:15.00]If I could be by your side\n[01:24.00]I'd give you all my seasons"))) }),
+            ("o3-sayap-hitung-mundur", make(app: true) { $0.state = nil; $0.clock.preview(elapsed: 0, laps: [], countdowns: [.init(id: UUID(), label: "10 menit", end: now.addingTimeInterval(372), total: 600)]) }),
+            ("o4-clipboard-sematan", make(app: true) { $0.expanded = true; $0.tab = .clipboard; $0.clipboard.preview(["https://meet.google.com/abc-defg-hij", "Rumus luas lingkaran: L = π × r²", "Nomor rekening kas kelas: 1234567890", "Bab 4 halaman 88 nomor 1-10"]) }),
+            ("o5-cuaca-hitung", make(app: true) { $0.expanded = true; var f = all; f.weather = true; $0.preview(level: nil, features: f)
+                $0.weather.preview(.init(temperature: 32, code: 2, place: "Jakarta")); $0.note = "1.250.000 * 3" }),
             ("s2-timer-jalan", make(app: true) { $0.expanded = true; $0.tab = .timer; $0.timer.start() }),
             ("i-app-beranda", make(app: true) { $0.expanded = true; $0.preview(level: nil, features: all); $0.media.preview(song); $0.calendar.preview(calendarSample) }),
             ("j-app-catatan", make(app: true) { $0.expanded = true; $0.tab = .notes; $0.notes.preview(["Beli kertas folio + map biru", "Ide lagu: bridge pakai akor Am-F-C-G", "Tanya Bu Rina soal remedial"]) }),

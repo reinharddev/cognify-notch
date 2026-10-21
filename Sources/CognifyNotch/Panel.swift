@@ -83,11 +83,26 @@ final class NotchController {
         // ⌃⌥N: jendela notch menerima ketikan tanpa mengaktifkan app ini (seperti Spotlight).
         model.onKeyboardOpen = { [weak self] in self?.panel.makeKey() }
         // Esc menutup notch; klik di luar notch juga menutupnya (penting saat dibuka lewat keyboard).
+        // Keyboard saat notch terbuka lewat shortcut: Esc menutup, ← → pindah halaman, 1-9 lompat
+        // ke halaman ke-n. Panah & angka dibiarkan untuk kolom teks yang sedang diketik.
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard let self, event.keyCode == 53, self.model.expanded else { return event }
-            MainActor.assumeIsolated { self.model.setExpanded(false) }
-            return nil
+            guard let self else { return event }
+            let code = event.keyCode, flags = event.modifierFlags, chars = event.charactersIgnoringModifiers
+            let handled = MainActor.assumeIsolated { self.key(code: code, flags: flags, chars: chars) }
+            return handled ? nil : event
         }
+        // "Buka dengan klik": klik di notch membuka panel (hover tidak lagi membuka).
+        NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
+            MainActor.assumeIsolated {
+                guard let self, self.model.prefs.openOnClick, !self.model.expanded,
+                      self.hotRect(margin: 4).contains(NSEvent.mouseLocation) else { return }
+                self.model.setExpanded(true)
+            }
+            return event
+        }
+        model.prefs.$display.dropFirst().sink { [weak self] _ in
+            DispatchQueue.main.async { self?.place() }
+        }.store(in: &cancellables)
         NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self, self.model.expanded, !self.model.dropTargeted,
@@ -112,9 +127,40 @@ final class NotchController {
     }
 
     /// Letakkan jendela di tengah atas layar yang punya notch (atau layar utama).
-    func place() {
+    /// Tombol keyboard di panel yang terbuka; true = sudah ditangani.
+    private func key(code: UInt16, flags: NSEvent.ModifierFlags, chars: String?) -> Bool {
+        guard model.expanded else { return false }
+        if code == 53 { // Esc
+            model.setExpanded(false)
+            return true
+        }
+        let typing = panel.firstResponder is NSTextView
+        let plain = flags.intersection([.command, .option, .control]).isEmpty
+        guard !typing, plain else { return false }
+        switch code {
+        case 123: model.page(-1); return true // ←
+        case 124: model.page(1); return true  // →
+        default: break
+        }
+        if let digit = chars.flatMap(Int.init), (1...9).contains(digit), digit <= model.tabs.count {
+            model.go(to: model.tabs[digit - 1])
+            return true
+        }
+        return false
+    }
+
+    /// Layar tempat notch tampil, menurut pilihan di Pengaturan.
+    private func targetScreen() -> NSScreen? {
         let screens = NSScreen.screens
-        let target = screens.first(where: { $0.safeAreaInsets.top > 0 }) ?? NSScreen.main ?? screens.first
+        switch model.prefs.display {
+        case .notch: return screens.first(where: { $0.safeAreaInsets.top > 0 }) ?? NSScreen.main ?? screens.first
+        case .main: return screens.first // layar dengan menu bar utama
+        case .active: return screens.first(where: { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) }) ?? screens.first
+        }
+    }
+
+    func place() {
+        let target = targetScreen()
         guard let target else { return }
         screen = target
         let frame = target.frame
@@ -148,6 +194,11 @@ final class NotchController {
 
     private func wake() {
         model.noteActivity()
+        // "Layar yang sedang dipakai": notch pindah begitu kursor pindah ke layar lain.
+        if model.prefs.display == .active, !model.expanded,
+           let here = NSScreen.screens.first(where: { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) }), here != screen {
+            place()
+        }
         guard poller == nil, needsTracking(NSEvent.mouseLocation) else { return }
         poller = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.track() }
