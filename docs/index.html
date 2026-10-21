@@ -4,22 +4,30 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Cognify Notch</title>
-<meta name="description" content="Cognify Notch menjadikan notch MacBook panel kecil untuk lagu, lirik, agenda, timer belajar, catatan, clipboard, dan file. Gratis, open source, dan tanpa akun.">
+<meta name="description" content="Cognify Notch menjadikan bagian atas layar Mac dan Windows panel kecil untuk lagu, lirik, agenda, timer belajar, catatan, clipboard, dan file. Gratis, open source, dan tanpa akun.">
 <meta property="og:title" content="Cognify Notch">
-<meta property="og:description" content="Lagu, lirik tersinkron, agenda, timer belajar, pengingat minum, daftar tugas, dan tray file di notch MacBook.">
+<meta property="og:description" content="Lagu, lirik tersinkron, agenda, timer belajar, pengingat minum, daftar tugas, dan tray file di notch MacBook dan layar Windows.">
 <meta property="og:image" content="https://reinharddev.github.io/cognify-notch/icon.png">
 <meta property="og:url" content="https://reinharddev.github.io/cognify-notch/">
 <meta name="twitter:card" content="summary">
 <meta name="theme-color" content="#f4efe6">
 <link rel="icon" type="image/png" href="favicon.png">
 <link rel="preload" href="bricolage.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="style.css?v=8">
+<link rel="stylesheet" href="style.css?v=13">
 <!-- Bahasa dipilih sebelum halaman tampil supaya tidak berkedip dari Indonesia ke Inggris -->
 <script>
   (() => {
     let lang = new URLSearchParams(location.search).get('lang');
     if (!lang) { try { lang = localStorage.getItem('lang'); } catch (e) {} }
     if (lang !== 'id' && lang !== 'en') lang = (navigator.languages || [navigator.language]).some((l) => /^(id|ms)\b/i.test(l)) ? 'id' : 'en';
+    // Tampilan contoh mengikuti sistem operasi pengunjung: Windows memakai laptop Windows, selain itu Mac.
+    let os = new URLSearchParams(location.search).get('os');
+    if (os !== 'win' && os !== 'mac') { try { os = localStorage.getItem('os'); } catch (e) {} }
+    if (os !== 'win' && os !== 'mac') {
+      const platform = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || '';
+      os = /^win/i.test(platform) || /Windows NT/i.test(navigator.userAgent) ? 'win' : 'mac';
+    }
+    document.documentElement.dataset.os = os;
     document.documentElement.lang = lang;
     // Animasi hanya untuk pengunjung yang tidak menyalakan "Kurangi gerakan".
     if (!matchMedia('(prefers-reduced-motion: reduce)').matches) document.documentElement.classList.add('motion');
@@ -256,13 +264,15 @@
   <!-- ========== Pembuka ========== -->
   <section class="hero" data-bg="#f4efe6">
     <div class="hero-copy">
-      <h1 data-t="hero.title">Notch di MacBook&#8209;mu,<br><span class="hl">kini ada isinya.</span></h1>
+      <h1 data-t="hero.title">Notch di layarmu,<br><span class="hl">kini ada isinya.</span></h1>
       <p class="lead" data-t="hero.lead">Lagu, lirik, agenda, timer belajar, catatan, dan file muncul di notch saat kursor mendekat, lalu menghilang lagi saat kursor menjauh.</p>
       <div class="cta">
         <a class="btn primary dl" href="https://github.com/reinharddev/cognify-notch/releases/latest"><i data-lucide="download"></i><span data-t="get.mac">Unduh untuk Mac</span></a>
+        <a class="btn dlw" href="https://github.com/reinharddev/cognify-notch-windows/releases/latest"><i data-lucide="download"></i><span data-t="get.win">Unduh untuk Windows (Beta)</span></a>
         <a class="btn" href="https://github.com/reinharddev/cognify-notch"><i data-lucide="code-xml"></i><span data-t="get.source">Kode sumber</span></a>
       </div>
-      <p class="meta"><span class="ver" data-t="get.latest">Versi terbaru</span> · <span data-t="hero.meta">Gratis · macOS 13 atau lebih baru · Apple Silicon dan Intel</span></p>
+      <p class="meta"><span class="ver" data-t="get.latest">Versi terbaru</span> · <span data-t="hero.meta">Gratis · macOS 13 atau lebih baru · Windows 11 (Beta)</span></p>
+      <div class="osswitch" role="group" aria-label="Sistem operasi"><span data-t="os.label">Tampilan untuk</span><button type="button" data-os="mac">Mac</button><button type="button" data-os="win">Windows</button></div>
     </div>
 
     <div class="laptop" aria-hidden="true">
@@ -287,6 +297,7 @@
             <div class="ev" style="--c:#f2a33a" data-t="d.ev2"><b>Kelas Fisika</b><small>10.00</small></div>
             <div class="ev" style="--c:#3fb27f" data-t="d.ev3"><b>Les gitar</b><small>16.00</small></div>
           </div>
+          <div class="d-taskbar"><span class="winstart"><b></b><b></b><b></b><b></b></span><i style="--c:#ff7a59"></i><i style="--c:#4c9bff"></i><i style="--c:#ffd23f"></i><i style="--c:#3fb27f"></i><i style="--c:#8f87ff"></i><span class="tray"><i data-lucide="wifi"></i><i data-lucide="battery-medium"></i><span id="taskClock"></span></span></div>
           <div class="d-dock"><i style="--c:#ff7a59"></i><i style="--c:#4c9bff"></i><i style="--c:#ffd23f"></i><i style="--c:#3fb27f"></i><i style="--c:#8f87ff"></i><i style="--c:#141414"></i></div>
         </div>
       </div>
@@ -304,7 +315,7 @@
 
     <article class="step" data-notch="music" data-bg="#ffc9b5">
       <div class="step-in">
-        <div class="step-main" data-t="f.music"><span class="tag"><i data-lucide="music"></i>Musik</span><h3>Lagu dari aplikasi apa pun.</h3><p>Spotify, Apple Music, YouTube di browser, VLC, dan lainnya. Sampul album tampil di kiri, sedangkan equalizer di kanan bergerak mengikuti suara: batang kiri untuk nada rendah, batang kanan untuk nada tinggi.</p></div>
+        <div class="step-main" data-t="f.music"><span class="tag"><i data-lucide="music"></i>Musik</span><h3>Lagu dari aplikasi apa pun.</h3><p>Spotify, Apple Music, YouTube di browser, VLC, dan lainnya. Sampul album tampil di kiri, sedangkan equalizer di kanan bergerak mengikuti suara: batang kiri untuk nada rendah, batang kanan untuk nada tinggi. Di Windows, equalizer mengikuti keras suara.</p></div>
         <aside class="how" data-t="h.music"><b>Cara memakai</b><ol><li>Putar lagu seperti biasa.</li><li>Arahkan kursor ke notch.</li><li>Putar, jeda, ganti lagu, acak, ulangi, atur volume, atau pilih speaker dan AirPods.</li></ol></aside>
       </div>
     </article>
@@ -346,7 +357,7 @@
 
     <article class="step" data-notch="open:home-calc" data-bg="#ffe08a">
       <div class="step-in">
-        <div class="step-main" data-t="f.note"><span class="tag"><i data-lucide="pencil-line"></i>Catatan cepat</span><h3>Tulis, ucapkan, atau hitung.</h3><p>Tulis satu baris, lalu tekan Enter untuk menyimpannya. Tombol mikrofon mengubah suara menjadi teks langsung di Mac ini. Ketik <em>1.250.000 * 3</em>, <em>15% dari 200</em>, atau <em>5 km ke mil</em>, dan hasilnya langsung muncul.</p></div>
+        <div class="step-main" data-t="f.note"><span class="tag"><i data-lucide="pencil-line"></i>Catatan cepat</span><h3>Tulis, ucapkan, atau hitung.</h3><p>Tulis satu baris, lalu tekan Enter untuk menyimpannya. Di Mac, tombol mikrofon mengubah suara menjadi teks langsung di Mac ini. Ketik <em>1.250.000 * 3</em>, <em>15% dari 200</em>, atau <em>5 km ke mil</em>, dan hasilnya langsung muncul.</p></div>
         <aside class="how" data-t="h.note"><b>Cara memakai</b><ol><li>Buka notch, lalu langsung mengetik.</li><li>Atau tekan <span class="kbd">⌃⌥N</span> dari aplikasi mana pun.</li></ol></aside>
       </div>
     </article>
@@ -409,7 +420,7 @@
 
     <article class="step" data-notch="card:cycle" data-bg="#d5f0a8">
       <div class="step-in">
-        <div class="step-main" data-t="f.cards"><span class="tag"><i data-lucide="bell"></i>Kabar singkat</span><h3>Mac-mu kini lebih komunikatif.</h3><p>Charger dicolokkan, AirPods tersambung, unduhan selesai atau gagal, Caps Lock menyala, bahasa keyboard berganti, atau internet terputus. Notch memberi tahu sebentar, lalu kembali diam.</p></div>
+        <div class="step-main" data-t="f.cards"><span class="tag"><i data-lucide="bell"></i>Kabar singkat</span><h3>Komputermu kini lebih komunikatif.</h3><p>Charger dicolokkan, AirPods atau headphone tersambung, unduhan selesai atau gagal, Caps Lock menyala, bahasa keyboard berganti, atau internet terputus. Notch memberi tahu sebentar, lalu kembali diam.</p></div>
         <aside class="how" data-t="h.cards"><b>Cara memakai</b><ol><li>Berjalan otomatis.</li><li>Setiap jenis kabar bisa dimatikan lewat ikon notch di menu bar.</li></ol></aside>
       </div>
     </article>
@@ -439,14 +450,14 @@
       <div style="--c:#ffe08a"><span class="kbd">⌃⌥N</span><span class="g" data-t="g.4"><b>Buka dari keyboard</b><p>Kamu bisa langsung mengetik. Tombol panah atau angka 1 sampai 9 memindahkan halaman, dan Esc menutup panel.</p></span></div>
       <div style="--c:#bde8d2"><i data-lucide="file-up"></i><span class="g" data-t="g.5"><b>Seret file ke notch</b><p>File masuk ke Tray.</p></span></div>
       <div style="--c:#ffc2d6"><i data-lucide="mouse-pointer-click"></i><span class="g" data-t="g.6"><b>Buka dengan klik</b><p>Lebih suka mengeklik daripada mengarahkan kursor? Nyalakan di Pengaturan.</p></span></div>
-      <div style="--c:#d5f0a8"><i data-lucide="menu"></i><span class="g" data-t="g.7"><b>Ikon di menu bar</b><p>Nyalakan atau matikan setiap fitur, periksa update, dan keluar dari app.</p></span></div>
-      <div style="--c:#ffd0a8"><span class="kbd">⌘,</span><span class="g" data-t="g.8"><b>Pengaturan</b><p>Ukuran panel, jeda sebelum panel terbuka dan tertutup, urutan halaman, layar, kota untuk cuaca, bahasa, serta ekspor dan impor data.</p></span></div>
+      <div style="--c:#d5f0a8"><i data-lucide="menu"></i><span class="g" data-t="g.7"><b>Ikon di menu bar atau tray</b><p>Nyalakan atau matikan setiap fitur, periksa update, dan keluar dari app. Di Windows, fitur diatur lewat ikon roda gigi di notch.</p></span></div>
+      <div style="--c:#ffd0a8"><span class="kbd">⌘,</span><span class="g" data-t="g.8"><b>Pengaturan</b><p>Ukuran panel, jeda sebelum panel terbuka dan tertutup, urutan halaman, layar, kota untuk cuaca, bahasa, serta ekspor dan impor data. Pengaturan di Windows lebih ringkas.</p></span></div>
     </div>
   </section>
 
   <!-- ========== Data ========== -->
   <section id="data" class="block" data-bg="#f4efe6">
-    <h2 data-t="d2.title">Datamu tetap<br>di Mac-mu.</h2>
+    <h2 data-t="d2.title">Datamu tetap<br>di komputermu.</h2>
     <p class="lead" data-t="d2.lead">Tidak ada akun, tidak ada analitik, dan tidak ada data yang dikirim ke pembuat app. Hanya tiga fitur yang memakai internet, dan semuanya dijelaskan di bawah ini.</p>
 
     <h3 class="sub" data-t="d2.net">Yang memakai internet</h3>
@@ -466,19 +477,20 @@
       <div style="--c:#bde8d2">
         <i data-lucide="refresh-cw"></i>
         <b>Update</b>
-        <dl data-t="d2.updateDl"><dt>Dikirim</dt><dd>Tidak ada informasi tentang Mac-mu. App hanya mengambil daftar versi.</dd><dt>Ke</dt><dd>GitHub</dd><dt>Bawaan</dt><dd>Nyala. Pemasangan otomatis bisa dimatikan.</dd></dl>
+        <dl data-t="d2.updateDl"><dt>Dikirim</dt><dd>Tidak ada informasi tentang komputermu. App hanya mengambil daftar versi.</dd><dt>Ke</dt><dd>GitHub</dd><dt>Bawaan</dt><dd>Nyala. Di Mac, pemasangan otomatis bisa dimatikan. Di Windows juga otomatis, dan bisa dimatikan di Pengaturan.</dd></dl>
         <div class="flow" aria-hidden="true"><i data-lucide="laptop"></i><span class="track"><b></b></span><i data-lucide="globe"></i></div>
       </div>
     </div>
+    <p class="note" data-t="d2.winNote">Di Windows, agenda dari kalender ICS juga mengambil tautan yang kamu masukkan sendiri. Bawaannya mati, dan tanpa tautan tidak ada permintaan sama sekali.</p>
 
-    <h3 class="sub" data-t="d2.local">Yang tidak pernah keluar dari Mac</h3>
+    <h3 class="sub" data-t="d2.local">Yang tidak pernah keluar dari komputer</h3>
     <div class="flow stay" aria-hidden="true"><i data-lucide="laptop"></i><span class="track"><b></b><span class="wall"></span></span><i data-lucide="globe"></i></div>
     <ul class="local">
       <li><i data-lucide="calendar"></i><span data-t="d2.l1"><b>Kalender</b>Hanya dibaca untuk menampilkan agenda hari ini dan besok.</span></li>
       <li><i data-lucide="clipboard-list"></i><span data-t="d2.l2"><b>Clipboard</b>40 teks terakhir. Gambar hanya disimpan selama app berjalan. Isi dari pengelola kata sandi dilewati.</span></li>
-      <li><i data-lucide="notebook-pen"></i><span data-t="d2.l3"><b>Catatan, tugas, minum, dan timer</b>Disimpan di Mac ini dan bisa kamu ekspor atau impor sendiri.</span></li>
-      <li><i data-lucide="list-todo"></i><span data-t="d2.l4"><b>Pengingat</b>Hanya jika sinkron dinyalakan. Sinkron ke iPhone diatur oleh app Pengingat dan iCloud-mu.</span></li>
-      <li><i data-lucide="mic"></i><span data-t="d2.l5"><b>Mikrofon</b>Suara diubah menjadi teks di Mac ini. Hanya teksnya yang disimpan.</span></li>
+      <li><i data-lucide="notebook-pen"></i><span data-t="d2.l3"><b>Catatan, tugas, minum, dan timer</b>Disimpan di komputer ini. Di Mac, bisa kamu ekspor atau impor sendiri.</span></li>
+      <li><i data-lucide="list-todo"></i><span data-t="d2.l4"><b>Pengingat (Mac)</b>Hanya jika sinkron dinyalakan. Sinkron ke iPhone diatur oleh app Pengingat dan iCloud-mu.</span></li>
+      <li><i data-lucide="mic"></i><span data-t="d2.l5"><b>Mikrofon (Mac)</b>Suara diubah menjadi teks di Mac ini. Hanya teksnya yang disimpan.</span></li>
       <li><i data-lucide="camera"></i><span data-t="d2.l6"><b>Kamera</b>Hanya untuk Cermin, dan tidak direkam.</span></li>
       <li><i data-lucide="audio-lines"></i><span data-t="d2.l7"><b>Suara yang diputar</b>Hanya diubah menjadi tinggi batang equalizer di memori.</span></li>
       <li><i data-lucide="inbox"></i><span data-t="d2.l8"><b>File di tray</b>Notch hanya menyimpan lokasinya. File tetap berada di tempat aslinya.</span></li>
@@ -486,7 +498,7 @@
     </ul>
 
     <h3 class="sub" data-t="d2.perms">Izin yang diminta</h3>
-    <p class="note" data-t="d2.permsNote">Izin diminta saat sebuah fitur pertama kali dipakai. Jika kamu menolak, hanya fitur itu yang tidak berjalan.</p>
+    <p class="note" data-t="d2.permsNote">Izin diminta saat sebuah fitur pertama kali dipakai. Jika kamu menolak, hanya fitur itu yang tidak berjalan. Daftar ini untuk macOS. Windows hanya meminta izin kamera, untuk Cermin.</p>
     <div class="perms">
       <span data-t="d2.p1"><b>Kalender</b>untuk agenda</span>
       <span data-t="d2.p2"><b>Pengingat</b>untuk sinkron tugas</span>
@@ -499,16 +511,17 @@
   <!-- ========== Spesifikasi ========== -->
   <section class="block specs" data-bg="#ffe08a">
     <div class="facts">
-      <div><b>4 MB</b><span data-t="sp.size">ukuran unduhan</span></div>
-      <div><b>13+</b><span data-t="sp.os">macOS Ventura atau lebih baru</span></div>
+      <div><b>4 MB</b><span data-t="sp.size">ukuran unduhan di Mac, 1,3 MB di Windows</span></div>
+      <div><b>13+</b><span data-t="sp.os">macOS Ventura atau lebih baru, atau Windows 11 (Beta)</span></div>
       <div><b>0</b><span data-t="sp.acc">akun yang perlu dibuat</span></div>
       <div><b>2</b><span data-t="sp.lang">bahasa: Indonesia dan Inggris</span></div>
     </div>
     <ul class="spec">
-      <li data-t="sp.cpu"><b>Prosesor</b>Apple Silicon dan Intel.</li>
-      <li data-t="sp.nonotch"><b>Mac tanpa notch</b>Tetap bisa dipakai: notch tampil sebagai panel kecil di tengah atas layar. Monitor tambahan bisa dipilih di Pengaturan.</li>
-      <li data-t="sp.sec"><b>Keamanan</b>Ditandatangani dan dinotarisasi Apple, sehingga app terbuka tanpa peringatan.</li>
-      <li data-t="sp.upd"><b>Update</b>Otomatis lewat Sparkle, dan dipasang saat notch tidak dipakai.</li>
+      <li data-t="sp.cpu"><b>Prosesor</b>Apple Silicon dan Intel di Mac. Windows 11 64-bit.</li>
+      <li data-t="sp.nonotch"><b>Layar tanpa notch</b>Tetap bisa dipakai: notch tampil sebagai panel kecil di tengah atas layar. Windows tidak punya notch fisik, jadi di sana notch selalu tampil begitu, di layar utama. Di Mac, monitor tambahan bisa dipilih di Pengaturan.</li>
+      <li data-t="sp.sec"><b>Keamanan</b>Mac: ditandatangani dan dinotarisasi Apple, sehingga app terbuka tanpa peringatan. Windows: belum ditandatangani, jadi muncul peringatan SmartScreen.</li>
+      <li data-t="sp.upd"><b>Update</b>Mac: otomatis lewat Sparkle, dan dipasang saat notch tidak dipakai. Windows: otomatis juga, dipasang saat notch tidak dipakai.</li>
+      <li data-t="sp.win"><b>Windows (Beta)</b>Baru dicoba di satu laptop Windows 11. Seret file ke Tray dan rekam suara belum ada di Windows.</li>
       <li data-t="sp.lic"><b>Lisensi</b>AGPL-3.0. Kode sumbernya terbuka di GitHub.</li>
     </ul>
   </section>
@@ -518,12 +531,14 @@
     <h2 data-t="q.title">Tanya jawab</h2>
     <div class="faq">
       <details data-t="q.1"><summary>Apakah Cognify Notch gratis?</summary><p>Ya. Cognify Notch gratis, open source, tanpa akun, dan tanpa iklan.</p></details>
-      <details data-t="q.2"><summary>MacBook-ku tidak punya notch. Apakah tetap bisa dipakai?</summary><p>Bisa. Di Mac tanpa notch dan di monitor tambahan, notch tampil sebagai panel kecil di tengah atas layar. Layar yang dipakai bisa dipilih di Pengaturan.</p></details>
-      <details data-t="q.3"><summary>Mengapa lagu yang sedang diputar tidak muncul?</summary><p>Sejak macOS 15.4, Apple hanya mengizinkan program buatan Apple membaca lagu yang sedang diputar. Cognify Notch memakai cara yang sama dengan Boring Notch agar tetap bisa membacanya. Jika Apple menutup cara ini, bagian lagu disembunyikan dan fitur lain tetap berjalan.</p></details>
+      <details data-t="q.2"><summary>Layarku tidak punya notch. Apakah tetap bisa dipakai?</summary><p>Bisa. Di Mac tanpa notch, di monitor tambahan, dan di Windows, notch tampil sebagai panel kecil di tengah atas layar. Di Mac, layar yang dipakai bisa dipilih di Pengaturan.</p></details>
+      <details data-t="q.3"><summary>Mengapa lagu yang sedang diputar tidak muncul?</summary><p>Sejak macOS 15.4, Apple hanya mengizinkan program buatan Apple membaca lagu yang sedang diputar. Cognify Notch memakai cara yang sama dengan Boring Notch agar tetap bisa membacanya. Jika Apple menutup cara ini, bagian lagu disembunyikan dan fitur lain tetap berjalan. Di Windows, lagu dibaca dari kontrol media Windows, jadi Spotify, browser, dan pemutar lain yang muncul di sana ikut terbaca.</p></details>
       <details data-t="q.4"><summary>Mengapa sebuah lagu tidak memiliki lirik?</summary><p>Lirik berasal dari LRCLIB, kumpulan lirik gratis yang diisi oleh komunitas. Lagu populer hampir selalu tersedia, tetapi sebagian lagu lokal atau lagu baru mungkin belum ada.</p></details>
-      <details data-t="q.5"><summary>Bagaimana cara memperbarui app?</summary><p>Otomatis. Versi baru diunduh di latar belakang, lalu dipasang saat notch sedang tidak dipakai, dan app dimulai ulang dalam sekitar satu detik. Jika kamu tertinggal beberapa versi, update langsung menuju versi terbaru. Untuk mematikannya, klik ikon notch di menu bar, lalu matikan Pasang update otomatis.</p></details>
-      <details data-t="q.6"><summary>Apakah app ini membuat Mac lambat atau boros baterai?</summary><p>Tidak. Saat diam, notch hanya memeriksa posisi kursor bila diperlukan. Di MacBook pengembang, pemakaian CPU saat diam berada di bawah 0,5%.</p></details>
-      <details data-t="q.7"><summary>Bagaimana cara menghentikan atau menghapusnya?</summary><p>Klik ikon notch di menu bar. Matikan Buka saat Mac dinyalakan agar app tidak berjalan otomatis, atau pilih Keluar. Untuk menghapusnya, seret Cognify Notch dari folder Applications ke Tempat Sampah.</p></details>
+      <details data-t="q.5"><summary>Bagaimana cara memperbarui app?</summary><p>Otomatis. Versi baru diunduh di latar belakang, lalu dipasang saat notch sedang tidak dipakai, dan app dimulai ulang dalam sekitar satu detik. Jika kamu tertinggal beberapa versi, update langsung menuju versi terbaru. Untuk mematikannya, klik ikon notch di menu bar, lalu matikan Pasang update otomatis. Di Windows juga otomatis: app memeriksa sekali sehari, mengunduh di latar belakang, dan memasangnya saat notch tidak dipakai. Pembaruan otomatis bisa dimatikan di Pengaturan.</p></details>
+      <details data-t="q.6"><summary>Apakah app ini membuat komputer lambat atau boros baterai?</summary><p>Tidak. Saat diam, notch hanya memeriksa posisi kursor bila diperlukan. Di MacBook pengembang, pemakaian CPU saat diam berada di bawah 0,5%.</p></details>
+      <details data-t="q.7"><summary>Bagaimana cara menghentikan atau menghapusnya?</summary><p>Klik ikon notch di menu bar. Matikan Buka saat Mac dinyalakan agar app tidak berjalan otomatis, atau pilih Keluar. Untuk menghapusnya, seret Cognify Notch dari folder Applications ke Tempat Sampah. Di Windows, klik kanan ikon notch di tray lalu pilih Keluar, dan hapus lewat Pengaturan Windows, Aplikasi.</p></details>
+      <details data-t="q.9"><summary>Apakah ada versi Windows?</summary><p>Ada, masih berstatus Beta. Cognify Notch untuk Windows 11 punya sebagian besar fitur versi Mac, kecuali seret file ke Tray dan rekam suara. Setelah terpasang, app memperbarui dirinya sendiri.</p></details>
+      <details data-t="q.10"><summary>Mengapa Windows menampilkan peringatan SmartScreen?</summary><p>Installer Windows belum ditandatangani dengan sertifikat berbayar, jadi Windows memberi peringatan untuk app yang belum dikenal. Klik More info, lalu Run anyway. Kodenya terbuka di GitHub, dan kamu bisa memeriksanya atau membangunnya sendiri.</p></details>
       <details data-t="q.8"><summary>Apakah Cognify Notch mengumpulkan data?</summary><p>Tidak. Tidak ada akun dan tidak ada analitik. Bagian <a href="#data">Data</a> di atas mencantumkan semua fitur yang memakai internet.</p></details>
     </div>
   </section>
@@ -535,11 +550,12 @@
       <svg class="ear r"><use href="#ear"/></svg>
       <img src="icon.png" alt="" width="84" height="84">
       <h2 data-t="get.title">Coba sekarang.</h2>
-      <p data-t="get.steps">Buka file DMG, seret app ke folder Applications, lalu arahkan kursor ke notch.</p>
+      <p data-t="get.steps">Mac: buka file DMG, seret app ke folder Applications, lalu arahkan kursor ke notch. Windows: jalankan file Setup, lalu arahkan kursor ke bagian atas layar.</p>
       <a class="btn accent dl" href="https://github.com/reinharddev/cognify-notch/releases/latest"><i data-lucide="download"></i><span data-t="get.mac">Unduh untuk Mac</span></a>
-      <p class="meta"><span class="ver" data-t="get.latest">Versi terbaru</span> · <span data-t="get.os">macOS 13 atau lebih baru</span></p>
+      <a class="btn dlw" href="https://github.com/reinharddev/cognify-notch-windows/releases/latest"><i data-lucide="download"></i><span data-t="get.win">Unduh untuk Windows (Beta)</span></a>
+      <p class="meta"><span class="ver" data-t="get.latest">Versi terbaru</span> · <span data-t="get.os">macOS 13 atau lebih baru · Windows 11 (Beta)</span></p>
       <div class="changes" id="changes" hidden>
-        <b class="changes-title" data-t="get.new">Yang baru</b>
+        <b class="changes-title" data-t="get.new">Yang baru di Mac</b>
         <small class="changes-note" data-t="get.newNote"></small>
         <div id="changeList"></div>
         <a href="https://github.com/reinharddev/cognify-notch/releases" data-t="get.all">Semua catatan rilis</a>
@@ -550,12 +566,12 @@
 
 <footer data-bg="#c9c4ff">
   <span>Cognify Notch · <a href="https://github.com/reinharddev/cognify-notch">GitHub</a> · <a href="https://github.com/reinharddev/cognify-notch/blob/main/LICENSE">AGPL-3.0</a></span>
-  <span data-t="foot">Isi notch di halaman ini hanya contoh. Mac dan MacBook adalah merek dagang Apple Inc.</span>
+  <span data-t="foot">Isi notch di halaman ini hanya contoh. Mac dan MacBook adalah merek dagang Apple Inc. Windows adalah merek dagang Microsoft Corporation.</span>
 </footer>
 
 <script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
-<script src="i18n.js?v=5"></script>
-<script src="app.js?v=5"></script>
-<script src="motion.js?v=5"></script>
+<script src="i18n.js?v=9"></script>
+<script src="app.js?v=9"></script>
+<script src="motion.js?v=9"></script>
 </body>
 </html>

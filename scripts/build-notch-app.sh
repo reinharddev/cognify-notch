@@ -13,7 +13,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 # Di project Cognify notch ada di notch/; di repo cognify-notch semuanya di akar repo.
 N=${NOTCH_DIR:-notch}
-ICON=${NOTCH_ICON:-src-tauri/icons/icon.icns}
+ICON=${NOTCH_ICON:-$N/AppIcon.icns}
 
 VERSION=1.0.0
 NOTARIZE=1
@@ -87,12 +87,20 @@ codesign --force "${TS[@]}" --options runtime --entitlements $N/entitlements.pli
 codesign --verify --deep --strict "$APP"
 
 echo "4/5 DMG…"
-STAGE=$(mktemp -d)
-cp -R "$APP" "$STAGE/"
-ln -s /Applications "$STAGE/Applications"
 DMG="$OUT/Cognify-Notch-$VERSION.dmg"
-hdiutil create -volname "$NAME" -srcfolder "$STAGE" -ov -format UDZO "$DMG" >/dev/null
-rm -rf "$STAGE"
+rm -f "$DMG"
+if command -v dmgbuild >/dev/null 2>&1 || [[ -x "$HOME/Library/Python/3.13/bin/dmgbuild" ]]; then
+  # Jendela DMG bergambar: latar, panah, dan posisi ikon (notch/installer/dmg-settings.py).
+  DMGBUILD=$(command -v dmgbuild || echo "$HOME/Library/Python/3.13/bin/dmgbuild")
+  "$DMGBUILD" -s "$N/installer/dmg-settings.py" -D app="$APP" -D dir="$N/installer" "$NAME" "$DMG" >/dev/null
+else
+  echo "   (dmgbuild tidak ada: DMG polos. Pasang dengan: pip3 install --user dmgbuild)"
+  STAGE=$(mktemp -d)
+  cp -R "$APP" "$STAGE/"
+  ln -s /Applications "$STAGE/Applications"
+  hdiutil create -volname "$NAME" -srcfolder "$STAGE" -ov -format UDZO "$DMG" >/dev/null
+  rm -rf "$STAGE"
+fi
 codesign --force "${TS[@]}" --sign "$ID" "$DMG"
 
 if (( NOTARIZE )); then

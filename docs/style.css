@@ -343,6 +343,7 @@ body.dark .lead { color: rgba(244, 239, 230, .7); }
   .hero .lead { order: 4; text-align: center; margin: 26px auto 24px; }
   .hero .cta { order: 5; }
   .hero .meta { order: 6; text-align: center; }
+  .hero .osswitch { order: 7; align-self: center; }
 }
 @media (max-width: 760px) {
   .win.cal, .d-left span { display: none; }
@@ -426,6 +427,7 @@ body.dark .lead { color: rgba(244, 239, 230, .7); }
 .get-notch h2 { font-size: clamp(44px, 6vw, 80px); line-height: 1; margin-bottom: 14px; }
 .get-notch > p { color: rgba(255, 255, 255, .7); font-size: 18px; margin: 0 0 28px; }
 .get-notch .meta { color: rgba(255, 255, 255, .55); }
+.get-notch .btn:not(.accent) { color: #fff; border-color: #fff; margin-top: 12px; }
 .changes { margin-top: 44px; width: 100%; max-width: 640px; text-align: left; }
 .changes-title { font-family: var(--display); font-size: 22px; }
 .changes-note { display: block; opacity: .6; margin-top: 4px; }
@@ -644,3 +646,27 @@ body.swapping :is(main, footer, .nav-pill > a, .nav-pill > button) { opacity: 0;
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
   html { scroll-behavior: auto; }
 }
+
+/* Catatan di bawah kartu bergeser: beri jarak dari bayangan kartu */
+.net + .note { margin-top: 34px; }
+
+/* ---------- Tampilan contoh untuk Windows ---------- */
+.d-taskbar { display: none; }
+.osswitch { display: inline-flex; align-items: center; gap: 4px; margin-top: 14px; font-size: 13px; color: var(--muted); }
+.osswitch span { margin-right: 6px; }
+.osswitch button { font: inherit; font-weight: 700; color: var(--ink); background: transparent; border: 2px solid transparent; border-radius: 99px; padding: 3px 12px; cursor: pointer; }
+.osswitch button[aria-pressed="true"] { border-color: var(--ink); }
+html[data-os="win"] .d-menubar, html[data-os="win"] .d-dock { display: none; }
+html[data-os="win"] .d-taskbar { display: flex; position: absolute; inset: auto 0 0; height: clamp(20px, 4.2vw, 44px); align-items: center; justify-content: center; gap: clamp(4px, .8vw, 9px); background: rgba(255, 255, 255, .6); z-index: 2; }
+.d-taskbar i { width: clamp(11px, 2.3vw, 26px); aspect-ratio: 1; border-radius: 26%; background: var(--c); }
+.d-taskbar .winstart { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; width: clamp(11px, 2.3vw, 26px); aspect-ratio: 1; padding: clamp(1px, .3vw, 4px); box-sizing: border-box; }
+.d-taskbar .winstart b { background: #4c9bff; border-radius: 1px; }
+.d-taskbar .tray { position: absolute; right: clamp(6px, 1.2vw, 14px); display: flex; align-items: center; gap: clamp(4px, .8vw, 9px); font-size: clamp(7px, 1.1vw, 12px); font-weight: 600; font-variant-numeric: tabular-nums; }
+.d-taskbar .tray i { width: clamp(8px, 1.4vw, 15px); height: clamp(8px, 1.4vw, 15px); aspect-ratio: auto; background: none; }
+html[data-os="win"] .win { border-radius: 8px; }
+html[data-os="win"] .win-bar i { display: none; }
+html[data-os="win"] .win-bar b { margin-left: 0; }
+html[data-os="win"] .win-bar::after { content: "\2212   \25A1   \2715"; margin-left: auto; letter-spacing: .08em; }
+html[data-os="win"] #notch .ear { display: none; }
+html.motion .d-taskbar > i { animation: dockIn .55s cubic-bezier(.3, 1.6, .5, 1) both; animation-delay: 1.8s; }
+@media (max-width: 760px) { html[data-os="win"] .win.cal { display: none; } }

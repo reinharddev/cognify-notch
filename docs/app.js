@@ -403,6 +403,7 @@
     const day = new Intl.DateTimeFormat(locale(), { weekday: 'short', day: 'numeric', month: 'short' }).format(now).replace(/,/g, '');
     const time = new Intl.DateTimeFormat(locale(), { hour: '2-digit', minute: '2-digit', hour12: false }).format(now);
     $('#displayClock').textContent = `${day.split(' ')[0]} ${time}`;
+    $('#taskClock').textContent = time;
     $('#headClock').textContent = `${day} ${time}`;
     if (pomoRunning) pomoLeft = pomoLeft > 0 ? pomoLeft - 1 : 25 * 60;
     $('#pomo').textContent = `${two(Math.floor(pomoLeft / 60))}${sep()}${two(pomoLeft % 60)}`;
@@ -429,7 +430,7 @@
   function renderReleases() {
     if (!releases.length) return;
     const version = releases[0].tag_name.replace(/^v/, '');
-    $$('.ver').forEach((s) => { s.textContent = L('Versi ', 'Version ') + version; });
+    $$('.ver').forEach((s) => { s.textContent = L('Mac versi ', 'Mac version ') + version; });
     const list = $('#changeList');
     list.innerHTML = '';
     const date = new Intl.DateTimeFormat(en() ? 'en-US' : 'id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
@@ -459,6 +460,33 @@
       const dmg = (data[0].assets || []).find((a) => a.name.endsWith('.dmg'));
       if (dmg) $$('.dl').forEach((a) => { a.href = dmg.browser_download_url; });
       renderReleases();
+    })
+    .catch(() => { /* tautan tetap ke halaman rilis GitHub */ });
+
+  // ---------- Tampilan Mac atau Windows ----------
+  // Awalnya mengikuti sistem operasi pengunjung (diatur di <head>); pengunjung bisa menggantinya.
+  function applyOs(os) {
+    document.documentElement.dataset.os = os;
+    try { localStorage.setItem('os', os); } catch (err) { /* tanpa penyimpanan */ }
+    [['.cta', 'primary'], ['.get-notch', 'accent']].forEach(([root, cls]) => {
+      const mac = $(root + ' .dl'), win = $(root + ' .dlw');
+      if (!mac || !win) return;
+      const first = os === 'win' ? win : mac, second = os === 'win' ? mac : win;
+      first.classList.add(cls);
+      second.classList.remove(cls);
+      first.parentNode.insertBefore(first, second);
+    });
+    $$('.osswitch button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.os === os)));
+  }
+  $$('.osswitch button').forEach((b) => b.addEventListener('click', () => applyOs(b.dataset.os)));
+  applyOs(document.documentElement.dataset.os);
+
+  // Unduhan Windows langsung ke installer .exe dari rilis terbaru (termasuk Beta).
+  fetch('https://api.github.com/repos/reinharddev/cognify-notch-windows/releases/latest')
+    .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
+    .then((rel) => {
+      const exe = (rel.assets || []).find((x) => /Setup\.exe$/i.test(x.name));
+      if (exe) $$('.dlw').forEach((x) => { x.href = exe.browser_download_url; });
     })
     .catch(() => { /* tautan tetap ke halaman rilis GitHub */ });
 
