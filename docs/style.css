@@ -332,10 +332,22 @@ body.dark .lead { color: rgba(244, 239, 230, .7); }
 .try { font-weight: 700; font-size: 15px; margin: 22px 0 0; }
 .touch-only { display: none; }
 @media (hover: none) { .hover-only { display: none; } .touch-only { display: inline; } }
+/* Di HP laptop langsung di bawah judul supaya terlihat di layar pertama; paragraf dan
+   tombol pindah ke bawahnya. Isi .hero-copy dijadikan anak langsung .hero agar bisa diurutkan. */
+@media (max-width: 760px) {
+  .hero { padding-top: 96px; }
+  .hero-copy { display: contents; }
+  .hero h1 { order: 1; text-align: center; }
+  .laptop { order: 2; }
+  .try { order: 3; text-align: center; }
+  .hero .lead { order: 4; text-align: center; margin: 26px auto 24px; }
+  .hero .cta { order: 5; }
+  .hero .meta { order: 6; text-align: center; }
+}
 @media (max-width: 760px) {
   .win.cal, .d-left span { display: none; }
   .win.note { width: 44%; }
-  .laptop { margin-top: 50px; }
+  .laptop { margin-top: 30px; }
 }
 
 /* ---------- Fitur ---------- */
