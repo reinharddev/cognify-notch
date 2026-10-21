@@ -230,8 +230,14 @@ window.I18N = (() => {
     try { localStorage.setItem('lang', lang); } catch (e) { /* tetap jalan tanpa penyimpanan */ }
     const url = new URL(location.href);
     if (url.searchParams.has('lang')) { url.searchParams.set('lang', lang); history.replaceState(null, '', url); }
-    render();
-    listeners.forEach((fn) => fn(lang));
+    const swap = () => { render(); listeners.forEach((fn) => fn(lang)); };
+    // Dengan animasi, teks memudar dulu, lalu muncul lagi dalam bahasa baru.
+    if (!document.documentElement.classList.contains('motion')) { swap(); return; }
+    document.body.classList.add('swapping');
+    setTimeout(() => {
+      swap();
+      requestAnimationFrame(() => document.body.classList.remove('swapping'));
+    }, 170);
   }
 
   render();

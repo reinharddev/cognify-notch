@@ -13,7 +13,7 @@
 <meta name="theme-color" content="#f4efe6">
 <link rel="icon" type="image/png" href="favicon.png">
 <link rel="preload" href="bricolage.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="style.css?v=3">
+<link rel="stylesheet" href="style.css?v=5">
 <!-- Bahasa dipilih sebelum halaman tampil supaya tidak berkedip dari Indonesia ke Inggris -->
 <script>
   (() => {
@@ -21,6 +21,8 @@
     if (!lang) { try { lang = localStorage.getItem('lang'); } catch (e) {} }
     if (lang !== 'id' && lang !== 'en') lang = (navigator.languages || [navigator.language]).some((l) => /^(id|ms)\b/i.test(l)) ? 'id' : 'en';
     document.documentElement.lang = lang;
+    // Animasi hanya untuk pengunjung yang tidak menyalakan "Kurangi gerakan".
+    if (!matchMedia('(prefers-reduced-motion: reduce)').matches) document.documentElement.classList.add('motion');
   })();
 </script>
 </head>
@@ -247,6 +249,9 @@
   </div>
 </div>
 
+<!-- Kursor contoh: memperagakan cara membuka notch bila pengunjung belum mencobanya -->
+<span class="ghost" id="ghost" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 3l14 8.2-6.2 1.6-3.3 6.2z"/></svg></span>
+
 <main id="top">
   <!-- ========== Pembuka ========== -->
   <section class="hero" data-bg="#f4efe6">
@@ -450,20 +455,24 @@
         <i data-lucide="mic-vocal"></i>
         <b data-t="d2.lyrics">Lirik</b>
         <dl data-t="d2.lyricsDl"><dt>Dikirim</dt><dd>Judul, artis, album, dan durasi lagu</dd><dt>Ke</dt><dd><a href="https://lrclib.net">LRCLIB</a> (lrclib.net)</dd><dt>Bawaan</dt><dd>Nyala, bisa dimatikan</dd></dl>
+        <div class="flow" aria-hidden="true"><i data-lucide="laptop"></i><span class="track"><b></b></span><i data-lucide="globe"></i></div>
       </div>
       <div style="--c:#a9d8ff">
         <i data-lucide="cloud-sun"></i>
         <b data-t="d2.weather">Cuaca</b>
         <dl data-t="d2.weatherDl"><dt>Dikirim</dt><dd>Nama kota pilihanmu dan koordinatnya</dd><dt>Ke</dt><dd><a href="https://open-meteo.com">Open-Meteo</a> (open-meteo.com)</dd><dt>Bawaan</dt><dd>Mati</dd></dl>
+        <div class="flow" aria-hidden="true"><i data-lucide="laptop"></i><span class="track"><b></b></span><i data-lucide="globe"></i></div>
       </div>
       <div style="--c:#bde8d2">
         <i data-lucide="refresh-cw"></i>
         <b>Update</b>
         <dl data-t="d2.updateDl"><dt>Dikirim</dt><dd>Tidak ada informasi tentang Mac-mu. App hanya mengambil daftar versi.</dd><dt>Ke</dt><dd>GitHub</dd><dt>Bawaan</dt><dd>Nyala. Pemasangan otomatis bisa dimatikan.</dd></dl>
+        <div class="flow" aria-hidden="true"><i data-lucide="laptop"></i><span class="track"><b></b></span><i data-lucide="globe"></i></div>
       </div>
     </div>
 
     <h3 class="sub" data-t="d2.local">Yang tidak pernah keluar dari Mac</h3>
+    <div class="flow stay" aria-hidden="true"><i data-lucide="laptop"></i><span class="track"><b></b><span class="wall"></span></span><i data-lucide="globe"></i></div>
     <ul class="local">
       <li><i data-lucide="calendar"></i><span data-t="d2.l1"><b>Kalender</b>Hanya dibaca untuk menampilkan agenda hari ini dan besok.</span></li>
       <li><i data-lucide="clipboard-list"></i><span data-t="d2.l2"><b>Clipboard</b>40 teks terakhir. Gambar hanya disimpan selama app berjalan. Isi dari pengelola kata sandi dilewati.</span></li>
@@ -545,7 +554,8 @@
 </footer>
 
 <script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
-<script src="i18n.js?v=3"></script>
-<script src="app.js?v=3"></script>
+<script src="i18n.js?v=5"></script>
+<script src="app.js?v=5"></script>
+<script src="motion.js?v=5"></script>
 </body>
 </html>

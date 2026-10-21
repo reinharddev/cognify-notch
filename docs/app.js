@@ -39,6 +39,7 @@
   let current = '';
   let scrollState = 'demo';
   let docked = false;
+  let dockProgress = 0; // 0 = di layar laptop, 1 = menempel di atas
   const display = $('#display');
   let hovering = false;
   let page = 'home';
@@ -115,6 +116,7 @@
     if (view === 'open') setPage(calc ? 'home' : (arg || page), 0);
     if (view === 'card') startCards(arg); else stopCards();
     if (view === 'hud') animateHud();
+    if (N.dataset.view !== view) window.dispatchEvent(new CustomEvent('notch:view', { detail: view }));
     N.dataset.view = view;
     flagNav();
     resize();
@@ -125,8 +127,10 @@
   function resize() {
     const [w, h, r] = SIZES[N.dataset.view];
     // Di layar laptop notch mengecil sesuai lebar layar; setelah menempel, ukuran normal.
-    const room = docked ? window.innerWidth - 24 : display.clientWidth - 24;
-    const s = Math.min(docked ? 1 : display.clientWidth / 1100, room / (w + 20));
+    // Di antara keduanya ukurannya berpindah sedikit demi sedikit mengikuti gulir.
+    const onDisplay = Math.min(display.clientWidth / 1100, (display.clientWidth - 24) / (w + 20));
+    const atTop = Math.min(1, (window.innerWidth - 24) / (w + 20));
+    const s = onDisplay + (atTop - onDisplay) * dockProgress;
     N.style.setProperty('--w', w + 'px');
     N.style.setProperty('--h', h + 'px');
     N.style.setProperty('--r', r + 'px');
@@ -152,10 +156,19 @@
     const top = display.getBoundingClientRect().top;
     const wasDocked = docked;
     docked = top <= 0;
-    N.style.setProperty('--top', Math.max(0, top) + 'px');
-    if (wasDocked !== docked) {
+    // Selama di layar laptop notch diletakkan di halaman (ikut bergulir tanpa jeda);
+    // begitu menempel, posisinya tetap di tepi atas jendela.
+    N.classList.toggle('docked', docked);
+    N.style.setProperty('--top', (docked ? 0 : top + window.scrollY) + 'px');
+    const progress = Math.min(1, Math.max(0, 1 - top / 180));
+    N.classList.toggle('flying', progress > 0 && progress < 1);
+    if (progress !== dockProgress) {
+      dockProgress = progress;
       resize();
+    }
+    if (wasDocked !== docked) {
       flagNav();
+      window.dispatchEvent(new CustomEvent('notch:dock', { detail: docked }));
     }
 
     const mid = window.innerHeight * 0.55;
@@ -198,6 +211,9 @@
     requestAnimationFrame(() => { ticking = false; onScroll(); });
   }, { passive: true });
   window.addEventListener('resize', () => { resize(); onScroll(); });
+  // Posisi layar laptop bisa bergeser setelah font dan gambar selesai dimuat.
+  window.addEventListener('load', onScroll);
+  if (document.fonts) document.fonts.ready.then(onScroll);
 
   // ---------- Hover, ketuk, geser ----------
   function openByUser() {
