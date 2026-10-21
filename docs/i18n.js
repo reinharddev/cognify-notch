@@ -202,10 +202,12 @@ window.I18N = (() => {
 
   const META = {
     id: {
-      description: 'Cognify Notch menjadikan notch MacBook panel kecil untuk lagu, lirik, agenda, timer belajar, catatan, clipboard, dan file. Gratis, open source, dan tanpa akun.',
+      title: 'Cognify Notch: notch dengan isi untuk Mac dan Windows',
+      description: 'Notch untuk Mac dan Windows: lagu, lirik tersinkron, agenda, timer belajar, catatan, clipboard, dan file di satu panel. Gratis, open source, tanpa akun.',
     },
     en: {
-      description: 'Cognify Notch turns your MacBook notch into a small panel for music, lyrics, your agenda, study timers, notes, clipboard, and files. Free, open source, no account.',
+      title: 'Cognify Notch: a notch with something in it, for Mac and Windows',
+      description: 'A notch for Mac and Windows: music, synced lyrics, agenda, study timers, notes, clipboard, and files in one panel. Free, open source, no account.',
     },
   };
 
@@ -229,6 +231,7 @@ window.I18N = (() => {
     });
     document.documentElement.lang = lang;
     document.querySelector('meta[name="description"]').content = META[lang].description;
+    document.title = META[lang].title;
   }
 
   function set(next) {
