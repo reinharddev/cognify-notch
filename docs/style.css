@@ -27,7 +27,14 @@ body {
   font: 17px/1.55 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", "Segoe UI", Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
   overflow-x: hidden;
+  overflow-x: clip;
+  /* Di HP halaman hanya boleh bergulir naik-turun. Tanpa ini Safari dan Chrome di HP
+     membiarkan halaman bergeser sedikit ke samping lalu memantul balik saat jari
+     menggulir agak miring, dan notch yang menempel tampak meloncat ke kiri-kanan. */
+  touch-action: pan-y pinch-zoom;
+  overscroll-behavior-x: none;
 }
+html { overflow-x: clip; overscroll-behavior-x: none; }
 body.dark { color: var(--paper); }
 a { color: inherit; text-decoration: underline; text-decoration-thickness: 1.5px; text-underline-offset: 3px; }
 svg.lucide { width: 1em; height: 1em; stroke-width: 2; vertical-align: -0.125em; flex: none; }
