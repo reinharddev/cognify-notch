@@ -77,15 +77,20 @@ em { font-style: normal; font-weight: 700; background: rgba(255, 255, 255, .55);
 /* ---------- Notch ---------- */
 #notch {
   --w: 190px; --h: 36px; --r: 12px; --s: 1;
-  position: absolute; top: var(--top, 0px); left: 50%; z-index: 50;
-  transform: translateX(-50%) scale(var(--s));
+  /* Selebar jendela dan menengahkan isinya dengan flex, bukan translateX(-50%): lebar notch
+     berubah saat bentuknya berganti, dan Safari di iPhone menghitung -50% dari lebar lama
+     selama animasi, sehingga notch sempat meloncat ke kiri atau kanan. Hanya .shell yang
+     bisa disentuh; area kosong di kiri-kanannya tembus ke halaman. */
+  position: absolute; top: var(--top, 0px); left: 0; right: 0; z-index: 50;
+  display: flex; justify-content: center; pointer-events: none;
+  transform: scale(var(--s));
   transform-origin: top center;
   transition: transform .5s cubic-bezier(.3, 1.25, .45, 1);
   color: #fff; font-size: 12px; line-height: 1.35;
   user-select: none; -webkit-user-select: none;
 }
 .shell {
-  position: relative;
+  position: relative; flex: none; pointer-events: auto;
   width: var(--w); height: var(--h);
   background: #000;
   border-radius: 0 0 var(--r) var(--r);
