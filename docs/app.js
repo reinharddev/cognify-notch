@@ -8,19 +8,27 @@
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
   const icons = () => window.lucide && window.lucide.createIcons();
+  const { L } = window.I18N;
+  const en = () => window.I18N.lang === 'en';
+  // Format waktu mengikuti bahasa: 07.42 dan 1,5 di Indonesia, 07:42 dan 1.5 di Inggris.
+  const locale = () => (en() ? 'en-GB' : 'id-ID');
+  const two = (n) => String(n).padStart(2, '0');
+  const sep = () => (en() ? ':' : '.');
+  const num = (s) => (en() ? s : s.replace('.', ','));
 
+  // Nama halaman sama dengan di app.
   const TABS = [
-    ['home', 'house', 'Beranda'],
-    ['music', 'music', 'Musik'],
-    ['timer', 'timer', 'Pomodoro'],
-    ['clock', 'alarm-clock', 'Stopwatch & Timer'],
-    ['water', 'droplet', 'Pengingat Minum'],
-    ['todo', 'list-checks', 'Daftar Tugas'],
-    ['notes', 'notebook-pen', 'Catatan'],
-    ['clipboard', 'clipboard-list', 'Clipboard'],
-    ['tray', 'inbox', 'Tray'],
-    ['mirror', 'scan-face', 'Cermin'],
-    ['shortcuts', 'zap', 'Pintasan'],
+    ['home', 'house', () => L('Beranda', 'Home')],
+    ['music', 'music', () => L('Musik', 'Music')],
+    ['timer', 'timer', () => 'Pomodoro'],
+    ['clock', 'alarm-clock', () => 'Stopwatch & Timer'],
+    ['water', 'droplet', () => L('Pengingat Minum', 'Water Reminder')],
+    ['todo', 'list-checks', () => L('Daftar Tugas', 'To-do')],
+    ['notes', 'notebook-pen', () => L('Catatan', 'Notes')],
+    ['clipboard', 'clipboard-list', () => 'Clipboard'],
+    ['tray', 'inbox', () => 'Tray'],
+    ['mirror', 'scan-face', () => L('Cermin', 'Mirror')],
+    ['shortcuts', 'zap', () => L('Pintasan', 'Shortcuts')],
   ];
   // lebar, tinggi, radius sudut bawah
   const SIZES = {
@@ -41,7 +49,7 @@
   TABS.forEach(([id, icon, title]) => {
     const b = document.createElement('button');
     b.dataset.tab = id;
-    b.setAttribute('aria-label', title);
+    b.setAttribute('aria-label', title());
     b.innerHTML = `<i data-lucide="${icon}"></i>`;
     b.addEventListener('click', () => setPage(id));
     dots.appendChild(b);
@@ -85,7 +93,7 @@
       p.classList.remove('on', 'from-left');
       if (on) { void p.offsetWidth; p.classList.add('on'); if (dir < 0) p.classList.add('from-left'); }
     });
-    $('#pageTitle').textContent = TABS.find((t) => t[0] === id)[2];
+    $('#pageTitle').textContent = TABS.find((t) => t[0] === id)[2]();
     $$('button', dots).forEach((b) => b.classList.toggle('on', b.dataset.tab === id));
   }
   function stepPage(delta) {
@@ -103,13 +111,16 @@
     const home = $('[data-tab="home"]', N);
     const calc = view === 'open' && arg === 'home-calc';
     home.classList.toggle('home-calc', calc);
-    $('#noteText').textContent = calc ? '1.250.000 * 3' : 'Kumpul tugas biologi besok jam 10';
+    $('#noteText').textContent = noteText(calc);
     if (view === 'open') setPage(calc ? 'home' : (arg || page), 0);
     if (view === 'card') startCards(arg); else stopCards();
     if (view === 'hud') animateHud();
     N.dataset.view = view;
     flagNav();
     resize();
+  }
+  function noteText(calc) {
+    return calc ? L('1.250.000 * 3', '1250000 * 3') : L('Kumpulkan tugas biologi besok jam 10', 'Hand in biology homework tomorrow at 10');
   }
   function resize() {
     const [w, h, r] = SIZES[N.dataset.view];
@@ -128,7 +139,7 @@
   // Beri tahu navigasi bila notch yang menempel sedang lebar, supaya tautan menu menyingkir.
   function flagNav() {
     const view = N.dataset.view;
-    document.body.classList.toggle('notch-wide', docked && ['open', 'lyric', 'title'].includes(view));
+    document.body.classList.toggle('notch-wide', docked && ['open', 'lyric', 'title', 'card'].includes(view));
     document.body.classList.toggle('notch-busy', docked && view !== 'idle');
   }
 
@@ -236,19 +247,20 @@
   });
 
   // ---------- Kartu kabar ----------
-  const CARDS = {
-    charging: { icon: 'battery-charging', c: '#4cd964', t: 'Mengisi daya', d: 'Charger tersambung · 70%' },
-    airpods: { icon: 'headphones', c: '#fff', t: 'AirPods Pro', d: 'Tersambung · L 80%  R 75%' },
-    download: { icon: 'download', c: '#4c9bff', t: 'laporan-final.pdf', d: 'Mengunduh', progress: true },
-    caps: { icon: 'arrow-big-up', c: '#fff', t: 'Caps Lock', d: 'Nyala' },
-    input: { icon: 'keyboard', c: '#fff', t: 'Bahasa keyboard', d: 'ABC' },
-    net: { icon: 'wifi-off', c: '#ff9f43', t: 'Internet terputus', d: 'Wi-Fi tidak tersambung' },
-    meeting: { icon: 'video', c: '#8f87ff', t: 'Kelas online Fisika', d: 'Mulai 5 menit lagi', end: '<button class="pill accent">Gabung</button>' },
-  };
+  const CARDS = () => ({
+    charging: { icon: 'battery-charging', c: '#4cd964', t: L('Mengisi daya', 'Charging'), d: L('Charger tersambung · 70%', 'Charger connected · 70%') },
+    airpods: { icon: 'headphones', c: '#fff', t: 'AirPods Pro', d: L('Tersambung · L 80%  R 75%', 'Connected · L 80%  R 75%') },
+    download: { icon: 'download', c: '#4c9bff', t: L('laporan-final.pdf', 'final-report.pdf'), d: L('Mengunduh', 'Downloading'), progress: true },
+    caps: { icon: 'arrow-big-up', c: '#fff', t: 'Caps Lock', d: L('Nyala', 'On') },
+    input: { icon: 'keyboard', c: '#fff', t: L('Bahasa keyboard', 'Keyboard language'), d: 'ABC' },
+    net: { icon: 'wifi-off', c: '#ff9f43', t: L('Internet terputus', 'Offline'), d: L('Wi-Fi tidak tersambung', 'Wi-Fi not connected') },
+    meeting: { icon: 'video', c: '#8f87ff', t: L('Kelas daring Fisika', 'Online physics class'), d: L('Mulai 5 menit lagi', 'Starts in 5 min'), end: `<button class="pill accent">${L('Gabung', 'Join')}</button>` },
+  });
   const CYCLE = ['charging', 'airpods', 'download', 'caps', 'input', 'net'];
-  let cardTimer = 0, dlTimer = 0;
+  let cardTimer = 0, dlTimer = 0, cardKey = '';
   function showCard(key) {
-    const c = CARDS[key];
+    cardKey = key;
+    const c = CARDS()[key];
     clearInterval(dlTimer);
     $('#cardIcon').innerHTML = `<i data-lucide="${c.icon}"></i>`;
     $('#cardIcon').style.setProperty('--c', c.c);
@@ -262,7 +274,7 @@
         p = Math.min(100, p + 9);
         const bar = $('#cardEnd b');
         if (bar) bar.style.width = p + '%';
-        $('#cardDetail').textContent = p < 100 ? `Mengunduh · ${p}%` : 'Selesai · 4,2 MB';
+        $('#cardDetail').textContent = p < 100 ? `${L('Mengunduh', 'Downloading')} · ${p}%` : L('Selesai · 4,2 MB', 'Done · 4.2 MB');
         if (p >= 100) clearInterval(dlTimer);
       }, 220);
     }
@@ -289,15 +301,30 @@
   }
 
   // ---------- Musik dan lirik ----------
+  // Lirik contoh, bukan lirik lagu sungguhan.
+  const LYRICS = {
+    id: ['lampu jalan mulai menyala', 'langkah pelan menuju rumah', 'ada cerita di saku jaket', 'kubawa pulang malam ini', 'biar hujan ikut bernyanyi', 'sampai pintu terbuka lagi'],
+    en: ['the streetlights flicker on', 'slow steps on the way home', 'a story in my jacket pocket', 'I am bringing it home tonight', 'let the rain sing along', 'until the door opens again'],
+  };
   const lyricBox = $('#lyrics');
   const track = document.createElement('div');
   track.style.transition = 'transform .5s cubic-bezier(.3, .9, .4, 1)';
   track.style.display = 'flex';
   track.style.flexDirection = 'column';
   track.style.gap = '6px';
-  $$('p', lyricBox).forEach((p) => track.appendChild(p));
   lyricBox.appendChild(track);
-  const lines = $$('p', track);
+  let lines = [];
+  function buildLyrics() {
+    track.innerHTML = '';
+    lines = LYRICS[en() ? 'en' : 'id'].map((text, k) => {
+      const p = document.createElement('p');
+      p.textContent = text;
+      p.addEventListener('click', () => showLyric(k));
+      track.appendChild(p);
+      return p;
+    });
+  }
+  buildLyrics();
   let lyricIndex = 0, playing = true, seek = 72;
   function showLyric(i) {
     lyricIndex = (i + lines.length) % lines.length;
@@ -307,7 +334,6 @@
     wing.style.opacity = 0;
     setTimeout(() => { wing.textContent = lines[lyricIndex].textContent; wing.style.opacity = 1; }, 200);
   }
-  lines.forEach((p, k) => p.addEventListener('click', () => showLyric(k)));
   setInterval(() => { if (playing) showLyric(lyricIndex + 1); }, 2600);
   $('#playBtn').addEventListener('click', () => {
     playing = !playing;
@@ -330,7 +356,7 @@
       chart.appendChild(s);
     }
     const pct = Math.min(100, Math.round(total / 20));
-    $('#waterNow').textContent = (total / 1000).toFixed(total % 1000 ? 1 : 0).replace('.', ',');
+    $('#waterNow').textContent = num((total / 1000).toFixed(total % 1000 ? 1 : 0));
     $('#waterPct').textContent = pct + '%';
     $('#waterBar').style.width = pct + '%';
   }
@@ -345,30 +371,32 @@
     setTimeout(() => b.classList.remove('ran'), 900);
   }));
   let pomoRunning = true, pomoLeft = 15 * 60 + 32;
+  function pomoLabel() {
+    $('#pomoBtn').innerHTML = `<i data-lucide="${pomoRunning ? 'pause' : 'play'}"></i>${pomoRunning ? L('Jeda', 'Pause') : L('Lanjut', 'Resume')}`;
+    icons();
+  }
   $('#pomoBtn').addEventListener('click', () => {
     pomoRunning = !pomoRunning;
-    $('#pomoBtn').innerHTML = `<i data-lucide="${pomoRunning ? 'pause' : 'play'}"></i>${pomoRunning ? 'Jeda' : 'Lanjut'}`;
-    icons();
+    pomoLabel();
   });
 
   // ---------- Jam dan hitungan ----------
-  const day = new Intl.DateTimeFormat('id-ID', { weekday: 'short', day: 'numeric', month: 'short' });
-  const time = new Intl.DateTimeFormat('id-ID', { hour: '2-digit', minute: '2-digit' });
-  const two = (n) => String(n).padStart(2, '0');
   let cdLeft = 7 * 60 + 42;
   function everySecond() {
     const now = new Date();
-    const label = `${day.format(now).replace(/,/g, '')} ${time.format(now)}`;
-    $('#displayClock').textContent = `${day.format(now).split(' ')[0].replace(',', '')} ${time.format(now)}`;
-    $('#headClock').textContent = label;
+    const day = new Intl.DateTimeFormat(locale(), { weekday: 'short', day: 'numeric', month: 'short' }).format(now).replace(/,/g, '');
+    const time = new Intl.DateTimeFormat(locale(), { hour: '2-digit', minute: '2-digit', hour12: false }).format(now);
+    $('#displayClock').textContent = `${day.split(' ')[0]} ${time}`;
+    $('#headClock').textContent = `${day} ${time}`;
     if (pomoRunning) pomoLeft = pomoLeft > 0 ? pomoLeft - 1 : 25 * 60;
-    $('#pomo').textContent = `${two(Math.floor(pomoLeft / 60))}.${two(pomoLeft % 60)}`;
+    $('#pomo').textContent = `${two(Math.floor(pomoLeft / 60))}${sep()}${two(pomoLeft % 60)}`;
     $('#pomoRing').setAttribute('stroke-dasharray', `${(100 - pomoLeft / 15).toFixed(1)} 100`);
     cdLeft = cdLeft > 0 ? cdLeft - 1 : 600;
-    $('#cd1').textContent = `${two(Math.floor(cdLeft / 60))}.${two(cdLeft % 60)}`;
+    $('#cd1').textContent = `${two(Math.floor(cdLeft / 60))}${sep()}${two(cdLeft % 60)}`;
     $('#cdRing').setAttribute('stroke-dasharray', `${(100 - cdLeft / 6).toFixed(1)} 100`);
     if (playing) seek = seek < 220 ? seek + 1 : 0;
-    $('#seekPos').textContent = `${Math.floor(seek / 60)}.${two(seek % 60)}`;
+    $('#seekPos').textContent = `${Math.floor(seek / 60)}${sep()}${two(seek % 60)}`;
+    $('#seekEnd').textContent = `3${sep()}40`;
     $('#seekBar').style.width = (seek / 220 * 100).toFixed(1) + '%';
   }
   setInterval(everySecond, 1000);
@@ -380,40 +408,65 @@
   }, 100);
 
   // ---------- Versi terbaru dan catatan rilis dari GitHub ----------
+  // Catatan rilis ditulis dalam Bahasa Indonesia; dalam mode Inggris ada keterangan di atasnya.
+  let releases = [];
+  function renderReleases() {
+    if (!releases.length) return;
+    const version = releases[0].tag_name.replace(/^v/, '');
+    $$('.ver').forEach((s) => { s.textContent = L('Versi ', 'Version ') + version; });
+    const list = $('#changeList');
+    list.innerHTML = '';
+    const date = new Intl.DateTimeFormat(en() ? 'en-US' : 'id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+    releases.forEach((rel) => {
+      const box = document.createElement('div');
+      box.className = 'rel';
+      const head = document.createElement('div');
+      head.innerHTML = '<b></b><small></small>';
+      head.querySelector('b').textContent = rel.tag_name.replace(/^v/, L('Versi ', 'Version '));
+      head.querySelector('small').textContent = date.format(new Date(rel.published_at));
+      const ul = document.createElement('ul');
+      (rel.body || '').split('\n').map((l) => l.trim()).filter(Boolean).forEach((line) => {
+        const li = document.createElement('li');
+        li.textContent = line;
+        ul.appendChild(li);
+      });
+      box.append(head, ul);
+      list.appendChild(box);
+    });
+    $('#changes').hidden = false;
+  }
   fetch('https://api.github.com/repos/reinharddev/cognify-notch/releases?per_page=3')
     .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
-    .then((releases) => {
-      if (!Array.isArray(releases) || !releases.length) return;
-      const latest = releases[0];
-      const dmg = (latest.assets || []).find((a) => a.name.endsWith('.dmg'));
-      const version = latest.tag_name.replace(/^v/, '');
+    .then((data) => {
+      if (!Array.isArray(data) || !data.length) return;
+      releases = data;
+      const dmg = (data[0].assets || []).find((a) => a.name.endsWith('.dmg'));
       if (dmg) $$('.dl').forEach((a) => { a.href = dmg.browser_download_url; });
-      $$('.ver').forEach((s) => { s.textContent = 'Versi ' + version; });
-      const list = $('#changeList');
-      const date = new Intl.DateTimeFormat('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
-      releases.forEach((rel) => {
-        const box = document.createElement('div');
-        box.className = 'rel';
-        const head = document.createElement('div');
-        head.innerHTML = '<b></b><small></small>';
-        head.querySelector('b').textContent = rel.tag_name.replace(/^v/, 'Versi ');
-        head.querySelector('small').textContent = date.format(new Date(rel.published_at));
-        const ul = document.createElement('ul');
-        (rel.body || '').split('\n').map((l) => l.trim()).filter(Boolean).forEach((line) => {
-          const li = document.createElement('li');
-          li.textContent = line;
-          ul.appendChild(li);
-        });
-        box.append(head, ul);
-        list.appendChild(box);
-      });
-      $('#changes').hidden = false;
+      renderReleases();
     })
     .catch(() => { /* tautan tetap ke halaman rilis GitHub */ });
+
+  // ---------- Ganti bahasa ----------
+  $('#langBtn').addEventListener('click', () => window.I18N.toggle());
+  window.I18N.onChange(() => {
+    $$('button', dots).forEach((b) => { b.setAttribute('aria-label', TABS.find((t) => t[0] === b.dataset.tab)[2]()); });
+    $('#pageTitle').textContent = TABS.find((t) => t[0] === page)[2]();
+    $('#noteText').textContent = noteText(current === 'open:home-calc');
+    if (cardKey && N.dataset.view === 'card') showCard(cardKey);
+    buildLyrics();
+    showLyric(lyricIndex);
+    pomoLabel();
+    renderWater();
+    renderReleases();
+    everySecond();
+    icons();
+  });
 
   // ---------- Mulai ----------
   icons();
   setPage('home', 0);
+  $('#noteText').textContent = noteText(false);
+  pomoLabel();
   showLyric(0);
   everySecond();
   onScroll();

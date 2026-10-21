@@ -55,6 +55,9 @@ em { font-style: normal; font-weight: 700; background: rgba(255, 255, 255, .55);
 .nav-pill a:hover { opacity: 1; }
 .nav-pill.left { padding-right: 18px; gap: 10px; opacity: 1; }
 .nav-pill.left img { border-radius: 6px; }
+/* Tombol bahasa: selalu terlihat, juga saat tautan menu menyingkir */
+.lang { font: inherit; font-size: 12px; font-weight: 700; letter-spacing: .04em; color: #fff; background: none; border: 1.5px solid rgba(255,255,255,.4); border-radius: 99px; padding: 4px 9px; cursor: pointer; }
+.lang:hover { border-color: #fff; }
 .nav-get { opacity: 1 !important; background: var(--accent); color: #000 !important; padding: 6px 14px; border-radius: 99px; }
 @media (max-width: 1240px) { .nav-pill.right a:not(.nav-get) { display: none; } .nav-pill.right { padding-left: 8px; } }
 /* Panel terbuka butuh ruang: tautan menu menyingkir sementara */
@@ -349,6 +352,7 @@ body.dark .lead { color: rgba(244, 239, 230, .7); }
 .gestures > div > .kbd { align-self: flex-start; margin-bottom: auto; font-size: 18px; }
 .gestures b { font-family: var(--display); font-size: 21px; line-height: 1.1; margin-top: 26px; }
 .gestures p { margin: 0; font-size: 15px; }
+.gestures .g { display: flex; flex-direction: column; gap: 8px; }
 
 .net { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
 .net > div { background: var(--c); border: 2px solid var(--ink); border-radius: 24px; padding: 24px; box-shadow: 6px 6px 0 var(--ink); }
@@ -394,6 +398,8 @@ body.dark .lead { color: rgba(244, 239, 230, .7); }
 .get-notch .meta { color: rgba(255, 255, 255, .55); }
 .changes { margin-top: 44px; width: 100%; max-width: 640px; text-align: left; }
 .changes-title { font-family: var(--display); font-size: 22px; }
+.changes-note { display: block; opacity: .6; margin-top: 4px; }
+.changes-note:empty { display: none; }
 .rel { border-top: 1px solid rgba(255, 255, 255, .16); padding: 14px 0; margin-top: 12px; }
 .rel b { font-size: 15px; }
 .rel small { color: rgba(255, 255, 255, .5); margin-left: 8px; }

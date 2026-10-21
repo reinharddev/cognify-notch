@@ -57,4 +57,4 @@ Hasilnya `dist/Cognify Notch.app` dan `dist/Cognify-Notch-1.0.0.dmg`. Tanpa sert
 
 ## Lisensi
 
-[AGPL-3.0](LICENSE), sama dengan Cognify. Sparkle berlisensi MIT.
+[AGPL-3.0](LICENSE). Sparkle berlisensi MIT.
