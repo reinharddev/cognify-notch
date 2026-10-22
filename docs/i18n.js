@@ -203,6 +203,13 @@ window.I18N = (() => {
     'q.11': '<summary>On Windows, how do I hide the notch or make it narrower?</summary><p>Left-click the Cognify Notch icon in the taskbar\'s hidden icons (the small arrow) to hide or show the notch. Right-click opens a menu: Hide or Show notch, Settings, and Quit. In Settings, the "Closed notch width" slider narrows the pill so it does not cover browser tabs. The open panel does not change.</p>',
     'q.12': '<summary>Can the two dots (eyes) on the notch be turned off?</summary><p>Yes, and notices like charger, volume, and downloads still appear. Windows Settings has a "Show the eyes" switch and an eye movement choice: Blink (default) or Follow cursor. On Mac, turn off "Eyes when idle" in Settings.</p>',
     'sp.winx': '<b>Windows only</b>Settings live in their own window (the gear button on the notch or the tray icon menu). There is a closed notch width slider, switches and movement for the eyes, and hide or show the notch from the tray icon. Notices, the volume and brightness HUD, and Pomodoro are laid out like the Mac version.',
+    'w.tag': 'Work in progress',
+    'w.title': 'Cognify,<br>the main notes space.',
+    'w.lead': 'A desktop app for documents, boards, and a calendar in one place, for students and everyone else. Free, no account, and your data stays on your computer. Not available to download yet.',
+    'w.l1': '<b>Documents and boards</b>Nested pages, fast search, and a drawing board.',
+    'w.l2': '<b>Calendar</b>Events, repeats, reminders, and ICS subscriptions.',
+    'w.l3': '<b>Connects to Cognify Notch</b>One button shows your Notch data in Cognify. Optional.',
+    'w.note': 'Features and looks may still change. Tables, a Windows version, and a few other things are not finished.',
     'foot': 'The notch content on this page is sample content. Mac and MacBook are trademarks of Apple Inc. Windows is a trademark of Microsoft Corporation.',
   };
 

@@ -311,6 +311,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var controller: NotchController?
     private var model: NotchModel?
     private var statusMenu: StatusMenu?
+    private var link: NotchLink?
     private let bridge = Bridge()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -318,6 +319,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let model = NotchModel(bridge: bridge, appMode: bridge.appMode, prefs: Preferences(persist: bridge.appMode))
             self.model = model
             controller = NotchController(model: model)
+            // Menyalin data ke Cognify hanya setelah pengguna menghubungkannya di Cognify.
+            link = NotchLink(model: model)
+            link?.start()
             if bridge.appMode {
                 statusMenu = StatusMenu(model: model)
                 // Pertama kali dibuka: tunjukkan di mana notch-nya.

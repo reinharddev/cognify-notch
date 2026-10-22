@@ -703,3 +703,7 @@ html[lang="id"] .l-en, html[lang="en"] .l-id { display: none !important; }
   .legal .net, .legal .local { grid-template-columns: 1fr; }
   .legal-foot { padding: 24px 18px 60px; }
 }
+
+.wip { padding-top: 110px; }
+.wip-tag { display: inline-block; background: #ffe08a; color: var(--ink); border: 2px solid var(--ink); border-radius: 99px; font-weight: 700; font-size: 14px; padding: 6px 14px; margin-bottom: 18px; }
+.wip .local { margin: 28px 0 20px; }
