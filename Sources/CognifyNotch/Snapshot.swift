@@ -45,7 +45,44 @@ enum Snapshot {
         var all = NotchModel.Features()
         all.calendar = true
 
+        // Halaman Langit: lokasi UTC+7, terbit 05.25, terbenam 17.58.
+        var zoneCal = Calendar(identifier: .gregorian)
+        zoneCal.timeZone = TimeZone(secondsFromGMT: 7 * 3600)!
+        func skyHour(_ h: Double) -> Date { zoneCal.startOfDay(for: now).addingTimeInterval(h * 3600) }
+        let sunSample = WeatherFeed.SunTimes(sunrise: skyHour(5 + 25.0 / 60), sunset: skyHour(17 + 58.0 / 60), nextSunrise: skyHour(29 + 25.0 / 60), offset: 7 * 3600)
+        func sky(_ hour: Double, code: Int, temp: Int = 29, plusDays: Double = 0) -> NotchModel {
+            make(app: true) {
+                $0.expanded = true; $0.tab = .sky
+                $0.weather.clockOverride = skyHour(hour).addingTimeInterval(plusDays * 86400)
+                $0.weather.preview(.init(temperature: temp, code: code, place: "Jakarta", sun: sunSample))
+            }
+        }
+
+        let cover: NSImage = {
+            let img = NSImage(size: NSSize(width: 120, height: 120))
+            img.lockFocus()
+            NSGradient(colors: [NSColor(red: 0.85, green: 0.2, blue: 0.1, alpha: 1), NSColor(red: 0.95, green: 0.6, blue: 0.15, alpha: 1), NSColor(red: 0.2, green: 0.3, blue: 0.8, alpha: 1)])?.draw(in: NSRect(x: 0, y: 0, width: 120, height: 120), angle: 60)
+            img.unlockFocus()
+            return img
+        }()
         let cases: [(String, NotchModel)] = [
+            ("m1-musik-glow", make(app: true) { $0.expanded = true; $0.tab = .music; $0.media.preview(song, artwork: cover) }),
+            ("sky9-fajar", sky(4.9, code: 0, temp: 24)),
+            ("sky10-terbit", sky(5.5, code: 0, temp: 25)),
+            ("sky11-pagi", sky(7.2, code: 1, temp: 27)),
+            ("sky12-senja-akhir", sky(18.2, code: 0, temp: 28)),
+            ("sky16-1834", sky(18 + 34.0 / 60, code: 0, temp: 28)),
+            ("sky13-bulan-sabit", sky(21 + 24 * 0, code: 0, temp: 25, plusDays: -22)),
+            ("sky14-bulan-separuh", sky(21, code: 0, temp: 25, plusDays: -15)),
+            ("sky15-bulan-purnama", sky(21, code: 0, temp: 25, plusDays: -8)),
+            ("sky1-siang-cerah", sky(12, code: 0, temp: 33)),
+            ("sky2-senja", sky(17.7, code: 1)),
+            ("sky3-malam", sky(22, code: 0, temp: 25)),
+            ("sky4-hujan", sky(15, code: 63, temp: 24)),
+            ("sky5-badai", sky(20, code: 95, temp: 23)),
+            ("sky6-salju", sky(10, code: 73, temp: -2)),
+            ("sky7-mendung", sky(13, code: 3, temp: 27)),
+            ("sky8-kabut", sky(7.5, code: 45, temp: 12)),
             ("n1-musik-lirik", make(app: true) { $0.expanded = true; $0.tab = .music; $0.preview(level: nil, features: all); $0.media.preview(song)
                 $0.lyrics.preview(.synced(LyricsService.parse("[00:10.00]Morning folds the city light\n[00:20.00]into paper birds tonight\n[01:15.00]If I could be by your side\n[01:24.00]I'd give you all my seasons\n[01:33.00]every summer, every rain\n[01:41.00]calling out your name"))) }),
             ("n2-air", make(app: true) { $0.expanded = true; $0.tab = .water; $0.water.preview([(hour: 8, ml: 250), (hour: 9, ml: 250), (hour: 11, ml: 500), (hour: 13, ml: 250), (hour: 15, ml: 250)]) }),
@@ -58,8 +95,8 @@ enum Snapshot {
                     .init(id: UUID(), text: "Beli kertas folio", due: now.addingTimeInterval(-600)),
                 ]) }),
             ("n4-mata", make(app: true) { $0.state = NotchState(events: [], overdue: 0, processing: 0) }),
-            ("n5-mata-tidur", make(app: true) { $0.state = NotchState(events: [], overdue: 0, processing: 0); $0.preview(mood: .asleep) }),
-            ("n6-mata-menyapa", make(app: true) { $0.state = NotchState(events: [], overdue: 0, processing: 0); $0.preview(mood: .hello) }),
+            ("n5-mata-tidur", make(app: true) { $0.state = NotchState(events: [], overdue: 0, processing: 0); $0.preview(emotion: .sleep) }),
+            ("n6-mata-menyapa", make(app: true) { $0.state = NotchState(events: [], overdue: 0, processing: 0); $0.preview(emotion: .hello) }),
             ("n7-kartu-charger", make(app: true) { $0.preview(notice: .charging(percent: 70, full: false)) }),
             ("n8-kartu-airpods", make(app: true) { $0.preview(notice: .audioConnected(name: "AirPods Pro milik Reinhard", battery: "L 80% R 75%")) }),
             ("n9-kartu-capslock", make(app: true) { $0.preview(notice: .capsLock(true)) }),
@@ -110,8 +147,53 @@ enum Snapshot {
             ("6-tersimpan", make { $0.expanded = true; $0.toast = .done("“Bab 2 Fotosintesis” masuk Knowledge") }),
             ("7-timer-selesai", make { $0.expanded = true; $0.toast = .alert(title: "Waktu fokus selesai", detail: "Istirahat 5 menit dulu, lalu lanjut lagi.", action: .startTimer("Mulai istirahat")) }),
             ("8-sayap-timer", make { $0.state = NotchState(events: [], overdue: 0, processing: 0); $0.timer.start() }),
+            ("n7-kepala-mengambang", make(app: true) { $0.hasNotch = false; $0.notchSize = CGSize(width: 190, height: 24); $0.state = NotchState(events: [], overdue: 0, processing: 0); $0.preview(emotion: .happy) }),
             ("9-tanpa-notch", make { $0.hasNotch = false; $0.notchSize = CGSize(width: 190, height: 24); $0.expanded = true }),
         ]
+        // Lembar semua ekspresi: mata di notch (kiri) dan kepala bulat saat mengambang (kanan).
+        do {
+            let faces = Emotion.allCases.map { e -> (Emotion, Face) in let f = Face(); f.preview(e); return (e, f) }
+            let sheet = LazyVGrid(columns: Array(repeating: GridItem(.fixed(190), spacing: 10), count: 4), spacing: 10) {
+                ForEach(0..<faces.count, id: \.self) { i in
+                    VStack(spacing: 6) {
+                        HStack(spacing: 18) {
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.black)
+                                HStack(spacing: 40) { Eye(face: faces[i].1, right: false); Eye(face: faces[i].1, right: true) }
+                            }.frame(width: 110, height: 32)
+                            Circle().fill(Color.black).frame(width: 42, height: 42)
+                                .overlay(FaceHead(face: faces[i].1))
+                        }
+                        Text("\(faces[i].0)").font(.system(size: 10, design: .monospaced)).foregroundStyle(.white)
+                    }
+                    .padding(8)
+                }
+            }
+            .padding(14)
+            .background(Color(white: 0.3))
+            .environment(\.snapshot, true)
+            let renderer = ImageRenderer(content: sheet)
+            renderer.scale = 2
+            if let image = renderer.nsImage, let tiff = image.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff),
+               let png = rep.representation(using: .png, properties: [:]) {
+                try? png.write(to: folder.appendingPathComponent("z-ekspresi.png"))
+            }
+        }
+        // Ikon kategori Pengaturan: ukuran sidebar (26) dan header (64).
+        do {
+            let sheet = VStack(spacing: 18) {
+                HStack(spacing: 18) { ForEach(SettingsPane.allCases) { PaneIcon(pane: $0, size: 64) } }
+                HStack(spacing: 18) { ForEach(SettingsPane.allCases) { PaneIcon(pane: $0, size: 26) } }
+            }
+            .padding(24)
+            .background(Color(white: 0.93))
+            let renderer = ImageRenderer(content: sheet)
+            renderer.scale = 2
+            if let image = renderer.nsImage, let tiff = image.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff),
+               let png = rep.representation(using: .png, properties: [:]) {
+                try? png.write(to: folder.appendingPathComponent("z-ikon-pengaturan.png"))
+            }
+        }
         for (name, model) in cases {
             Lang.english = model.prefs.language == .en
             let view = ZStack(alignment: .top) {

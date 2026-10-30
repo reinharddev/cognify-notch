@@ -30,7 +30,7 @@ struct NowPlaying: Equatable {
 @MainActor
 final class MediaMonitor: ObservableObject {
     @Published private(set) var nowPlaying: NowPlaying?
-    @Published private(set) var artwork: NSImage?
+    @Published private(set) var artwork: NSImage? { didSet { ArtPalette.shared.update(artwork) } }
     /// Helper gagal berjalan (mis. Apple menutup celahnya): bagian media disembunyikan.
     @Published private(set) var unavailable = false
 
@@ -212,6 +212,8 @@ final class MediaMonitor: ObservableObject {
 struct Artwork: View {
     @ObservedObject var media: MediaMonitor
     let size: CGFloat
+    /// Pendar berwarna sampul di sekeliling foto (hanya halaman Musik).
+    var glow = false
 
     var body: some View {
         Group {
@@ -227,17 +229,139 @@ struct Artwork: View {
         }
         .frame(width: size, height: size)
         .clipShape(RoundedRectangle(cornerRadius: size * 0.2, style: .continuous))
+        .background {
+            // Salinan sampul yang diburamkan di belakangnya, melebar ke kanan sampai garis pemisah lirik
+            // dan memudar: warna pendar sama dengan foto lagunya.
+            if glow, let art = media.artwork {
+                Image(nsImage: art).resizable().aspectRatio(contentMode: .fill)
+                    .frame(width: size * 4.2, height: size * 2.6)
+                    .clipShape(Ellipse())
+                    .blur(radius: size * 0.7)
+                    .opacity(0.5)
+                    .offset(x: size * 1.2)
+                    .allowsHitTesting(false)
+            }
+        }
+    }
+}
+
+/// Gradasi warna sampul di sisi kanan halaman Musik (di belakang lirik), warnanya sama dengan pendar di dekat foto.
+struct ArtworkWash: View {
+    @ObservedObject var media: MediaMonitor
+
+    var body: some View {
+        if let art = media.artwork {
+            Image(nsImage: art).resizable().aspectRatio(contentMode: .fill)
+                .frame(width: 380, height: 300)
+                .clipShape(Ellipse())
+                .blur(radius: 64)
+                .opacity(0.38)
+                .offset(x: 90)
+                .allowsHitTesting(false)
+        }
     }
 }
 
 /// Batang equalizer: pita nada asli dari `Spectrum` (kiri bass → kanan treble) jika tersedia,
 /// selain itu animasi selama musik diputar. Digambar langsung di lapisan Core Animation: data audio
 /// datang 30 kali per detik, dan lewat SwiftUI tiap kiriman memaksa tata letak ulang seluruh panel.
+/// Warna equalizer pilihan user (Pengaturan → Notch); nil = warna aksen.
+@MainActor
+final class EqualizerStyle: ObservableObject {
+    static let shared = EqualizerStyle()
+    @Published var color: Color?
+    /// Warna equalizer otomatis dari sampul lagu yang sedang diputar.
+    @Published var auto = false
+}
+
+/// Warna dari sampul lagu yang sedang diputar (dihitung sekali per sampul), dipakai equalizer otomatis.
+@MainActor
+final class ArtPalette: ObservableObject {
+    static let shared = ArtPalette()
+    @Published private(set) var color: Color?
+    private var current: ObjectIdentifier?
+
+    func update(_ art: NSImage?) {
+        guard let art else { current = nil; color = nil; return }
+        let id = ObjectIdentifier(art)
+        guard id != current else { return }
+        current = id
+        color = ArtworkColors.derive(art).active
+    }
+}
+
+/// Warna lirik pilihan user: baris yang sedang dinyanyikan dan baris lainnya; nil = putih bawaan.
+@MainActor
+final class LyricStyle: ObservableObject {
+    static let shared = LyricStyle()
+    @Published var active: Color?
+    @Published var idle: Color?
+    /// Warna lirik otomatis dari sampul lagu (menggantikan pilihan manual).
+    @Published var auto = false
+    private var cache: (id: ObjectIdentifier, colors: (active: Color, idle: Color))?
+
+    /// Warna yang dipakai sekarang: dari sampul bila otomatis dan ada sampulnya, selain itu pilihan user.
+    func resolved(artwork: NSImage?) -> (active: Color?, idle: Color?) {
+        guard auto, let artwork else { return (active, idle) }
+        let id = ObjectIdentifier(artwork)
+        if cache?.id != id { cache = (id, ArtworkColors.derive(artwork)) }
+        return (cache!.colors.active, cache!.colors.idle)
+    }
+}
+
+/// Warna lirik dari sampul: rona dominan (diutamakan yang jenuh dan terang), dibuat terang agar terbaca di atas hitam atau kaca.
+enum ArtworkColors {
+    static func derive(_ image: NSImage) -> (active: Color, idle: Color) {
+        let n = 32
+        guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: n, pixelsHigh: n, bitsPerSample: 8, samplesPerPixel: 4,
+                                         hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0),
+              let ctx = NSGraphicsContext(bitmapImageRep: rep) else { return (.white, Color.white.opacity(0.6)) }
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = ctx
+        image.draw(in: NSRect(x: 0, y: 0, width: n, height: n), from: .zero, operation: .copy, fraction: 1)
+        NSGraphicsContext.restoreGraphicsState()
+        var x = 0.0, y = 0.0, weight = 0.0, sat = 0.0
+        for px in 0..<n {
+            for py in 0..<n {
+                guard let c = rep.colorAt(x: px, y: py)?.usingColorSpace(.deviceRGB) else { continue }
+                let w = Double(c.saturationComponent * c.brightnessComponent) + 0.001
+                let a = Double(c.hueComponent) * 2 * .pi
+                x += cos(a) * w; y += sin(a) * w; weight += w; sat += Double(c.saturationComponent) * w
+            }
+        }
+        let meanSat = weight > 0 ? sat / weight : 0
+        guard meanSat > 0.12 else { return (.white, Color(white: 0.75)) } // sampul hitam putih
+        var hue = atan2(y, x) / (2 * .pi)
+        if hue < 0 { hue += 1 }
+        let s = min(0.7, max(0.28, meanSat * 0.8))
+        return (Color(hue: hue, saturation: s, brightness: 1), Color(hue: hue, saturation: s * 0.6, brightness: 0.8))
+    }
+}
+
+extension Color {
+    /// "#rrggbb" → warna; teks lain (termasuk kosong) → nil.
+    init?(hex: String) {
+        let h = hex.trimmingCharacters(in: CharacterSet(charactersIn: "# "))
+        guard h.count == 6, let v = UInt32(h, radix: 16) else { return nil }
+        self.init(red: Double((v >> 16) & 0xFF) / 255, green: Double((v >> 8) & 0xFF) / 255, blue: Double(v & 0xFF) / 255)
+    }
+
+    /// Warna → "#rrggbb" (sRGB).
+    var hex: String {
+        let c = NSColor(self).usingColorSpace(.sRGB) ?? .white
+        return String(format: "#%02x%02x%02x", Int((c.redComponent * 255).rounded()), Int((c.greenComponent * 255).rounded()), Int((c.blueComponent * 255).rounded()))
+    }
+}
+
 struct Equalizer: View {
     let playing: Bool
     let spectrum: Spectrum
-    var tint: Color = .accent
+    var tintOverride: Color?
+    @ObservedObject private var style = EqualizerStyle.shared
+    @ObservedObject private var palette = ArtPalette.shared
     @Environment(\.snapshot) private var snapshot
+
+    private var tint: Color { tintOverride ?? (style.auto ? palette.color : nil) ?? style.color ?? .accent }
 
     var body: some View {
         if snapshot {
@@ -370,7 +494,7 @@ struct MediaCard: View {
         if let now = media.nowPlaying {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 10) {
-                    Button(action: media.openApp) { Artwork(media: media, size: 50) }.buttonStyle(.plain)
+                    Button(action: media.openApp) { Artwork(media: media, size: 50, glow: true) }.buttonStyle(.plain)
                         .help(media.appName.map { L("Buka \($0)", "Open \($0)") } ?? "")
                     VStack(alignment: .leading, spacing: 2) {
                         Marquee(text: now.title, font: .system(size: 12.5, weight: .semibold))

@@ -138,13 +138,14 @@ final class StudyTimer: ObservableObject {
 final class NotchModel: ObservableObject {
     /// Halaman panel terbuka (digeser dengan panah, titik, atau dua jari).
     enum Tab: String, CaseIterable {
-        case home, music, timer, clock, water, todo, notes, clipboard, tray, mirror, shortcuts
+        case home, music, timer, clock, sky, water, todo, notes, clipboard, tray, mirror, shortcuts
 
         var icon: String {
             switch self {
             case .home: return "house.fill"
             case .music: return "music.note"
             case .clock: return "stopwatch"
+            case .sky: return "cloud.sun.fill"
             case .water: return "drop.fill"
             case .todo: return "checklist"
             case .notes: return "note.text"
@@ -161,6 +162,7 @@ final class NotchModel: ObservableObject {
             case .home: return L("Beranda", "Home")
             case .music: return L("Musik", "Music")
             case .clock: return L("Stopwatch & Timer", "Stopwatch & Timer")
+            case .sky: return L("Langit", "Sky")
             case .water: return L("Pengingat Minum", "Water Reminder")
             case .todo: return L("Daftar Tugas", "To-do")
             case .notes: return L("Catatan", "Notes")
@@ -208,14 +210,6 @@ final class NotchModel: ObservableObject {
         let title: String
         var subtitle: String = ""
         var value: String? = nil
-    }
-
-    /// Ekspresi mata saat notch diam.
-    enum Mood: Equatable { case awake, blink, asleep, hello }
-
-    @MainActor
-    final class Face: ObservableObject {
-        @Published var mood: Mood = .awake
     }
 
     struct Battery: Equatable {
@@ -275,12 +269,9 @@ final class NotchModel: ObservableObject {
     @Published private(set) var notice: DeviceNotice?
     /// Judul lagu yang baru mulai: sayap kiri melebar menampilkannya sampai selesai bergulir.
     @Published private(set) var songBanner: String?
-    /// Ekspresi mata; objek terpisah supaya kedipan hanya menggambar ulang kedua mata.
+    /// Ekspresi wajah (Companion.swift); objek terpisah supaya kedipan hanya menggambar ulang wajah.
     let face = Face()
-    private var mood: Mood {
-        get { face.mood }
-        set { face.mood = newValue }
-    }
+    private var online = true
     @Published private(set) var battery: Battery? = PowerMonitor.current()
     /// Arah pindah halaman terakhir (untuk animasi geser).
     @Published private(set) var pageForward = true
@@ -359,14 +350,30 @@ final class NotchModel: ObservableObject {
             self?.show(.alert(title: L("Timer \(countdown.label) selesai", "\(countdown.label) timer done"),
                               detail: L("Waktunya!", "Time's up!"), action: nil))
         }
-        self.prefs.$weatherCity.dropFirst().removeDuplicates().sink { [weak self] city in
+        Publishers.CombineLatest(self.prefs.$weatherCity, self.prefs.$weatherCoords).dropFirst().removeDuplicates { $0 == $1 }.sink { [weak self] city, coords in
             DispatchQueue.main.async {
                 guard let self else { return }
-                self.weather.configure(enabled: self.features.weather, city: city)
+                self.weather.configure(enabled: self.features.weather, city: city, coords: coords)
+            }
+        }.store(in: &changes)
+        face.config = { [weak self] in self?.prefs.companionConfig ?? CompanionConfig() }
+        // Pilihan wajah berubah di Pengaturan: terapkan segera supaya hasilnya langsung terlihat di notch.
+        Publishers.MergeMany(
+            self.prefs.$companionMode.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            self.prefs.$companionFixed.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            self.prefs.$companionBlink.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            self.prefs.$companionMap.dropFirst().map { _ in () }.eraseToAnyPublisher()
+        ).sink { [weak self] in
+            DispatchQueue.main.async {
+                self?.face.configChanged()
+                self?.companionStep(flavor: false)
             }
         }.store(in: &changes)
         keyboard.onInputSource = { [weak self] name in self?.showNotice(.inputSource(name)) }
-        network.onChange = { [weak self] online in self?.showNotice(.network(online)) }
+        network.onChange = { [weak self] online in
+            self?.online = online
+            self?.showNotice(.network(online))
+        }
         companionTask = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: UInt64(Double.random(in: 5...10) * 1_000_000_000))
@@ -403,6 +410,10 @@ final class NotchModel: ObservableObject {
                 self?.loadWingLyrics(now)
             }
         }.store(in: &changes)
+        // Mengubah lengkung sudut: notch terbuka sebentar sebagai pratinjau.
+        self.prefs.$roundness.dropFirst().removeDuplicates().sink { [weak self] _ in
+            DispatchQueue.main.async { self?.previewShape() }
+        }.store(in: &changes)
         timer.onFinish = { [weak self] mode in
             NSSound(named: "Glass")?.play()
             self?.tab = .timer
@@ -427,7 +438,7 @@ final class NotchModel: ObservableObject {
     /// Lebar sayap kiri & kanan saat tertutup.
     var wings: (left: CGFloat, right: CGFloat) {
         guard !expanded, card == nil, let live else { return (0, 0) }
-        if live.eyes { return (Self.eyeWing, Self.eyeWing) }
+        if live.eyes { return headMode ? (0, 0) : (Self.eyeWing, Self.eyeWing) }
         guard let _ = live.title else { return (Self.wing, Self.wing) }
         return live.wideRight ? (Self.wideWing, Self.wideWing) : (Self.songWing, Self.wing)
     }
@@ -435,7 +446,18 @@ final class NotchModel: ObservableObject {
     /// Geser horizontal bentuk notch dari tengah layar (sayap kiri lebih lebar → bergeser ke kiri).
     var shapeOffset: CGFloat { (wings.right - wings.left) / 2 }
 
+    /// Notch mengambang (Mac tanpa notch) yang sedang diam: tampil sebagai kepala bulat, bukan pil.
+    static let headSize: CGFloat = 42
+    var headMode: Bool { !hasNotch && !expanded && card == nil && live?.eyes == true }
+
+    /// Ukuran panel terbuka. Isi digambar tetap pada ukuran ini, jadi tidak ikut menyusut saat notch menutup.
+    var expandedBox: CGSize {
+        let scale = CGFloat(prefs.scale)
+        return CGSize(width: Self.expandedSize.width * scale, height: (Self.expandedSize.height + notchSize.height - 32) * scale)
+    }
+
     var size: CGSize {
+        if headMode { return CGSize(width: Self.headSize, height: Self.headSize) }
         if expanded {
             let scale = CGFloat(prefs.scale)
             return CGSize(width: Self.expandedSize.width * scale, height: (Self.expandedSize.height + notchSize.height - 32) * scale)
@@ -597,9 +619,9 @@ final class NotchModel: ObservableObject {
         keyboard.setEnabled(next.keyboard)
         network.setEnabled(next.network)
         todo.setSync(next.remindersSync)
-        weather.configure(enabled: next.weather, city: prefs.weatherCity)
+        weather.configure(enabled: next.weather, city: prefs.weatherCity, coords: prefs.weatherCoords)
         loadWingLyrics(media.nowPlaying)
-        if !next.companion { mood = .awake }
+        if !next.companion { face.reset() }
         if !tabs.contains(tab) { tab = .home }
     }
 
@@ -611,13 +633,13 @@ final class NotchModel: ObservableObject {
         guard !list.isEmpty else { return }
         let index = list.firstIndex(of: tab) ?? 0
         pageForward = delta > 0
-        withAnimation(.notch) { tab = list[(index + delta + list.count) % list.count] }
+        withAnimation(.tabSwitch) { tab = list[(index + delta + list.count) % list.count] }
     }
 
     func go(to next: Tab) {
         let list = tabs
         pageForward = (list.firstIndex(of: next) ?? 0) >= (list.firstIndex(of: tab) ?? 0)
-        withAnimation(.notch) { tab = next }
+        withAnimation(.tabSwitch) { tab = next }
     }
 
     // MARK: Mata
@@ -626,33 +648,30 @@ final class NotchModel: ObservableObject {
     func noteActivity() {
         lastActivity = Date()
         keyboard.checkCaps()
-        guard mood == .asleep else { return }
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) { mood = .hello }
-        Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 1_600_000_000)
-            guard self?.mood == .hello else { return }
-            withAnimation(.easeInOut(duration: 0.2)) { self?.mood = .awake }
-        }
+        face.wake()
     }
 
-    /// Tiap beberapa detik: berkedip, atau tertidur setelah 2,5 menit tanpa gerakan mouse.
-    private func companionStep() {
-        guard features.companion, !expanded, live?.eyes == true, mood != .hello else { return }
-        if Date().timeIntervalSince(lastActivity) > 150 {
-            if mood != .asleep { withAnimation(.easeInOut(duration: 0.6)) { mood = .asleep } }
-            return
-        }
-        guard mood == .awake else { return }
-        withAnimation(.easeInOut(duration: 0.07)) { mood = .blink }
-        Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 140_000_000)
-            guard self?.mood == .blink else { return }
-            withAnimation(.easeInOut(duration: 0.09)) { self?.mood = .awake }
-        }
+    /// Tiap 5 sampai 10 detik: wajah memilih suasana dari keadaan (lama Mac menyala, jam, baterai, musik,
+    /// timer, internet) lalu berkedip, melirik, atau iseng. Tertidur setelah 2,5 menit tanpa gerakan mouse.
+    private func companionStep(flavor: Bool = true) {
+        guard features.companion, !expanded, live?.eyes == true || card != nil else { return }
+        let hour = Calendar.current.component(.hour, from: Date())
+        face.tick(CompanionContext(
+            idle: Date().timeIntervalSince(lastActivity), uptimeDays: Self.uptimeDays, hour: hour, battery: battery,
+            playing: media.nowPlaying?.playing == true, focus: timer.running && timer.mode == .focus,
+            rest: timer.running && timer.mode != .focus, offline: !online), flavor: flavor)
+    }
+
+    /// Lama Mac menyala sejak dihidupkan (hari). Waktu tidur ikut terhitung.
+    private static var uptimeDays: Double {
+        var boot = timeval()
+        var size = MemoryLayout<timeval>.stride
+        guard sysctlbyname("kern.boottime", &boot, &size, nil, 0) == 0, boot.tv_sec > 0 else { return 0 }
+        return Date().timeIntervalSince1970.advanced(by: -Double(boot.tv_sec)) / 86400
     }
 
     // Untuk snapshot.
-    func preview(mood next: Mood) { mood = next }
+    func preview(emotion next: Emotion) { face.preview(next) }
 
     // Untuk snapshot.
     func preview(level next: Level?, features next2: Features? = nil) {
@@ -687,6 +706,7 @@ final class NotchModel: ObservableObject {
     }
 
     private func showNotice(_ next: DeviceNotice) {
+        if features.companion { face.react(to: next) }
         noticeTask?.cancel()
         withAnimation(.notch) { notice = next }
         let seconds: Double
@@ -742,6 +762,17 @@ final class NotchModel: ObservableObject {
                 guard !Task.isCancelled else { return }
                 self?.setExpanded(false)
             }
+        }
+    }
+
+    /// Buka notch sebentar agar perubahan bentuk terlihat; menutup lagi bila kursor tidak di atasnya.
+    private func previewShape() {
+        collapseTask?.cancel()
+        setExpanded(true)
+        collapseTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 1_800_000_000)
+            guard !Task.isCancelled, let self, !self.hovering else { return }
+            self.setExpanded(false)
         }
     }
 
@@ -803,6 +834,7 @@ final class NotchModel: ObservableObject {
     // MARK: Aksi
 
     func show(_ next: Toast) {
+        if features.companion { face.react(to: next) }
         toastTask?.cancel()
         withAnimation(.notch) { toast = next }
         if case .alert = next { setExpanded(true) }
@@ -863,7 +895,8 @@ final class NotchModel: ObservableObject {
 
     func saveNote() {
         if voice.recording { voice.stop() }
-        let text = note.trimmingCharacters(in: .whitespacesAndNewlines)
+        var text = note.trimmingCharacters(in: .whitespacesAndNewlines)
+        if features.calculator { text = QuickCalc.annotated(text) }
         if appMode, !text.isEmpty {
             notes.add(text)
             note = ""
@@ -1018,9 +1051,17 @@ enum Relative {
 extension Animation {
     /// Pegas yang dipakai semua perubahan bentuk notch.
     static let notch = Animation.spring(response: 0.42, dampingFraction: 0.8)
+    /// Pindah halaman: tanpa pantulan, supaya pindah cepat berkali-kali tidak menumpuk gerakan.
+    static let tabSwitch = Animation.easeOut(duration: 0.16)
+}
+
+/// Warna aksen pilihan user (Pengaturan → Notch); nil = ungu Cognify bawaan.
+enum AccentStyle {
+    static var color: Color?
+    static let fallback = Color(red: 0.56, green: 0.53, blue: 1.0)
 }
 
 extension Color {
-    /// Ungu Cognify (#4f46e5) yang diterangkan supaya terbaca di atas hitam.
-    static let accent = Color(red: 0.56, green: 0.53, blue: 1.0)
+    /// Ungu Cognify (#4f46e5) yang diterangkan supaya terbaca di atas hitam, atau warna aksen pilihan user.
+    static var accent: Color { AccentStyle.color ?? AccentStyle.fallback }
 }

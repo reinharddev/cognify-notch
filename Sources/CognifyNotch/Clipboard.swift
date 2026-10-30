@@ -88,7 +88,7 @@ final class ClipboardHistory: ObservableObject {
         next.removeAll { images.contains($0.id) }
         let texts = next.filter { $0.kind != .image && !$0.pinned }.dropFirst(Self.maxText).map(\.id)
         next.removeAll { texts.contains($0.id) }
-        withAnimation(.notch) { items = next }
+        withAnimation(.snappy(duration: 0.18)) { items = next }
         save()
     }
 
@@ -105,24 +105,24 @@ final class ClipboardHistory: ObservableObject {
         var next = items
         next.removeAll { $0.id == item.id }
         next.insert(item, at: 0)
-        withAnimation(.notch) { items = next }
+        withAnimation(.snappy(duration: 0.18)) { items = next }
         save()
     }
 
     func remove(_ item: Item) {
-        withAnimation(.notch) { items.removeAll { $0.id == item.id } }
+        withAnimation(.snappy(duration: 0.18)) { items.removeAll { $0.id == item.id } }
         save()
     }
 
     /// Hapus semua kecuali yang disematkan.
     func clear() {
-        withAnimation(.notch) { items.removeAll { !$0.pinned } }
+        withAnimation(.snappy(duration: 0.18)) { items.removeAll { !$0.pinned } }
         save()
     }
 
     func togglePin(_ item: Item) {
         guard let i = items.firstIndex(where: { $0.id == item.id }) else { return }
-        withAnimation(.notch) { items[i].pinned.toggle() }
+        withAnimation(.snappy(duration: 0.18)) { items[i].pinned.toggle() }
         save()
     }
 
@@ -207,7 +207,29 @@ private struct ClipboardTile: View {
     @State private var hover = false
 
     var body: some View {
-        Button(action: copy) {
+        ZStack(alignment: .bottomTrailing) {
+            Button(action: copy) { tile }
+                .buttonStyle(PressableStyle())
+                .help(L("Klik untuk copy lagi", "Click to copy again"))
+            HStack(spacing: 0) {
+                if hover || item.pinned {
+                    Button(action: pin) {
+                        Image(systemName: item.pinned ? "pin.fill" : "pin").font(.system(size: 8.5, weight: .bold)).padding(5)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain).foregroundStyle(item.pinned ? Color.accent : .white.opacity(0.6))
+                    .help(item.pinned ? L("Lepas sematan", "Unpin") : L("Sematkan", "Pin"))
+                }
+                if hover && !item.pinned {
+                    Button(action: remove) { Image(systemName: "xmark").font(.system(size: 8.5, weight: .bold)).padding(5).contentShape(Rectangle()) }
+                        .buttonStyle(.plain).foregroundStyle(.white.opacity(0.6)).help(L("Hapus", "Remove"))
+                }
+            }
+        }
+        .notchHover { hover = $0 }
+    }
+
+    private var tile: some View {
             HStack(alignment: .top, spacing: 8) {
                 if let image = item.image {
                     Image(nsImage: image).resizable().aspectRatio(contentMode: .fill)
@@ -223,31 +245,13 @@ private struct ClipboardTile: View {
                         .font(.system(size: 11.5, weight: .medium)).lineLimit(2).multilineTextAlignment(.leading)
                     Text([item.app, Relative.ago(item.date)].compactMap { $0 }.joined(separator: " · "))
                         .font(.system(size: 9.5)).foregroundStyle(.white.opacity(0.45)).lineLimit(1)
+                        .padding(.trailing, 36) // tempat tombol pin/hapus di baris bawah, teks di atasnya tidak bergeser
                 }
                 Spacer(minLength: 0)
             }
             .padding(8)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(RoundedRectangle(cornerRadius: 9).fill(Color.white.opacity(hover ? 0.12 : 0.07)))
-            .overlay(alignment: .topTrailing) {
-                HStack(spacing: 0) {
-                    if hover || item.pinned {
-                        Button(action: pin) {
-                            Image(systemName: item.pinned ? "pin.fill" : "pin").font(.system(size: 8.5, weight: .bold)).padding(5)
-                        }
-                        .buttonStyle(.plain).foregroundStyle(item.pinned ? Color.accent : .white.opacity(0.6))
-                        .help(item.pinned ? L("Lepas sematan", "Unpin") : L("Sematkan", "Pin"))
-                    }
-                    if hover && !item.pinned {
-                        Button(action: remove) { Image(systemName: "xmark").font(.system(size: 8.5, weight: .bold)).padding(5) }
-                            .buttonStyle(.plain).foregroundStyle(.white.opacity(0.6)).help(L("Hapus", "Remove"))
-                    }
-                }
-            }
             .contentShape(Rectangle())
-        }
-        .buttonStyle(PressableStyle())
-        .notchHover { hover = $0 }
-        .help(L("Klik untuk copy lagi", "Click to copy again"))
     }
 }

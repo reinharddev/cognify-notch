@@ -20,6 +20,43 @@ enum QuickCalc {
         return format(value)
     }
 
+    /// Hitungan di tengah kalimat ("beli susu 5 * 12000"): bagian hitungan terakhir di satu baris, nilai, dan hasil siap tampil.
+    /// Tanggal ("22-10-2026"), jam ("16:06"), dan angka yang cuma dipisah tanda minus tanpa spasi tidak dianggap hitungan.
+    static func inline(_ line: String) -> (expression: String, value: Double, result: String)? {
+        let pattern = #"\(*\d[\d.,]*\)*(?:\s*(?:[*/×÷^+x]|\s-\s)\s*\(*\d[\d.,]*\)*)+"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
+        let ns = line as NSString
+        for m in regex.matches(in: line, range: NSRange(location: 0, length: ns.length)).reversed() {
+            let expression = ns.substring(with: m.range).trimmingCharacters(in: .whitespaces)
+            let flat = expression.replacingOccurrences(of: "×", with: "*").replacingOccurrences(of: "x", with: "*").replacingOccurrences(of: "÷", with: "/")
+            var parser = Parser(normalize(flat))
+            if let value = parser.parse(), value.isFinite { return (expression, value, format(value)) }
+        }
+        return nil
+    }
+
+    /// Teks catatan dengan hasil hitungan di ujung tiap baris ("beli susu 5 * 12000 = 60.000"). Baris yang sudah
+    /// memuat "=" dibiarkan. Bila dua baris atau lebih punya hasil, ditambah baris "Total".
+    static func annotated(_ text: String) -> String {
+        var values: [Double] = []
+        let lines = text.components(separatedBy: "\n").map { line -> String in
+            guard !line.contains("="), let hit = inline(line) else { return line }
+            values.append(hit.value)
+            return line.trimmingCharacters(in: .whitespaces) + " = " + hit.result
+        }
+        guard values.count >= 2 else { return lines.joined(separator: "\n") }
+        return (lines + ["Total = " + format(values.reduce(0, +))]).joined(separator: "\n")
+    }
+
+    /// Hasil untuk pratinjau di bawah kolom catatan: hitungan murni lebih dulu, lalu hitungan di tengah kalimat.
+    static func preview(_ text: String) -> String? {
+        if let plain = evaluate(text) { return plain }
+        let lines = annotated(text).components(separatedBy: "\n")
+        let original = text.components(separatedBy: "\n")
+        guard lines.count > original.count, let total = lines.last else { return lines == original ? nil : lines.last.flatMap { $0.components(separatedBy: " = ").last } }
+        return total.components(separatedBy: " = ").last
+    }
+
     /// "1.234,5" (gaya Indonesia) dan "1,234.5" sama-sama jadi 1234.5.
     private static func normalize(_ s: String) -> String {
         var out = s

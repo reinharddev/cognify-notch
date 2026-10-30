@@ -58,6 +58,8 @@ if let index = arguments.firstIndex(of: "--selftest"), index + 1 < arguments.cou
     exit(0)
 }
 
+
+
 let app = NSApplication.shared
 app.setActivationPolicy(.accessory) // tanpa ikon Dock & menu
 let delegate = AppDelegate()

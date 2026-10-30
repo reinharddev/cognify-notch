@@ -13,34 +13,79 @@ import AppKit
 /// (perilaku bawaan Sparkle) bisa membuat update tertahan berhari-hari.
 @MainActor
 final class Updater {
-    private let controller: NSObject
+    private let updater: NSObject
+    /// Hanya terisi pada jalur cadangan (jendela bawaan Sparkle); jalur utama memakai `UpdateDriver`.
+    private let fallbackController: NSObject?
     private let delegate: UpdaterDelegate // Sparkle hanya menyimpan referensi lemah
+    private let driver: UpdateDriver?     // idem
 
     init?(canRestart: @escaping () -> Bool) {
         let delegate = UpdaterDelegate(canRestart: canRestart)
         guard let url = Bundle.main.privateFrameworksURL?.appendingPathComponent("Sparkle.framework"),
-              let bundle = Bundle(url: url), bundle.load(),
-              let type = NSClassFromString("SPUStandardUpdaterController") as? NSObject.Type,
+              let bundle = Bundle(url: url), bundle.load()
+        else { return nil }
+        self.delegate = delegate
+
+        // Jalur utama: SPUUpdater dengan antarmuka kustom Cognify Notch (UpdateUI.swift).
+        var holder: Updater?
+        let driver = UpdateDriver(
+            automaticGet: { MainActor.assumeIsolated { holder?.automatic ?? false } },
+            automaticSet: { on in MainActor.assumeIsolated { holder?.automatic = on } }
+        )
+        if let custom = Updater.makeUpdater(delegate: delegate, driver: driver) {
+            updater = custom
+            fallbackController = nil
+            self.driver = driver
+            holder = self
+            return
+        }
+
+        // Cadangan: jendela bawaan Sparkle, bila SPUUpdater tidak bisa dibuat (mis. API Sparkle berubah).
+        guard let type = NSClassFromString("SPUStandardUpdaterController") as? NSObject.Type,
               let allocated = (type as AnyObject).perform(NSSelectorFromString("alloc"))?.takeUnretainedValue() as? NSObject,
               let created = allocated.perform(NSSelectorFromString("initWithUpdaterDelegate:userDriverDelegate:"), with: delegate, with: nil)?
                 .takeUnretainedValue() as? NSObject
         else { return nil }
-        self.delegate = delegate
-        controller = created
-        controller.perform(NSSelectorFromString("startUpdater")) // periksa terjadwal (sehari sekali)
+        created.perform(NSSelectorFromString("startUpdater")) // periksa terjadwal (sehari sekali)
+        fallbackController = created
+        self.driver = nil
+        guard let inner = created.value(forKey: "updater") as? NSObject else { return nil }
+        updater = inner
     }
 
-    private var updater: NSObject? { controller.value(forKey: "updater") as? NSObject }
+    /// Buat dan jalankan `SPUUpdater(hostBundle:applicationBundle:userDriver:delegate:)` lewat runtime.
+    private static func makeUpdater(delegate: UpdaterDelegate, driver: UpdateDriver) -> NSObject? {
+        guard let type = NSClassFromString("SPUUpdater") as? NSObject.Type,
+              let allocated = (type as AnyObject).perform(NSSelectorFromString("alloc"))?.takeUnretainedValue() as? NSObject
+        else { return nil }
+        let initSel = NSSelectorFromString("initWithHostBundle:applicationBundle:userDriver:delegate:")
+        guard type.instancesRespond(to: initSel), let initImp = class_getMethodImplementation(type, initSel) as IMP? else { return nil }
+        typealias Init = @convention(c) (AnyObject, Selector, Bundle, Bundle, AnyObject, AnyObject?) -> AnyObject?
+        guard let created = unsafeBitCast(initImp, to: Init.self)(allocated, initSel, Bundle.main, Bundle.main, driver, delegate) as? NSObject
+        else { return nil }
+
+        // -startUpdater: mengisi NSError; hanya dipakai untuk tahu berhasil atau tidak (periksa terjadwal sehari sekali).
+        let startSel = NSSelectorFromString("startUpdater:")
+        guard created.responds(to: startSel), let startImp = created.method(for: startSel) as IMP? else { return nil }
+        typealias Start = @convention(c) (AnyObject, Selector, UnsafeMutablePointer<AnyObject?>?) -> Bool
+        var error: AnyObject?
+        guard unsafeBitCast(startImp, to: Start.self)(created, startSel, &error) else { return nil }
+        return created
+    }
 
     /// Unduh & pasang update tanpa bertanya (disimpan Sparkle di UserDefaults app).
     var automatic: Bool {
-        get { updater?.value(forKey: "automaticallyDownloadsUpdates") as? Bool ?? false }
-        set { updater?.setValue(newValue, forKey: "automaticallyDownloadsUpdates") }
+        get { updater.value(forKey: "automaticallyDownloadsUpdates") as? Bool ?? false }
+        set { updater.setValue(newValue, forKey: "automaticallyDownloadsUpdates") }
     }
 
     func checkForUpdates() {
-        NSApp.activate(ignoringOtherApps: true) // app menu bar: jendela Sparkle harus tampil di depan
-        controller.perform(NSSelectorFromString("checkForUpdates:"), with: nil)
+        NSApp.activate(ignoringOtherApps: true) // app menu bar: jendela pembaruan harus tampil di depan
+        if let controller = fallbackController {
+            controller.perform(NSSelectorFromString("checkForUpdates:"), with: nil)
+        } else {
+            updater.perform(NSSelectorFromString("checkForUpdates"))
+        }
     }
 }
 

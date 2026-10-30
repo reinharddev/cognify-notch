@@ -37,27 +37,10 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         hint.isEnabled = false
         menu.addItem(hint)
         menu.addItem(.separator())
-        for (index, toggle) in FeatureToggle.all.enumerated() {
-            let entry = NSMenuItem(title: toggle.title(), action: #selector(flip(_:)), keyEquivalent: "")
-            entry.target = self
-            entry.tag = index
-            entry.state = model.features[keyPath: toggle.key] ? .on : .off
-            if toggle.key == \.spectrum && !model.features.media { entry.isEnabled = false }
-            menu.addItem(entry)
-        }
-        menu.addItem(.separator())
         let prefs = NSMenuItem(title: L("Pengaturan…", "Settings…"), action: #selector(showSettings), keyEquivalent: ",")
         prefs.target = self
         menu.addItem(prefs)
-        let login = NSMenuItem(title: L("Buka saat Mac dinyalakan", "Open at login"), action: #selector(toggleLogin), keyEquivalent: "")
-        login.target = self
-        login.state = SMAppService.mainApp.status == .enabled ? .on : .off
-        menu.addItem(login)
-        if let updater {
-            let auto = NSMenuItem(title: L("Pasang update otomatis", "Install updates automatically"), action: #selector(toggleAutoUpdate), keyEquivalent: "")
-            auto.target = self
-            auto.state = updater.automatic ? .on : .off
-            menu.addItem(auto)
+        if updater != nil {
             let update = NSMenuItem(title: L("Periksa update…", "Check for updates…"), action: #selector(checkUpdates), keyEquivalent: "")
             update.target = self
             menu.addItem(update)
@@ -70,40 +53,21 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         menu.addItem(quit)
     }
 
-    @objc private func flip(_ sender: NSMenuItem) {
-        let toggle = FeatureToggle.all[sender.tag]
-        FeatureToggle.set(toggle, !model.features[keyPath: toggle.key], model: model)
-    }
-
-    @objc private func toggleLogin() {
-        do {
-            if SMAppService.mainApp.status == .enabled {
-                try SMAppService.mainApp.unregister()
-            } else {
-                try SMAppService.mainApp.register()
-            }
-        } catch {
-            model.show(.failed(L("Tidak bisa mengubah pengaturan login: ", "Couldn't change the login setting: ") + error.localizedDescription))
-        }
-    }
-
     @objc private func showSettings() {
         if settings == nil {
-            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 620),
-                                  styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 780, height: 580),
+                                  styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
             window.isReleasedWhenClosed = false
-            window.contentView = NSHostingView(rootView: SettingsView(model: model, prefs: model.prefs))
+            window.titlebarAppearsTransparent = true
+            window.titleVisibility = .hidden
+            window.minSize = NSSize(width: 680, height: 460)
+            window.contentView = NSHostingView(rootView: SettingsView(model: model, prefs: model.prefs, updater: updater))
             window.center()
             settings = window
         }
         settings?.title = L("Pengaturan Cognify Notch", "Cognify Notch Settings")
         NSApp.activate(ignoringOtherApps: true)
         settings?.makeKeyAndOrderFront(nil)
-    }
-
-    @objc private func toggleAutoUpdate() {
-        guard let updater else { return }
-        updater.automatic.toggle()
     }
 
     @objc private func checkUpdates() {
@@ -121,88 +85,3 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     }
 }
 
-// MARK: - Jendela Pengaturan
-
-struct SettingsView: View {
-    @ObservedObject var model: NotchModel
-    @ObservedObject var prefs: Preferences
-
-    var body: some View {
-        Form {
-            Section(L("Fitur", "Features")) {
-                ForEach(FeatureToggle.all) { toggle in
-                    Toggle(isOn: Binding(get: { model.features[keyPath: toggle.key] },
-                                         set: { FeatureToggle.set(toggle, $0, model: model) })) {
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(toggle.title())
-                            Text(toggle.hint()).font(.caption).foregroundStyle(.secondary)
-                        }
-                    }
-                    .disabled(toggle.key == \.spectrum && !model.features.media)
-                }
-            }
-            Section(L("Notch", "Notch")) {
-                Picker(L("Buka notch dengan", "Open the notch by"), selection: $prefs.openOnClick) {
-                    Text(L("Mengarahkan kursor", "Hovering")).tag(false)
-                    Text(L("Klik", "Clicking")).tag(true)
-                }
-                Picker(L("Tampil di", "Show on"), selection: $prefs.display) {
-                    ForEach(Preferences.Display.allCases) { Text($0.label).tag($0) }
-                }
-                LabeledContent(L("Kota untuk cuaca", "City for weather")) {
-                    TextField(L("mis. Jakarta", "e.g. Jakarta"), text: $prefs.weatherCity)
-                        .textFieldStyle(.roundedBorder)
-                        .disabled(!model.features.weather)
-                }
-                if model.features.weather, let problem = model.weather.problem {
-                    Text(problem).font(.caption).foregroundStyle(.orange)
-                }
-                Picker(L("Ukuran panel", "Panel size"), selection: $prefs.scale) {
-                    Text(L("Normal", "Normal")).tag(1.0)
-                    Text(L("Besar", "Large")).tag(1.12)
-                }
-                LabeledContent(L("Jeda sebelum terbuka", "Delay before opening")) {
-                    Slider(value: $prefs.hoverDelay, in: 0...0.6, step: 0.05) { EmptyView() }
-                    Text("\(Int(prefs.hoverDelay * 1000)) ms").monospacedDigit().frame(width: 60, alignment: .trailing)
-                }
-                LabeledContent(L("Jeda sebelum menutup", "Delay before closing")) {
-                    Slider(value: $prefs.closeDelay, in: 0.1...1.5, step: 0.05) { EmptyView() }
-                    Text("\(Int(prefs.closeDelay * 1000)) ms").monospacedDigit().frame(width: 60, alignment: .trailing)
-                }
-                Picker(L("Shortcut keyboard", "Keyboard shortcut"), selection: $prefs.hotKey) {
-                    ForEach(Preferences.HotKeyChoice.allCases) { Text($0.label).tag($0) }
-                }
-                .disabled(!model.features.hotkey)
-            }
-            Section(L("Urutan tab", "Tab order")) {
-                ForEach(prefs.ordered(NotchModel.Tab.allCases), id: \.self) { tab in
-                    HStack {
-                        Image(systemName: tab.icon).frame(width: 20)
-                        Text(tab.label)
-                        Spacer()
-                        Button { prefs.move(tab, by: -1) } label: { Image(systemName: "chevron.up") }
-                            .buttonStyle(.borderless).disabled(prefs.ordered(NotchModel.Tab.allCases).first == tab)
-                        Button { prefs.move(tab, by: 1) } label: { Image(systemName: "chevron.down") }
-                            .buttonStyle(.borderless).disabled(prefs.ordered(NotchModel.Tab.allCases).last == tab)
-                    }
-                }
-            }
-            Section(L("Data", "Data")) {
-                HStack {
-                    Text(L("Catatan, tugas, riwayat minum, clipboard, timer, dan pengaturan", "Notes, tasks, water log, clipboard, timers and settings"))
-                        .font(.caption).foregroundStyle(.secondary)
-                    Spacer()
-                    Button(L("Ekspor…", "Export…")) { DataBackup.export() }
-                    Button(L("Impor…", "Import…")) { DataBackup.importFile() }
-                }
-            }
-            Section(L("Bahasa", "Language")) {
-                Picker(L("Bahasa tampilan", "Display language"), selection: $prefs.language) {
-                    ForEach(Preferences.Language.allCases) { Text($0.label).tag($0) }
-                }
-            }
-        }
-        .formStyle(.grouped)
-        .frame(width: 520, height: 620)
-    }
-}

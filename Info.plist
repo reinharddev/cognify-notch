@@ -8,6 +8,10 @@
 	<string>com.reinhard.cognify.notch</string>
 	<key>CFBundleName</key>
 	<string>Cognify</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Cognify Notch membaca lokasimu satu kali, hanya saat kamu menekan Deteksi lokasi, untuk menentukan kota bagi cuaca dan waktu matahari. Lokasi disimpan di Mac ini saja.</string>
+	<key>NSLocationUsageDescription</key>
+	<string>Cognify Notch membaca lokasimu satu kali, hanya saat kamu menekan Deteksi lokasi, untuk menentukan kota bagi cuaca dan waktu matahari. Lokasi disimpan di Mac ini saja.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Cognify memakai kamera hanya untuk Cermin di notch. Tidak ada yang direkam atau disimpan.</string>
 	<key>NSAudioCaptureUsageDescription</key>

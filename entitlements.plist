@@ -9,6 +9,9 @@
 	<!-- Equalizer yang mengikuti suara (Core Audio tap) & rekam suara di catatan cepat. -->
 	<key>com.apple.security.device.audio-input</key>
 	<true/>
+	<!-- Deteksi lokasi untuk cuaca dan waktu matahari. -->
+	<key>com.apple.security.personal-information.location</key>
+	<true/>
 	<!-- Acara app Kalender di agenda notch. -->
 	<key>com.apple.security.personal-information.calendars</key>
 	<true/>

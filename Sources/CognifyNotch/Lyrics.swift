@@ -169,6 +169,7 @@ final class LyricsService: ObservableObject {
 struct LyricsView: View {
     @ObservedObject var lyrics: LyricsService
     @ObservedObject var media: MediaMonitor
+    @ObservedObject private var style = LyricStyle.shared
     @Environment(\.snapshot) private var snapshot
 
     var body: some View {
@@ -178,14 +179,14 @@ struct LyricsView: View {
                 SyncedLines(lines: lines, position: media.nowPlaying.flatMap { $0.position(at: $0.timestamp ?? Date()) } ?? 0, seek: { _ in })
             } else {
                 TimelineView(.periodic(from: .now, by: 0.25)) { context in
-                    SyncedLines(lines: lines, position: media.nowPlaying?.position(at: context.date) ?? 0) { time in
+                    SyncedLines(lines: lines, position: media.nowPlaying?.position(at: context.date) ?? 0, artwork: media.artwork) { time in
                         media.seek(to: time)
                     }
                 }
             }
         case .plain(let text):
             ScrollView(.vertical, showsIndicators: false) {
-                Text(text).font(.system(size: 12, weight: .medium)).foregroundStyle(.white.opacity(0.75))
+                Text(text).font(.system(size: 12, weight: .medium)).foregroundStyle(style.resolved(artwork: media.artwork).idle?.opacity(0.9) ?? Color.white.opacity(0.75))
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
         case .loading:
@@ -214,10 +215,13 @@ struct LyricsView: View {
 private struct SyncedLines: View {
     let lines: [LyricsService.Line]
     let position: Double
+    var artwork: NSImage?
     let seek: (Double) -> Void
+    @ObservedObject private var style = LyricStyle.shared
 
     var body: some View {
         // Sedikit lebih awal supaya baris menyala tepat saat mulai dinyanyikan.
+        let tone = style.resolved(artwork: artwork)
         let current = lines.lastIndex { $0.time <= position + 0.25 } ?? -1
         let window = (max(0, current - 1)...min(lines.count - 1, max(0, current) + 3))
         VStack(alignment: .leading, spacing: 7) {
@@ -226,7 +230,8 @@ private struct SyncedLines: View {
                 Button { seek(line.time) } label: {
                     Text(line.text.isEmpty ? "♪" : line.text)
                         .font(.system(size: active ? 15 : 12.5, weight: active ? .bold : .semibold, design: .rounded))
-                        .foregroundStyle(.white.opacity(active ? 1 : (line.id < current ? 0.3 : 0.45)))
+                        .foregroundStyle(active ? (tone.active ?? .white)
+                                         : (tone.idle?.opacity(line.id < current ? 0.5 : 0.8) ?? Color.white.opacity(line.id < current ? 0.3 : 0.45)))
                         .lineLimit(2)
                         .multilineTextAlignment(.leading)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -267,6 +272,7 @@ struct MusicPanel: View {
                 Divider().overlay(Color.white.opacity(0.08))
                 LyricsView(lyrics: model.lyrics, media: media)
             }
+            .background(alignment: .trailing) { ArtworkWash(media: media) }
             .onAppear { if !snapshot { model.lyrics.load(for: media.nowPlaying) } }
             .onChange(of: media.nowPlaying?.title) { _ in model.lyrics.load(for: media.nowPlaying) }
         } else {

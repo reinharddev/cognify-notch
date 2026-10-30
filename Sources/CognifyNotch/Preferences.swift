@@ -61,6 +61,41 @@ final class Preferences: ObservableObject {
     /// Jeda sebelum notch menutup setelah kursor pergi (detik).
     @Published var closeDelay: Double { didSet { save("prefs.closeDelay", closeDelay) } }
     /// Ukuran panel terbuka: 1 = normal, 1.12 = besar.
+    /// Kelengkungan sudut bawah notch saat terbuka (pt).
+    @Published var roundness: Double { didSet { save("prefs.roundness", roundness) } }
+    /// Warna equalizer sebagai hex "#rrggbb"; kosong = warna aksen bawaan.
+    /// Warna equalizer otomatis dari sampul lagu.
+    @Published var equalizerAuto: Bool { didSet { save("prefs.equalizerAuto", equalizerAuto); EqualizerStyle.shared.auto = equalizerAuto } }
+    @Published var equalizerHex: String {
+        didSet { save("prefs.equalizerHex", equalizerHex); EqualizerStyle.shared.color = Color(hex: equalizerHex) }
+    }
+    /// Warna aksen sebagai hex "#rrggbb"; kosong = ungu bawaan. Dipakai tab terpilih, tombol, progres, dan equalizer bawaan.
+    @Published var accentHex: String {
+        didSet { save("prefs.accentHex", accentHex); AccentStyle.color = Color(hex: accentHex)
+            LyricStyle.shared.auto = lyricAuto; LyricStyle.shared.active = Color(hex: lyricActiveHex); LyricStyle.shared.idle = Color(hex: lyricIdleHex) }
+    }
+    /// Warna lirik (hex): baris aktif dan baris yang belum/sudah lewat; kosong = putih bawaan.
+    /// Warna lirik otomatis dari sampul lagu.
+    @Published var lyricAuto: Bool { didSet { save("prefs.lyricAuto", lyricAuto); LyricStyle.shared.auto = lyricAuto } }
+    @Published var lyricActiveHex: String {
+        didSet { save("prefs.lyricActiveHex", lyricActiveHex); LyricStyle.shared.active = Color(hex: lyricActiveHex) }
+    }
+    @Published var lyricIdleHex: String {
+        didSet { save("prefs.lyricIdleHex", lyricIdleHex); LyricStyle.shared.idle = Color(hex: lyricIdleHex) }
+    }
+    /// Tema panel terbuka: gelap (bawaan) atau Liquid Glass.
+    @Published var theme: NotchTheme { didSet { save("prefs.theme", theme.rawValue) } }
+    /// Tema yang dipakai: Liquid Glass hanya bila didukung macOS ini.
+    var activeTheme: NotchTheme { theme == .glass && NotchTheme.glassSupported ? .glass : .dark }
+    /// Liquid Glass: false = pengaturan bawaan, true = atur sendiri (bening↔berwarna, warna, distorsi).
+    @Published var glassCustom: Bool { didSet { save("prefs.glassCustom", glassCustom) } }
+    @Published var glassTint: Double { didSet { save("prefs.glassTint", glassTint) } }
+    @Published var glassTintHex: String { didSet { save("prefs.glassTintHex", glassTintHex) } }
+    @Published var glassDistortion: Double { didSet { save("prefs.glassDistortion", glassDistortion) } }
+    /// Nilai yang dipakai permukaan kaca: bawaan atau pilihan user.
+    var glassTintValue: Double { glassCustom ? glassTint : 0.3 }
+    var glassDistortionValue: Double { glassCustom ? glassDistortion : 0.5 }
+    var glassColor: Color { glassCustom ? (Color(hex: glassTintHex) ?? .black) : .black }
     @Published var scale: Double { didSet { save("prefs.scale", scale) } }
     @Published var hotKey: HotKeyChoice { didSet { save("prefs.hotKey", hotKey.rawValue) } }
     @Published var language: Language {
@@ -87,6 +122,18 @@ final class Preferences: ObservableObject {
     @Published var display: Display { didSet { save("prefs.display", display.rawValue) } }
     /// Kota untuk cuaca di header (dikirim ke Open-Meteo bila fitur cuaca nyala).
     @Published var weatherCity: String { didSet { save("prefs.weatherCity", weatherCity) } }
+    /// "lat,lon" hasil Deteksi lokasi; kosong = pakai nama kota.
+    @Published var weatherCoords: String { didSet { save("prefs.weatherCoords", weatherCoords) } }
+
+    /// Wajah teman kecil: cara memilih ekspresi, ekspresi tetap, berkedip, dan ekspresi pilihan per keadaan/kejadian.
+    @Published var companionMode: CompanionMode { didSet { save("prefs.companionMode", companionMode.rawValue) } }
+    @Published var companionFixed: Emotion { didSet { save("prefs.companionFixed", companionFixed.rawValue) } }
+    @Published var companionBlink: Bool { didSet { save("prefs.companionBlink", companionBlink) } }
+    @Published var companionMap: [String: String] { didSet { save("prefs.companionMap", companionMap) } }
+
+    var companionConfig: CompanionConfig {
+        CompanionConfig(mode: companionMode, fixed: companionFixed, blink: companionBlink, map: companionMap)
+    }
 
     /// Urutan tab (rawValue `NotchModel.Tab`).
     @Published var tabOrder: [String] { didSet { save("prefs.tabOrder", tabOrder) } }
@@ -99,6 +146,18 @@ final class Preferences: ObservableObject {
         defaults = d
         hoverDelay = d?.object(forKey: "prefs.hoverDelay") as? Double ?? 0.09
         closeDelay = d?.object(forKey: "prefs.closeDelay") as? Double ?? 0.35
+        roundness = d?.object(forKey: "prefs.roundness") as? Double ?? 24
+        equalizerAuto = d?.object(forKey: "prefs.equalizerAuto") as? Bool ?? false
+        equalizerHex = d?.string(forKey: "prefs.equalizerHex") ?? ""
+        accentHex = d?.string(forKey: "prefs.accentHex") ?? ""
+        theme = (d?.string(forKey: "prefs.theme")).flatMap(NotchTheme.init) ?? .dark
+        glassCustom = d?.object(forKey: "prefs.glassCustom") as? Bool ?? false
+        glassTint = d?.object(forKey: "prefs.glassTint") as? Double ?? 0.3
+        glassTintHex = d?.string(forKey: "prefs.glassTintHex") ?? ""
+        glassDistortion = d?.object(forKey: "prefs.glassDistortion") as? Double ?? 0.5
+        lyricAuto = d?.object(forKey: "prefs.lyricAuto") as? Bool ?? false
+        lyricActiveHex = d?.string(forKey: "prefs.lyricActiveHex") ?? ""
+        lyricIdleHex = d?.string(forKey: "prefs.lyricIdleHex") ?? ""
         scale = d?.object(forKey: "prefs.scale") as? Double ?? 1
         hotKey = (d?.string(forKey: "prefs.hotKey")).flatMap(HotKeyChoice.init) ?? .ctrlOptN
         language = (d?.string(forKey: "prefs.language")).flatMap(Language.init) ?? .id
@@ -106,7 +165,13 @@ final class Preferences: ObservableObject {
         openOnClick = d?.bool(forKey: "prefs.openOnClick") ?? false
         display = (d?.string(forKey: "prefs.display")).flatMap(Display.init) ?? .notch
         weatherCity = d?.string(forKey: "prefs.weatherCity") ?? ""
+        weatherCoords = d?.string(forKey: "prefs.weatherCoords") ?? ""
+        companionMode = (d?.string(forKey: "prefs.companionMode")).flatMap(CompanionMode.init) ?? .dynamic
+        companionFixed = (d?.string(forKey: "prefs.companionFixed")).flatMap(Emotion.init) ?? .happy
+        companionBlink = d?.object(forKey: "prefs.companionBlink") as? Bool ?? true
+        companionMap = d?.dictionary(forKey: "prefs.companionMap") as? [String: String] ?? [:]
         Lang.english = language == .en
+        if d != nil { EqualizerStyle.shared.auto = equalizerAuto; EqualizerStyle.shared.color = Color(hex: equalizerHex); AccentStyle.color = Color(hex: accentHex) }
     }
 
     private func save(_ key: String, _ value: Any) { defaults?.set(value, forKey: key) }
@@ -179,8 +244,8 @@ struct FeatureToggle: Identifiable {
                       title: { L("Daftar tugas", "To-do list") },
                       hint: { L("Tugas dengan pengingat; tulis \"jam 7\" untuk mengatur waktunya.", "Tasks with reminders; type \"at 7pm\" to set a time.") }),
         FeatureToggle(key: \.companion, defaultsKey: "feature.companion",
-                      title: { L("Mata saat diam", "Eyes when idle") },
-                      hint: { L("Notch jadi wajah kecil yang berkedip, tertidur, dan menyapa saat kamu kembali.", "The notch becomes a little face that blinks, dozes off and says hi when you're back.") }),
+                      title: { L("Teman kecil di notch", "Little companion in the notch") },
+                      hint: { L("Wajah yang berkedip, tertidur, dan ekspresinya menyesuaikan keadaan. Atur caranya di bagian Teman kecil.", "A face that blinks, dozes off, and changes expression with what is going on. Set how in the Little companion section.") }),
         FeatureToggle(key: \.keyboard, defaultsKey: "feature.keyboard",
                       title: { L("Caps Lock & bahasa keyboard", "Caps Lock & keyboard language") },
                       hint: { L("Kabar singkat saat Caps Lock nyala atau bahasa keyboard berganti.", "A nudge when Caps Lock turns on or the keyboard language changes.") }),

@@ -228,7 +228,7 @@ final class NotchController {
         } else if down {
             inside = false // klik/seret biasa di menu bar tidak membuka notch
         } else {
-            inside = hotRect(margin: model.hasNotch ? 4 : 2).contains(mouse)
+            inside = hotRect(margin: model.hasNotch ? 4 : model.headMode ? 8 : 2).contains(mouse)
         }
         let ignore = !(inside || model.expanded && hotRect(margin: 6).contains(mouse))
         if ignore != ignoring { // setiap penggantian = transaksi ke window server
@@ -302,8 +302,13 @@ final class NotchController {
     private func returnFocus() {
         guard panel.isKeyWindow else { return }
         panel.makeFirstResponder(nil)
-        panel.orderOut(nil)
-        panel.orderFrontRegardless()
+        // orderOut menyembunyikan jendela seketika, jadi tunggu animasi menutup selesai dulu
+        // (kalau tidak, notch tampak melompat hilang setelah panel sempat diklik).
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+            guard let self, !self.model.expanded, self.panel.isKeyWindow else { return }
+            self.panel.orderOut(nil)
+            self.panel.orderFrontRegardless()
+        }
     }
 }
 

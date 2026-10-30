@@ -50,16 +50,38 @@ struct NotchRoot: View {
     var body: some View {
         VStack(spacing: 0) {
             ZStack(alignment: .top) {
-                NotchShape(top: model.expanded ? 12 : 6, bottom: model.expanded ? 24 : 12)
-                    .fill(Color.black)
-                    .shadow(color: .black.opacity(model.expanded ? 0.45 : 0), radius: 16, y: 6)
+                // Kaca di semua bentuk yang terlihat (termasuk sayap berisi mata); hanya notch polos seukuran notch fisik tetap hitam.
+                let glass = model.prefs.activeTheme == .glass && (model.expanded || model.card != nil || model.headMode || model.live != nil)
+                bodyShape.fill(Color.black)
+                    .shadow(color: .black.opacity(glass ? 0 : model.expanded ? 0.45 : model.headMode ? 0.35 : 0), radius: model.headMode ? 6 : 16, y: model.headMode ? 2 : 6)
+                    .opacity(glass ? 0 : 1)
+                if glass {
+                    GlassSurface(shape: bodyShape, tint: model.prefs.glassTintValue, color: model.prefs.glassColor,
+                                 distortion: model.prefs.glassDistortionValue)
+                        .transition(.opacity)
+                }
+                if model.expanded && model.tab == .sky {
+                    // Latar langit hanya di halaman Langit, penuh sampai ke atas.
+                    SkyBackground(weather: model.weather, glass: glass)
+                        .clipShape(bodyShape)
+                        .opacity(glass ? 0.94 : 1) // tema kaca: langit sedikit bening, kaca di belakangnya tetap terasa
+                        .transition(.opacity)
+                    if glass {
+                        GlassLens(shape: bodyShape)
+                        GlassSheen(shape: bodyShape, distortion: min(model.prefs.glassDistortionValue, 0.4))
+                            .transition(.opacity)
+                    }
+                }
                 content
-                    .padding(.horizontal, model.expanded ? 12 : 6) // di dalam lengkungan atas
+                    .id(model.prefs.accentHex) // ganti warna aksen: gambar ulang semua isi
+                    .padding(.horizontal, model.expanded ? 12 : model.headMode ? 0 : 6) // di dalam lengkungan atas
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                    .clipShape(NotchShape(top: model.expanded ? 12 : 6, bottom: model.expanded ? 24 : 12))
+                    .clipShape(bodyShape)
             }
             .frame(width: model.size.width, height: model.size.height)
             .offset(x: model.shapeOffset)
+            .animation(.easeInOut(duration: 0.4), value: model.tab == .sky)
+            .animation(.notch, value: model.expanded) // menutup saat pindah tab tetap meluncur, tidak melompat
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -69,20 +91,28 @@ struct NotchRoot: View {
         }
     }
 
+    private var bodyShape: AnyShape {
+        model.headMode ? AnyShape(Circle()) : AnyShape(NotchShape(top: model.expanded ? 12 : 6, bottom: model.expanded ? CGFloat(model.prefs.roundness) : 12))
+    }
+
     @ViewBuilder private var content: some View {
-        if model.expanded {
+        if model.headMode {
+            FaceHead(face: model.face, diameter: NotchModel.headSize)
+                .transition(.opacity.combined(with: .scale(scale: 0.8)))
+        } else if model.expanded {
             // Ukuran "Besar": isi digambar pada ukuran normal lalu diperbesar dari atas.
             let scale = CGFloat(model.prefs.scale)
             ExpandedView(model: model)
-                .frame(width: (model.size.width - 24) / scale, height: model.size.height / scale)
+                .frame(width: (model.expandedBox.width - 24) / scale, height: model.expandedBox.height / scale)
                 .scaleEffect(scale, anchor: .top)
-                .frame(width: model.size.width - 24, height: model.size.height, alignment: .top)
+                .frame(width: model.expandedBox.width - 24, height: model.expandedBox.height, alignment: .top)
                 .transition(.asymmetric(
                     insertion: .opacity.combined(with: .scale(scale: 0.96, anchor: .top)).animation(.notch.delay(0.06)),
-                    removal: .opacity.animation(.easeOut(duration: 0.12))
+                    removal: .opacity.animation(.easeIn(duration: 0.2))
                 ))
         } else if let card = model.card {
-            NoticeCard(card: card, notchHeight: model.notchSize.height)
+            NoticeCard(card: card, notchHeight: model.notchSize.height, gap: model.notchSize.width,
+                       face: model.features.companion && model.hasNotch ? model.face : nil)
                 .transition(.opacity.combined(with: .scale(scale: 0.94, anchor: .top)))
         } else if let live = model.live {
             LiveWings(live: live, gap: model.notchSize.width, wings: model.wings, media: model.media, spectrum: model.spectrum,
@@ -101,7 +131,7 @@ struct LiveWings: View {
     let wings: (left: CGFloat, right: CGFloat)
     @ObservedObject var media: MediaMonitor
     let spectrum: Spectrum
-    var face: NotchModel.Face? = nil
+    var face: Face? = nil
     var lyrics: LyricsService? = nil
     var onBannerDone: (String) -> Void = { _ in }
 
@@ -115,6 +145,7 @@ struct LiveWings: View {
                     Eye(face: face, right: true).frame(width: max(0, wings.right - 6), alignment: .leading)
                 }
             }
+            .modifier(Wobble(kind: face?.rx ?? .none, amp: 2, t: face?.rxT ?? 0))
         } else {
             wingsBody
         }
@@ -236,6 +267,7 @@ struct SongTitle: View {
 struct WingLyricLine: View {
     @ObservedObject var lyrics: LyricsService
     @ObservedObject var media: MediaMonitor
+    @ObservedObject private var style = LyricStyle.shared
     @Environment(\.snapshot) private var snapshot
 
     var body: some View {
@@ -253,7 +285,7 @@ struct WingLyricLine: View {
         }
         return Text(text.isEmpty ? "♪" : text)
             .font(.system(size: 12, weight: .semibold, design: .rounded))
-            .foregroundStyle(.white)
+            .foregroundStyle(style.resolved(artwork: media.artwork).active ?? .white)
             .lineLimit(1)
             .truncationMode(.tail)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -263,45 +295,27 @@ struct WingLyricLine: View {
     }
 }
 
-/// Satu mata. Terbuka (berkedip sesekali), tertutup saat tidur (dengan "z" kecil), dan
-/// melengkung senang saat menyapa.
-struct Eye: View {
-    @ObservedObject var face: NotchModel.Face
-    let right: Bool
-
-    var body: some View {
-        let mood = face.mood
-        ZStack {
-            switch mood {
-            case .awake, .blink:
-                RoundedRectangle(cornerRadius: 3.5, style: .continuous)
-                    .fill(Color.white)
-                    .frame(width: 8, height: mood == .blink ? 1.5 : 12)
-                    .shadow(color: Color.accent.opacity(0.9), radius: 4)
-            case .asleep:
-                Capsule().fill(Color.white.opacity(0.75)).frame(width: 9, height: 2).offset(y: 2)
-                if right {
-                    Text("z").font(.system(size: 8, weight: .heavy, design: .rounded)).foregroundStyle(.white.opacity(0.6))
-                        .offset(x: 9, y: -6)
-                }
-            case .hello:
-                Image(systemName: "chevron.up").font(.system(size: 9, weight: .heavy)).foregroundStyle(.white)
-                    .shadow(color: Color.accent.opacity(0.9), radius: 4)
-            }
-        }
-        .frame(width: 14, height: 16)
-        .padding(.horizontal, 4)
-    }
-}
-
 /// Kartu kabar di bawah notch fisik: ikon, judul, keterangan, dan nilai (mis. persen baterai).
 struct NoticeCard: View {
     let card: NotchModel.Card
     let notchHeight: CGFloat
+    var gap: CGFloat = 0
+    var face: Face? = nil
 
     var body: some View {
         VStack(spacing: 0) {
-            Color.clear.frame(height: notchHeight)
+            // Mata tetap di kiri-kanan notch fisik, jadi terlihat bereaksi pada kabarnya.
+            if let face {
+                HStack(spacing: 0) {
+                    Eye(face: face, right: false).frame(width: 24, alignment: .trailing)
+                    Color.clear.frame(width: gap)
+                    Eye(face: face, right: true).frame(width: 24, alignment: .leading)
+                }
+                .modifier(Wobble(kind: face.rx, amp: 2, t: face.rxT))
+                .frame(height: notchHeight)
+            } else {
+                Color.clear.frame(height: notchHeight)
+            }
             HStack(spacing: 10) {
                 Image(systemName: card.icon)
                     .font(.system(size: 14, weight: .semibold))
@@ -357,8 +371,8 @@ struct ExpandedView: View {
                     page
                         .id(model.tab)
                         .transition(.asymmetric(
-                            insertion: .opacity.combined(with: .offset(x: model.pageForward ? 24 : -24)),
-                            removal: .opacity.animation(.easeOut(duration: 0.1))))
+                            insertion: .opacity.combined(with: .offset(x: model.pageForward ? 10 : -10)),
+                            removal: .opacity.animation(.easeOut(duration: 0.08))))
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                         .padding(.horizontal, 16)
                 }
@@ -366,7 +380,7 @@ struct ExpandedView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .padding(.top, 8)
             if !model.dropTargeted, !(model.toast?.isBanner ?? false) {
-                PageDock(tabs: model.tabs, current: model.tab) { model.go(to: $0) }
+                PageDock(tabs: model.tabs, current: model.tab, select: { model.go(to: $0) }, glass: model.prefs.activeTheme == .glass)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 7)
                     .zIndex(1) // ikon yang membesar boleh menutupi isi halaman di atasnya
@@ -374,7 +388,7 @@ struct ExpandedView: View {
                 Spacer().frame(height: 12)
             }
         }
-        .foregroundStyle(.white)
+        .foregroundStyle(model.tab == .sky ? SkyPalette.ink(weather: model.weather) : Color.white)
     }
 
     @ViewBuilder private var page: some View {
@@ -382,6 +396,7 @@ struct ExpandedView: View {
         case .home: HomePanel(model: model, calendar: model.calendar)
         case .music: MusicPanel(model: model, media: model.media)
         case .clock: ClockPanel(clock: model.clock)
+        case .sky: SkyPanel(weather: model.weather)
         case .water: WaterPanel(water: model.water)
         case .todo: TodoPanel(model: model, todo: model.todo)
         case .notes: NotesPanel(model: model, notes: model.notes)
@@ -395,6 +410,9 @@ struct ExpandedView: View {
 
     /// Baris setinggi notch: judul halaman di kiri notch fisik; tanggal, jam, baterai, dan
     /// equalizer di kanannya. Tengahnya (notch fisik) dibiarkan kosong.
+    /// Warna tulisan header: putih, atau gelap di halaman Langit bila langitnya terang.
+    private var headInk: Color { model.tab == .sky ? SkyPalette.ink(weather: model.weather) : .white }
+
     private var header: some View {
         GeometryReader { geo in
             // Lebar notch fisik dalam koordinat isi (isi diperbesar `scale` kali saat ukuran Besar).
@@ -426,10 +444,10 @@ struct ExpandedView: View {
                         }
                         .help(now.place)
                     }
-                    if let battery = model.battery { BatteryRing(battery: battery) }
+                    if let battery = model.battery { BatteryRing(battery: battery, ink: headInk) }
                     Text(Self.dateTime(model.now))
                         .font(.system(size: 11.5, weight: .semibold).monospacedDigit())
-                        .foregroundStyle(.white.opacity(0.8))
+                        .foregroundStyle(headInk.opacity(0.8))
                         .lineLimit(1)
                     if model.features.media, model.media.nowPlaying?.playing == true {
                         Equalizer(playing: true, spectrum: model.spectrum)
@@ -453,11 +471,12 @@ struct ExpandedView: View {
 /// Cincin baterai kecil (hijau saat dicas, merah di bawah 20%).
 struct BatteryRing: View {
     let battery: NotchModel.Battery
+    var ink: Color = .white
 
     var body: some View {
-        let tint: Color = battery.charging ? .green : battery.percent <= 20 ? .red : .white
+        let tint: Color = battery.charging ? .green : battery.percent <= 20 ? .red : ink
         ZStack {
-            Circle().stroke(Color.white.opacity(0.15), lineWidth: 2.2)
+            Circle().stroke(ink.opacity(0.15), lineWidth: 2.2)
             Circle().trim(from: 0, to: CGFloat(battery.percent) / 100)
                 .stroke(tint, style: StrokeStyle(lineWidth: 2.2, lineCap: .round))
                 .rotationEffect(.degrees(-90))
@@ -478,6 +497,7 @@ struct PageDock: View {
     let current: NotchModel.Tab
     let select: (NotchModel.Tab) -> Void
     var previewPointer: CGFloat? = nil // untuk snapshot
+    var glass = false // tema kaca: ubin ikon berupa kaca
     @State private var hoverPointer: CGFloat? // posisi x kursor di baris ikon (nil = tidak diarahkan)
     private var pointer: CGFloat? { hoverPointer ?? previewPointer }
 
@@ -527,7 +547,7 @@ struct PageDock: View {
                     .frame(width: tab == current ? 14 : 5, height: 5)
             }
         }
-        .animation(.notch, value: current)
+        .animation(.tabSwitch, value: current)
     }
 
     /// Ukuran ikon ke-i menurut jaraknya dari kursor (kurva kosinus, seperti Dock).
@@ -549,8 +569,10 @@ struct PageDock: View {
                         .font(.system(size: Self.peak * 0.46, weight: .semibold))
                         .scaleEffect(side / Self.peak)
                         .frame(width: side, height: side)
-                        .background(RoundedRectangle(cornerRadius: side * 0.28, style: .continuous)
-                            .fill(tab == current ? Color.accent : Color(white: 0.2)))
+                        .background {
+                            if glass { GlassTile(radius: side * 0.28, tint: tab == current ? Color.accent : nil) }
+                            else { RoundedRectangle(cornerRadius: side * 0.28, style: .continuous).fill(tab == current ? Color.accent : Color(white: 0.2)) }
+                        }
                         .foregroundStyle(.white)
                         .contentShape(Rectangle())
                 }
@@ -781,7 +803,7 @@ struct QuickNote: View {
             }
             .frame(height: 66)
             HStack(spacing: 5) {
-                if model.features.calculator, let result = QuickCalc.evaluate(model.note) {
+                if model.features.calculator, let result = QuickCalc.preview(model.note) {
                     Button {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(result, forType: .string)
@@ -982,15 +1004,45 @@ struct NotesPanel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            SectionLabel(text: notes.items.isEmpty ? L("Catatan", "Notes") : L("Catatan", "Notes") + " · \(notes.items.count)")
+            HStack(spacing: 8) {
+                SectionLabel(text: notes.items.isEmpty ? L("Catatan", "Notes") : L("Catatan", "Notes") + " · \(notes.items.count)")
+                if !snapshot { addField }
+            }
             if notes.items.isEmpty {
-                Placeholder(icon: "note.text", text: L("Belum ada catatan. Tulis di Beranda → Catatan cepat.", "No notes yet. Write one in Home → Quick note."))
+                Placeholder(icon: "note.text", text: L("Belum ada catatan. Tulis di kolom di atas lalu tekan Enter.", "No notes yet. Type above and press Enter."))
             } else if snapshot {
                 list
             } else {
                 ScrollView(.vertical, showsIndicators: false) { list }
             }
         }
+    }
+
+    @State private var draft = ""
+    @FocusState private var focused: Bool
+
+    /// Tulis catatan langsung di halaman ini (Enter menyimpan).
+    private var addField: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "plus").font(.system(size: 10, weight: .bold)).foregroundStyle(.white.opacity(0.45))
+            TextField(L("Tambah catatan…", "Add a note…"), text: $draft)
+                .textFieldStyle(.plain).font(.system(size: 11.5)).focused($focused)
+                .onSubmit(add)
+            if !draft.trimmingCharacters(in: .whitespaces).isEmpty {
+                Button(L("Simpan", "Save"), action: add).buttonStyle(PillButtonStyle(prominent: true))
+            }
+        }
+        .padding(.horizontal, 10).frame(height: 26)
+        .background(Capsule().fill(Color.white.opacity(focused ? 0.12 : 0.08)))
+        .overlay(Capsule().stroke(Color.accent.opacity(focused ? 0.7 : 0), lineWidth: 1))
+    }
+
+    private func add() {
+        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        notes.add(model.features.calculator ? QuickCalc.annotated(text) : text)
+        draft = ""
+        model.show(.done(L("Catatan tersimpan", "Note saved")))
     }
 
     private var list: some View {
