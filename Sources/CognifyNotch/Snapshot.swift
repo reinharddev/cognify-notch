@@ -147,6 +147,8 @@ enum Snapshot {
             ("6-tersimpan", make { $0.expanded = true; $0.toast = .done("“Bab 2 Fotosintesis” masuk Knowledge") }),
             ("7-timer-selesai", make { $0.expanded = true; $0.toast = .alert(title: "Waktu fokus selesai", detail: "Istirahat 5 menit dulu, lalu lanjut lagi.", action: .startTimer("Mulai istirahat")) }),
             ("8-sayap-timer", make { $0.state = NotchState(events: [], overdue: 0, processing: 0); $0.timer.start() }),
+            ("n8-menempel-diam", make(app: true) { $0.hasNotch = false; $0.notchSize = CGSize(width: 190, height: 24); $0.prefs.floatingStyle = .attached; $0.state = NotchState(events: [], overdue: 0, processing: 0); $0.preview(emotion: .happy) }),
+            ("n9-menempel-lagu", make(app: true) { $0.hasNotch = false; $0.notchSize = CGSize(width: 190, height: 24); $0.prefs.floatingStyle = .attached; $0.state = NotchState(events: [], overdue: 0, processing: 0); $0.media.preview(song) }),
             ("n7-kepala-mengambang", make(app: true) { $0.hasNotch = false; $0.notchSize = CGSize(width: 190, height: 24); $0.state = NotchState(events: [], overdue: 0, processing: 0); $0.preview(emotion: .happy) }),
             ("9-tanpa-notch", make { $0.hasNotch = false; $0.notchSize = CGSize(width: 190, height: 24); $0.expanded = true }),
         ]

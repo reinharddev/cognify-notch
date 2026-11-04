@@ -116,8 +116,22 @@ final class Preferences: ObservableObject {
         }
     }
 
+    /// Bentuk notch yang sedang diam di Mac tanpa notch: kepala bulat yang melayang, atau tab hitam yang menempel di tepi atas (seperti di Windows).
+    enum FloatingStyle: String, CaseIterable, Identifiable {
+        case head, attached
+        var id: String { rawValue }
+        var label: String {
+            switch self {
+            case .head: return L("Kepala bulat (mengambang)", "Round head (floating)")
+            case .attached: return L("Menempel di atas", "Attached to the top")
+            }
+        }
+    }
+
     /// Notch dibuka dengan klik, bukan saat kursor diarahkan.
     @Published var openOnClick: Bool { didSet { save("prefs.openOnClick", openOnClick) } }
+    /// Hanya berlaku di Mac tanpa notch.
+    @Published var floatingStyle: FloatingStyle { didSet { save("prefs.floatingStyle", floatingStyle.rawValue) } }
     /// Layar tempat notch tampil (penting saat memakai monitor tambahan).
     @Published var display: Display { didSet { save("prefs.display", display.rawValue) } }
     /// Kota untuk cuaca di header (dikirim ke Open-Meteo bila fitur cuaca nyala).
@@ -164,6 +178,7 @@ final class Preferences: ObservableObject {
         tabOrder = d?.stringArray(forKey: "prefs.tabOrder") ?? NotchModel.Tab.allCases.map(\.rawValue)
         openOnClick = d?.bool(forKey: "prefs.openOnClick") ?? false
         display = (d?.string(forKey: "prefs.display")).flatMap(Display.init) ?? .notch
+        floatingStyle = (d?.string(forKey: "prefs.floatingStyle")).flatMap(FloatingStyle.init) ?? .head
         weatherCity = d?.string(forKey: "prefs.weatherCity") ?? ""
         weatherCoords = d?.string(forKey: "prefs.weatherCoords") ?? ""
         companionMode = (d?.string(forKey: "prefs.companionMode")).flatMap(CompanionMode.init) ?? .dynamic

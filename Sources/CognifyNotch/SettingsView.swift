@@ -447,6 +447,9 @@ struct SettingsView: View {
         }
         }
         Section(L("Bentuk dan warna aksen", "Shape and accent color")) {
+            Picker(L("Bentuk di Mac tanpa notch", "Shape on Macs without a notch"), selection: $prefs.floatingStyle) {
+                ForEach(Preferences.FloatingStyle.allCases) { Text($0.label).tag($0) }
+            }
             Picker(L("Ukuran panel", "Panel size"), selection: $prefs.scale) {
                 Text(L("Normal", "Normal")).tag(1.0)
                 Text(L("Besar", "Large")).tag(1.12)

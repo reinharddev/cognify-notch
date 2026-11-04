@@ -115,7 +115,7 @@ struct NotchRoot: View {
                        face: model.features.companion && model.hasNotch ? model.face : nil)
                 .transition(.opacity.combined(with: .scale(scale: 0.94, anchor: .top)))
         } else if let live = model.live {
-            LiveWings(live: live, gap: model.notchSize.width, wings: model.wings, media: model.media, spectrum: model.spectrum,
+            LiveWings(live: live, gap: model.barGap, wings: model.wings, media: model.media, spectrum: model.spectrum,
                       face: model.face, lyrics: model.lyrics, onBannerDone: { model.endSongBanner($0) })
                 .frame(height: model.notchSize.height)
                 .transition(.opacity.combined(with: .scale(scale: 0.9)))

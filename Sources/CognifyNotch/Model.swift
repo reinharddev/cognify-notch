@@ -447,8 +447,15 @@ final class NotchModel: ObservableObject {
     var shapeOffset: CGFloat { (wings.right - wings.left) / 2 }
 
     /// Notch mengambang (Mac tanpa notch) yang sedang diam: tampil sebagai kepala bulat, bukan pil.
+    /// Bila gayanya "Menempel di atas", tetap berupa tab hitam yang menempel di tepi atas.
     static let headSize: CGFloat = 42
-    var headMode: Bool { !hasNotch && !expanded && card == nil && live?.eyes == true }
+    /// Lebar tengah antara sayap saat tertutup. Di Mac tanpa notch dengan gaya "Menempel di atas", yang tampil hanya mata,
+    /// jadi tab dibuat ringkas; selain itu sama dengan lebar notch (fisik atau bawaan 190 pt).
+    var barGap: CGFloat {
+        !hasNotch && live?.eyes == true && prefs.floatingStyle == .attached ? 56 : notchSize.width
+    }
+
+    var headMode: Bool { !hasNotch && !expanded && card == nil && live?.eyes == true && prefs.floatingStyle == .head }
 
     /// Ukuran panel terbuka. Isi digambar tetap pada ukuran ini, jadi tidak ikut menyusut saat notch menutup.
     var expandedBox: CGSize {
@@ -463,7 +470,7 @@ final class NotchModel: ObservableObject {
             return CGSize(width: Self.expandedSize.width * scale, height: (Self.expandedSize.height + notchSize.height - 32) * scale)
         }
         if card != nil { return CGSize(width: max(notchSize.width + 220, 380), height: notchSize.height + 48) }
-        if live != nil { return CGSize(width: notchSize.width + wings.left + wings.right, height: notchSize.height) }
+        if live != nil { return CGSize(width: barGap + wings.left + wings.right, height: notchSize.height) }
         return notchSize
     }
 

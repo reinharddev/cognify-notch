@@ -22,7 +22,8 @@ final class LyricsService: ObservableObject {
         case plain(String) // lirik tanpa waktu
         case instrumental
         case missing
-        case failed
+        case offline // tidak ada koneksi / timeout
+        case unavailable // LRCLIB membalas error server
     }
 
     @Published private(set) var state: State = .idle
@@ -45,14 +46,22 @@ final class LyricsService: ObservableObject {
             return
         }
         let next = [song.title, song.artist ?? "", song.album ?? ""].joined(separator: "\u{1F}")
-        guard next != key else { return }
+        let failed = state == .offline || state == .unavailable
+        guard next != key || (failed && task == nil) else { return } // gagal sebelumnya: coba lagi saat dibuka
         key = next
         task?.cancel()
         state = .loading
         let title = song.title, artist = song.artist ?? "", album = song.album ?? "", duration = song.duration
         task = Task { [weak self] in
-            let result = await Self.fetch(title: title, artist: artist, album: album, duration: duration)
+            // Gangguan sesaat: coba lagi sampai 3 kali dengan jeda makin panjang.
+            var result = await Self.fetch(title: title, artist: artist, album: album, duration: duration)
+            for delay in [4.0, 12.0, 30.0] where result == .offline || result == .unavailable {
+                try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                if Task.isCancelled { return }
+                result = await Self.fetch(title: title, artist: artist, album: album, duration: duration)
+            }
             guard !Task.isCancelled, let self, self.key == next else { return }
+            self.task = nil
             withAnimation(.notch) { self.state = result }
         }
     }
@@ -89,8 +98,11 @@ final class LyricsService: ObservableObject {
         get.queryItems = [URLQueryItem(name: "track_name", value: title), URLQueryItem(name: "artist_name", value: artist)]
         if !album.isEmpty { get.queryItems?.append(URLQueryItem(name: "album_name", value: album)) }
         if let duration, duration > 0 { get.queryItems?.append(URLQueryItem(name: "duration", value: String(Int(duration.rounded())))) }
+        // Pencocokan persis kadang dibalas error server oleh LRCLIB (503) padahal pencarian biasa jalan: lanjut ke pencarian.
+        var exact: Record?
+        do { exact = try await request(get.url!) } catch { if isOffline(error) { return .offline } }
         do {
-            if let record: Record = try await request(get.url!), record.syncedLyrics != nil || record.plainLyrics != nil || record.instrumental == true {
+            if let record = exact, record.syncedLyrics != nil || record.plainLyrics != nil || record.instrumental == true {
                 save(record, to: cache)
                 return state(from: record)
             }
@@ -113,8 +125,13 @@ final class LyricsService: ObservableObject {
             if let cache { try? Data().write(to: cache) }
             return .missing
         } catch {
-            return .failed
+            return isOffline(error) ? .offline : .unavailable
         }
+    }
+
+    nonisolated private static func isOffline(_ error: Error) -> Bool {
+        guard let e = error as? URLError else { return false }
+        return [.notConnectedToInternet, .networkConnectionLost, .timedOut, .cannotFindHost, .cannotConnectToHost, .dnsLookupFailed, .internationalRoamingOff].contains(e.code)
     }
 
     /// GET JSON; nil bila 404.
@@ -194,9 +211,11 @@ struct LyricsView: View {
         case .instrumental:
             message("pianokeys", L("Lagu instrumental", "Instrumental"))
         case .missing:
-            message("text.badge.xmark", L("Lirik lagu ini belum ada di LRCLIB", "No lyrics for this song on LRCLIB yet"))
-        case .failed:
-            message("wifi.slash", L("Lirik tidak bisa dimuat. Periksa internet.", "Couldn't load lyrics. Check your connection."))
+            message("text.badge.xmark", L("Lagu ini belum punya lirik di LRCLIB", "This song has no lyrics on LRCLIB yet"))
+        case .offline:
+            message("wifi.slash", L("Tidak ada koneksi. Periksa internet.", "No connection. Check your internet."))
+        case .unavailable:
+            message("exclamationmark.icloud", L("LRCLIB sedang bermasalah. Dicoba lagi nanti.", "LRCLIB is having trouble. Will retry shortly."))
         case .idle:
             message("music.note.list", L("Putar lagu untuk melihat liriknya", "Play a song to see its lyrics"))
         }
