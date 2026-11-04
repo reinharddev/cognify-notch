@@ -72,7 +72,7 @@
 
   // ---------- Bagian yang muncul saat digulir ----------
   const groups = [
-    ['.steps-head > *'], ['.block > h2'], ['.block > .lead'], ['.sub'], ['.note'],
+    ['.steps-head > *'], ['.block > h2'], ['.block > .lead'], ['.review-card', true], ['.sub'], ['.note'],
     ['.gestures > div', true], ['.net > div', true], ['.local li', true], ['.perms span', true],
     ['.facts > div', true], ['.spec li', true], ['.faq details', true], ['footer > span', true], ['.flow.stay'],
   ];

@@ -29,7 +29,7 @@
 <link rel="icon" type="image/png" href="favicon.png">
 <link rel="apple-touch-icon" href="icon.png">
 <link rel="preload" href="bricolage.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="style.css?v=15">
+<link rel="stylesheet" href="style.css?v=16">
 <!-- Bahasa dipilih sebelum halaman tampil supaya tidak berkedip dari Indonesia ke Inggris -->
 <script>
   (() => {
@@ -67,6 +67,7 @@
     <svg class="ear l"><use href="#ear"/></svg>
     <a href="#fitur" data-t="nav.features">Fitur</a>
     <a href="#cara" data-t="nav.how">Cara memakai</a>
+    <a href="#ulasan" data-t="nav.reviews">Ulasan</a>
     <a href="#data" data-t="nav.data">Data</a>
     <a href="#tanya" data-t="nav.faq">Tanya jawab</a>
     <button class="lang" id="langBtn" type="button" data-t="lang.btn" data-ta="lang.aria" aria-label="Switch to English">EN</button>
@@ -320,6 +321,34 @@
       <div class="base"><span></span></div>
     </div>
     <p class="try"><span class="hover-only" data-t="hero.tryHover">Arahkan kursor ke notch di layar ini untuk mencobanya.</span><span class="touch-only" data-t="hero.tryTouch">Ketuk notch di layar ini untuk mencobanya.</span></p>
+  </section>
+
+  <!-- ========== Ulasan pengguna ========== -->
+  <section id="ulasan" class="block reviews" aria-labelledby="reviews-title">
+    <h2 id="reviews-title" data-t="reviews.title">Kata mereka</h2>
+    <div class="reviews-grid">
+      <figure class="review-card rv">
+        <blockquote data-t="reviews.yoze">Menurut saya, aplikasi ini sangat efisien dan membantu aktivitas sehari-hari dengan mudah. Ide Cognify Notch juga kreatif dan dipikirkan dengan matang.</blockquote>
+        <p class="rating" data-t="reviews.rating">5 bintang</p>
+        <figcaption>Yoze</figcaption>
+      </figure>
+      <figure class="review-card rv">
+        <blockquote data-t="reviews.jeffray">Cognify Notch sangat bermanfaat. Tampilannya membuat laptop tidak terasa polos, dan fitur-fiturnya membantu aktivitas sehari-hari.</blockquote>
+        <figcaption>Jeffray</figcaption>
+      </figure>
+      <figure class="review-card rv">
+        <blockquote data-t="reviews.alexa">Menurut saya, Cognify Notch sudah bagus banget. Jujur, ini keren banget.</blockquote>
+        <figcaption>Alexa</figcaption>
+      </figure>
+      <figure class="review-card rv">
+        <blockquote data-t="reviews.jaya">Selama memakai Cognify Notch, saya terbantu menyalin banyak hal tanpa kehilangan salinan sebelumnya saat menyalin sesuatu yang baru. Pengingat minum membantu saya mengatur asupan air agar tidak dehidrasi. Ikonnya juga lucu, dengan mata yang bisa berkedip dan tertidur saat tidak digunakan.</blockquote>
+        <figcaption>Jaya</figcaption>
+      </figure>
+      <figure class="review-card rv">
+        <blockquote data-t="reviews.dominick">Enak banget, dan selama saya pakai tidak ada bug sama sekali. Pengaturannya juga detail, jadi mudah disesuaikan. Secara keseluruhan, aman dan mantap.</blockquote>
+        <figcaption>Dominick</figcaption>
+      </figure>
+    </div>
   </section>
 
   <!-- ========== Fitur ========== -->
@@ -603,8 +632,8 @@
 </footer>
 
 <script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
-<script src="i18n.js?v=12"></script>
+<script src="i18n.js?v=13"></script>
 <script src="app.js?v=11"></script>
-<script src="motion.js?v=11"></script>
+<script src="motion.js?v=12"></script>
 </body>
 </html>

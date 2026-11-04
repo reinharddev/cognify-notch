@@ -417,6 +417,14 @@ body.dark .lead { color: rgba(244, 239, 230, .7); }
 .faq details { transition: box-shadow .25s; }
 .faq p { margin: 0 0 20px; color: var(--muted); }
 
+.reviews { padding-top: 110px; }
+.reviews h2 { margin-bottom: 30px; }
+.reviews-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.review-card { min-width: 0; margin: 0; padding: 24px; display: flex; flex-direction: column; background: #fffdf8; border: 2px solid var(--ink); border-radius: 22px; box-shadow: 6px 6px 0 var(--ink); }
+.review-card blockquote { margin: 0; font-family: var(--display); font-size: clamp(18px, 2vw, 22px); font-weight: 700; line-height: 1.4; }
+.review-card figcaption { margin-top: 20px; padding-top: 12px; border-top: 1.5px solid var(--ink); color: var(--muted); font-size: 14px; font-weight: 700; }
+.review-card .rating { margin: 16px 0 0; color: var(--accent); font-weight: 800; letter-spacing: .08em; }
+
 /* Blok unduh berbentuk notch terbuka */
 .get-wrap { padding: 150px 28px 0; }
 .get-notch { position: relative; max-width: 980px; margin: 0 auto; background: #000; color: #fff; border-radius: 0 0 48px 48px; padding: 70px 40px 60px; text-align: center; display: flex; flex-direction: column; align-items: center; }
@@ -448,6 +456,7 @@ body.dark .block h2 { color: var(--paper); }
   .net, .local { grid-template-columns: 1fr; }
   .facts { grid-template-columns: repeat(2, 1fr); gap: 28px 14px; }
   .spec, .faq { grid-template-columns: 1fr; }
+  .reviews-grid { grid-template-columns: 1fr; }
   .steps-head { grid-template-columns: 1fr; }
   .step-in { grid-template-columns: 1fr; gap: 24px; }
 }
@@ -459,6 +468,8 @@ body.dark .block h2 { color: var(--paper); }
   .step-main p { font-size: 17px; }
   .get-notch { padding: 56px 22px 44px; border-radius: 0 0 32px 32px; }
   .block, .get-wrap { padding-top: 110px; }
+  .reviews { padding-top: 90px; }
+  .review-card { padding: 20px; }
 }
 
 /* =====================================================================
