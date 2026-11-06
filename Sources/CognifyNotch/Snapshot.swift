@@ -83,7 +83,7 @@ enum Snapshot {
             ("sky6-salju", sky(10, code: 73, temp: -2)),
             ("sky7-mendung", sky(13, code: 3, temp: 27)),
             ("sky8-kabut", sky(7.5, code: 45, temp: 12)),
-            ("n1-musik-lirik", make(app: true) { $0.expanded = true; $0.tab = .music; $0.preview(level: nil, features: all); $0.media.preview(song)
+            ("n1-musik-lirik", make(app: true) { $0.expanded = true; $0.tab = .music; $0.preview(level: nil, features: all); $0.media.preview(song, artwork: cover)
                 $0.lyrics.preview(.synced(LyricsService.parse("[00:10.00]Morning folds the city light\n[00:20.00]into paper birds tonight\n[01:15.00]If I could be by your side\n[01:24.00]I'd give you all my seasons\n[01:33.00]every summer, every rain\n[01:41.00]calling out your name"))) }),
             ("n2-air", make(app: true) { $0.expanded = true; $0.tab = .water; $0.water.preview([(hour: 8, ml: 250), (hour: 9, ml: 250), (hour: 11, ml: 500), (hour: 13, ml: 250), (hour: 15, ml: 250)]) }),
             ("n2-air-en", make(app: true) { $0.prefs.language = .en; $0.expanded = true; $0.tab = .water; $0.water.preview([(hour: 8, ml: 250)]) }),
@@ -107,7 +107,7 @@ enum Snapshot {
                     .init(id: UUID(), label: "10 menit", end: now.addingTimeInterval(372), total: 600),
                     .init(id: UUID(), label: "3 menit", end: now.addingTimeInterval(95), total: 180),
                 ]) }),
-            ("o2-sayap-lirik", make(app: true) { $0.state = nil; $0.preview(level: nil, features: all); $0.media.preview(song)
+            ("o2-sayap-lirik", make(app: true) { $0.state = nil; $0.preview(level: nil, features: all); $0.media.preview(song, artwork: cover)
                 $0.lyrics.preview(.synced(LyricsService.parse("[00:10.00]Morning folds the city light\n[01:15.00]If I could be by your side\n[01:24.00]I'd give you all my seasons"))) }),
             ("o3-sayap-hitung-mundur", make(app: true) { $0.state = nil; $0.clock.preview(elapsed: 0, laps: [], countdowns: [.init(id: UUID(), label: "10 menit", end: now.addingTimeInterval(372), total: 600)]) }),
             ("o4-clipboard-sematan", make(app: true) { $0.expanded = true; $0.tab = .clipboard; $0.clipboard.preview(["https://meet.google.com/abc-defg-hij", "Rumus luas lingkaran: L = π × r²", "Nomor rekening kas kelas: 1234567890", "Bab 4 halaman 88 nomor 1-10"]) }),

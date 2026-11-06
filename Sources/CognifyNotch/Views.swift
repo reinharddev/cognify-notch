@@ -50,8 +50,8 @@ struct NotchRoot: View {
     var body: some View {
         VStack(spacing: 0) {
             ZStack(alignment: .top) {
-                // Kaca di semua bentuk yang terlihat (termasuk sayap berisi mata); hanya notch polos seukuran notch fisik tetap hitam.
-                let glass = model.prefs.activeTheme == .glass && (model.expanded || model.card != nil || model.headMode || model.live != nil)
+                // Tema kaca mencakup notch terbuka dan tertutup, termasuk sayap dengan mata.
+                let glass = model.prefs.activeTheme == .glass
                 bodyShape.fill(Color.black)
                     .shadow(color: .black.opacity(glass ? 0 : model.expanded ? 0.45 : model.headMode ? 0.35 : 0), radius: model.headMode ? 6 : 16, y: model.headMode ? 2 : 6)
                     .opacity(glass ? 0 : 1)
@@ -649,7 +649,9 @@ struct AgendaList: View {
             if model.appMode && !model.features.calendar {
                 Placeholder(icon: "calendar", text: L("Nyalakan Kalender lewat ikon notch di menu bar", "Turn on Calendar from the notch icon in the menu bar"))
             } else if model.appMode && entries.isEmpty {
-                if calendar.access != .denied { Placeholder(icon: "checkmark.seal", text: L("Tidak ada acara hari ini & besok", "Nothing today or tomorrow")) }
+                if calendar.access != .denied && calendar.reminderAccess != .denied {
+                    Placeholder(icon: "checkmark.seal", text: L("Tidak ada acara hari ini & besok", "Nothing today or tomorrow"))
+                }
             } else if model.appMode {
                 agendaRows
             } else if !model.connected {
@@ -660,8 +662,14 @@ struct AgendaList: View {
                 Placeholder(icon: "checkmark.seal", text: L("Tidak ada deadline 7 hari ke depan", "No deadlines in the next 7 days"))
             }
             if model.features.calendar && calendar.access == .denied {
-                Text(L("Izinkan Kalender di Pengaturan Sistem → Privasi untuk melihat acaramu di sini.", "Allow Calendar in System Settings → Privacy to see your events here."))
-                    .font(.system(size: 10)).foregroundStyle(.white.opacity(0.45)).padding(.leading, 6)
+                PermissionButton(
+                    text: L("Izinkan Kalender untuk melihat acara", "Allow Calendar to see events"),
+                    pane: "Privacy_Calendars")
+            }
+            if model.features.calendar && calendar.reminderAccess == .denied {
+                PermissionButton(
+                    text: L("Izinkan Pengingat untuk melihat pengingat terjadwal", "Allow Reminders to see scheduled reminders"),
+                    pane: "Privacy_Reminders")
             }
             Spacer(minLength: 0)
             if !model.appMode, let processing = model.state?.processing, processing > 0 {
@@ -672,6 +680,29 @@ struct AgendaList: View {
                 .foregroundStyle(.white.opacity(0.55))
             }
         }
+    }
+}
+
+/// Tombol yang langsung membuka panel Privasi yang tepat; macOS tidak menanyakan ulang izin yang sudah ditolak.
+struct PermissionButton: View {
+    let text: String
+    let pane: String
+    var body: some View {
+        Button {
+            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?\(pane)") {
+                NSWorkspace.shared.open(url)
+            }
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: "lock.open").font(.system(size: 10))
+                Text(text).font(.system(size: 10.5, weight: .medium))
+            }
+            .padding(.horizontal, 9).padding(.vertical, 4)
+            .background(Capsule().fill(.white.opacity(0.14)))
+            .foregroundStyle(.white.opacity(0.9))
+        }
+        .buttonStyle(.plain)
+        .padding(.leading, 6)
     }
 }
 
@@ -725,9 +756,9 @@ extension AgendaList {
             case .cognify(let event):
                 EventRow(event: event, now: model.now, compact: compact) { model.open(event.path) }
             case .calendar(let event):
-                CalendarRow(event: event, now: model.now, compact: compact, join: { calendar.join(event); model.setExpanded(false) }) {
-                    calendar.openCalendarApp()
-                }
+                CalendarRow(event: event, now: model.now, compact: compact,
+                            join: { calendar.join(event); model.setExpanded(false) },
+                            action: { calendar.openCalendarApp() })
             }
         }
     }
@@ -742,34 +773,51 @@ struct CalendarRow: View {
     @State private var hover = false
 
     var body: some View {
-        Button(action: action) {
-            HStack(spacing: 9) {
-                RoundedRectangle(cornerRadius: 2).fill(event.color).frame(width: 4, height: 24).frame(width: 24)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(event.title).font(.system(size: 12, weight: .medium)).lineLimit(1)
-                    Text(compact ? "\(Relative.long(event.start, allDay: event.allDay, now: now)) · \(event.calendar)" : event.calendar)
-                        .font(.system(size: 10.5)).foregroundStyle(.white.opacity(0.5)).lineLimit(1)
-                }
-                Spacer(minLength: 6)
-                if event.joinable(at: now) {
-                    Button(action: join) {
-                        Label(compact ? "" : L("Gabung", "Join"), systemImage: "video.fill").labelStyle(.titleAndIcon)
+        HStack(spacing: 6) {
+            Button(action: action) {
+                HStack(spacing: 9) {
+                    RoundedRectangle(cornerRadius: 2).fill(event.color).frame(width: 4, height: 24).frame(width: 24)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(event.title).font(.system(size: 12, weight: .medium)).lineLimit(1)
+                        Text(compact ? "\(Relative.long(event.start, allDay: event.allDay, now: now)) · \(event.calendar)" : event.calendar)
+                            .font(.system(size: 10.5)).foregroundStyle(.white.opacity(0.5)).lineLimit(1)
+                        if let description = event.notes?.trimmingCharacters(in: .whitespacesAndNewlines), !description.isEmpty {
+                            Text(description).font(.system(size: 9.5)).foregroundStyle(.white.opacity(0.62))
+                                .lineLimit(1).truncationMode(.tail)
+                        }
                     }
-                    .buttonStyle(PillButtonStyle(prominent: true))
-                    .help(L("Gabung rapat", "Join meeting"))
-                } else if !compact {
-                    Text(Relative.long(event.start, allDay: event.allDay, now: now))
-                        .font(.system(size: 10.5, weight: .medium).monospacedDigit())
-                        .foregroundStyle(.white.opacity(0.6)).lineLimit(1)
+                    Spacer(minLength: 6)
+                    if !compact {
+                        Text(Relative.long(event.start, allDay: event.allDay, now: now))
+                            .font(.system(size: 10.5, weight: .medium).monospacedDigit())
+                            .foregroundStyle(.white.opacity(0.6)).lineLimit(1)
+                    }
                 }
+                .padding(.horizontal, 6).padding(.vertical, 2)
+                .contentShape(Rectangle())
             }
-            .padding(.horizontal, 6).padding(.vertical, 2)
-            .background(RoundedRectangle(cornerRadius: 9).fill(Color.white.opacity(hover ? 0.08 : 0)))
-            .contentShape(Rectangle())
+            .buttonStyle(.plain)
+            .help(L("Buka di app Kalender", "Open in Calendar"))
+            if let link = event.link,
+               let url = URL(string: link), url.scheme != nil {
+                Button { NSWorkspace.shared.open(url) } label: {
+                    Image(systemName: "link").font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.62)).frame(width: 22, height: 22)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(L("Buka tautan acara", "Open event link"))
+            }
+            if event.joinable(at: now) {
+                Button(action: join) {
+                    Label(compact ? "" : L("Gabung", "Join"), systemImage: "video.fill").labelStyle(.titleAndIcon)
+                }
+                .buttonStyle(PillButtonStyle(prominent: true))
+                .help(L("Gabung rapat", "Join meeting"))
+            }
         }
-        .buttonStyle(.plain)
+        .background(RoundedRectangle(cornerRadius: 9).fill(Color.white.opacity(hover ? 0.08 : 0)))
         .notchHover { hover = $0 }
-        .help(L("Buka app Kalender", "Open Calendar"))
     }
 }
 
@@ -778,6 +826,8 @@ struct QuickNote: View {
     var compact = false
     @FocusState private var focused: Bool
     @Environment(\.snapshot) private var snapshot
+    @State private var currencyResult: String?
+    @State private var currencyFailed = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -803,7 +853,24 @@ struct QuickNote: View {
             }
             .frame(height: 66)
             HStack(spacing: 5) {
-                if model.features.calculator, let result = QuickCalc.preview(model.note) {
+                if model.features.calculator, QuickCalc.currencyPair(model.note) != nil {
+                    if let currencyResult {
+                        Button {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(currencyResult, forType: .string)
+                            model.show(.done(L("Hasil disalin", "Result copied")))
+                        } label: {
+                            Text(currencyResult).font(.system(size: 11.5, weight: .bold, design: .rounded).monospacedDigit())
+                                .foregroundStyle(Color.accent).lineLimit(1)
+                        }
+                        .buttonStyle(.plain)
+                        .help(L("Kurs Yahoo Finance · klik untuk menyalin", "Yahoo Finance rate · click to copy"))
+                    } else if currencyFailed {
+                        Text(L("Kurs tidak tersedia", "Rate unavailable")).font(.system(size: 10.5))
+                    } else {
+                        Text(L("Mengambil kurs Yahoo…", "Fetching Yahoo rate…")).font(.system(size: 10.5))
+                    }
+                } else if model.features.calculator, let result = QuickCalc.preview(model.note) {
                     Button {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(result, forType: .string)
@@ -825,6 +892,19 @@ struct QuickNote: View {
                     .disabled(model.note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || model.savingNote)
             }
             .foregroundStyle(.white.opacity(0.5))
+        }
+        .task(id: model.note) {
+            currencyResult = nil
+            currencyFailed = false
+            guard !snapshot, model.features.calculator, let pair = QuickCalc.currencyPair(model.note) else { return }
+            do {
+                try await Task.sleep(nanoseconds: 400_000_000)
+                let rate = try await YahooCurrencyRates.rate(from: pair.from, to: pair.to)
+                guard !Task.isCancelled else { return }
+                currencyResult = YahooCurrencyRates.format(pair.amount, from: pair.from, to: pair.to, rate: rate)
+            } catch {
+                if !Task.isCancelled { currencyFailed = true }
+            }
         }
     }
 }
@@ -1019,6 +1099,7 @@ struct NotesPanel: View {
     }
 
     @State private var draft = ""
+    @State private var savingDraft = false
     @FocusState private var focused: Bool
 
     /// Tulis catatan langsung di halaman ini (Enter menyimpan).
@@ -1028,8 +1109,10 @@ struct NotesPanel: View {
             TextField(L("Tambah catatan…", "Add a note…"), text: $draft)
                 .textFieldStyle(.plain).font(.system(size: 11.5)).focused($focused)
                 .onSubmit(add)
-            if !draft.trimmingCharacters(in: .whitespaces).isEmpty {
-                Button(L("Simpan", "Save"), action: add).buttonStyle(PillButtonStyle(prominent: true))
+            if !draft.trimmingCharacters(in: .whitespaces).isEmpty || savingDraft {
+                Button(savingDraft ? L("Mengambil kurs…", "Fetching rate…") : L("Simpan", "Save"), action: add)
+                    .buttonStyle(PillButtonStyle(prominent: true))
+                    .disabled(savingDraft)
             }
         }
         .padding(.horizontal, 10).frame(height: 26)
@@ -1039,10 +1122,26 @@ struct NotesPanel: View {
 
     private func add() {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
-        notes.add(model.features.calculator ? QuickCalc.annotated(text) : text)
+        guard !text.isEmpty, !savingDraft else { return }
         draft = ""
-        model.show(.done(L("Catatan tersimpan", "Note saved")))
+        guard model.features.calculator, let pair = QuickCalc.currencyPair(text) else {
+            notes.add(model.features.calculator ? QuickCalc.annotated(text) : text)
+            model.show(.done(L("Catatan tersimpan", "Note saved")))
+            return
+        }
+        savingDraft = true
+        Task {
+            defer { savingDraft = false }
+            let noteText: String
+            do {
+                let rate = try await YahooCurrencyRates.rate(from: pair.from, to: pair.to)
+                noteText = text + "\n= " + YahooCurrencyRates.format(pair.amount, from: pair.from, to: pair.to, rate: rate)
+            } catch {
+                noteText = text + "\n= " + L("Kurs tidak tersedia", "Rate unavailable")
+            }
+            notes.add(noteText)
+            model.show(.done(L("Catatan tersimpan", "Note saved")))
+        }
     }
 
     private var list: some View {

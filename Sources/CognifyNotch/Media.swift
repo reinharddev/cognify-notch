@@ -251,14 +251,27 @@ struct ArtworkWash: View {
 
     var body: some View {
         if let art = media.artwork {
-            Image(nsImage: art).resizable().aspectRatio(contentMode: .fill)
-                .frame(width: 380, height: 300)
-                .clipShape(Ellipse())
-                .blur(radius: 64)
-                .opacity(0.38)
-                .offset(x: 90)
-                .allowsHitTesting(false)
+            ZStack {
+                // Pakai blur sampul yang sama seperti pendar di kiri; hilangkan lapisan radial
+                // terpisah karena lingkaran warnanya terlihat sebagai transisi yang kasar.
+                Image(nsImage: art).resizable().aspectRatio(contentMode: .fill)
+                    .frame(width: 440, height: 320)
+                    .blur(radius: 112)
+                    .opacity(0.38)
+                    .mask(artworkWashEdgeFade)
+            }
+            .frame(width: 380, height: 300)
+            .offset(x: 90, y: 60)
+            .allowsHitTesting(false)
         }
+    }
+
+    /// Oval berpinggir lembut, dipusatkan di bagian bawah supaya warnanya tidak naik sampai ke atas panel.
+    private var artworkWashEdgeFade: some View {
+        Ellipse()
+            .fill(.black)
+            .frame(width: 330, height: 190)
+            .blur(radius: 34)
     }
 }
 
@@ -312,7 +325,8 @@ final class LyricStyle: ObservableObject {
 /// Warna lirik dari sampul: rona dominan (diutamakan yang jenuh dan terang), dibuat terang agar terbaca di atas hitam atau kaca.
 enum ArtworkColors {
     static func derive(_ image: NSImage) -> (active: Color, idle: Color) {
-        let n = 32
+        // Resolusi lebih tinggi menangkap aksen warna kecil pada sampul yang hampir monokrom.
+        let n = 64
         guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: n, pixelsHigh: n, bitsPerSample: 8, samplesPerPixel: 4,
                                          hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0),
               let ctx = NSGraphicsContext(bitmapImageRep: rep) else { return (.white, Color.white.opacity(0.6)) }
@@ -320,20 +334,45 @@ enum ArtworkColors {
         NSGraphicsContext.current = ctx
         image.draw(in: NSRect(x: 0, y: 0, width: n, height: n), from: .zero, operation: .copy, fraction: 1)
         NSGraphicsContext.restoreGraphicsState()
-        var x = 0.0, y = 0.0, weight = 0.0, sat = 0.0
+        // Abaikan area hitam/abu-abu agar detail warna kecil pada sampul gelap tetap terdeteksi.
+        // Kelompokkan rona: rata-rata seluruh sampul bisa saling menetralkan warna yang berlawanan.
+        let bucketCount = 36
+        var hueX = Array(repeating: 0.0, count: bucketCount)
+        var hueY = Array(repeating: 0.0, count: bucketCount)
+        var hueWeight = Array(repeating: 0.0, count: bucketCount)
+        var hueSat = Array(repeating: 0.0, count: bucketCount)
         for px in 0..<n {
             for py in 0..<n {
                 guard let c = rep.colorAt(x: px, y: py)?.usingColorSpace(.deviceRGB) else { continue }
-                let w = Double(c.saturationComponent * c.brightnessComponent) + 0.001
-                let a = Double(c.hueComponent) * 2 * .pi
-                x += cos(a) * w; y += sin(a) * w; weight += w; sat += Double(c.saturationComponent) * w
+                let saturation = Double(c.saturationComponent)
+                let brightness = Double(c.brightnessComponent)
+                // Keep dark but genuinely colored pixels; exclude only near-black and near-gray.
+                guard brightness > 0.015, saturation > 0.08 else { continue }
+                let weight = saturation * max(0.15, sqrt(brightness))
+                let hue = Double(c.hueComponent)
+                let bucket = min(bucketCount - 1, Int(hue * Double(bucketCount)))
+                let angle = hue * 2 * .pi
+                hueX[bucket] += cos(angle) * weight
+                hueY[bucket] += sin(angle) * weight
+                hueWeight[bucket] += weight
+                hueSat[bucket] += saturation * weight
             }
         }
-        let meanSat = weight > 0 ? sat / weight : 0
-        guard meanSat > 0.12 else { return (.white, Color(white: 0.75)) } // sampul hitam putih
+        guard hueWeight.contains(where: { $0 > 0 }) else { return (.white, Color(white: 0.75)) } // sampul hitam putih
+        // Merge adjacent bins when choosing a hue so red values around hue 0/1 stay together.
+        let dominant = hueWeight.indices.max { a, b in
+            let scoreA = hueWeight[(a + bucketCount - 1) % bucketCount] + hueWeight[a] + hueWeight[(a + 1) % bucketCount]
+            let scoreB = hueWeight[(b + bucketCount - 1) % bucketCount] + hueWeight[b] + hueWeight[(b + 1) % bucketCount]
+            return scoreA < scoreB
+        }!
+        let neighbors = [(dominant + bucketCount - 1) % bucketCount, dominant, (dominant + 1) % bucketCount]
+        let weight = neighbors.reduce(0.0) { $0 + hueWeight[$1] }
+        let x = neighbors.reduce(0.0) { $0 + hueX[$1] }
+        let y = neighbors.reduce(0.0) { $0 + hueY[$1] }
+        let saturation = neighbors.reduce(0.0) { $0 + hueSat[$1] } / weight
         var hue = atan2(y, x) / (2 * .pi)
         if hue < 0 { hue += 1 }
-        let s = min(0.7, max(0.28, meanSat * 0.8))
+        let s = min(0.86, max(0.5, saturation * 0.95))
         return (Color(hue: hue, saturation: s, brightness: 1), Color(hue: hue, saturation: s * 0.6, brightness: 0.8))
     }
 }

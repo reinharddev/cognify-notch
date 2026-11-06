@@ -289,6 +289,8 @@ final class NotchModel: ObservableObject {
     let spectrum = Spectrum()
     let tray = TrayModel()
     let calendar = CalendarFeed()
+    /// Mesin skin desktop; dibuat AppDelegate setelah model siap.
+    var skinManager: SkinManager?
     let camera = CameraMirror()
     let shortcuts = ShortcutsModel()
     let clipboard = ClipboardHistory()
@@ -872,6 +874,7 @@ final class NotchModel: ObservableObject {
         let next = PowerMonitor.current()
         if next != battery { battery = next }
         announceMeetings()
+        announceCognifyReminders()
         if features.water, water.reminderDue(at: now) {
             NSSound(named: "Tink")?.play()
             show(.alert(title: L("Waktunya minum", "Time for some water"),
@@ -882,6 +885,23 @@ final class NotchModel: ObservableObject {
         if features.todo, let item = todo.dueNow(now).first {
             NSSound(named: "Glass")?.play()
             show(.alert(title: item.text, detail: L("Pengingat tugas", "Task reminder"), action: .todoDone(item.id)))
+        }
+    }
+
+    /// Acara kalender Cognify yang punya pengingat: notch terbuka saat waktunya (menit sebelum mulai sesuai pengaturan acara).
+    private func announceCognifyReminders() {
+        guard features.calendar || features.todo else { return }
+        // Tugas Moodle bisa jauh di depan jendela kalender (2 hari), jadi daftar To-do ikut diperiksa.
+        for event in calendar.events.filter(\.fromCognify) + todo.moodle where !event.allDay && !announcedMeetings.contains(event.id) {
+            guard let lead = event.remindMin else { continue }
+            let wait = event.start.timeIntervalSince(now)
+            guard wait <= Double(lead) * 60, wait > -60 else { continue }
+            announcedMeetings.insert(event.id)
+            NSSound(named: "Glass")?.play()
+            show(.alert(title: event.title,
+                        detail: wait > 30 ? L("Mulai \(Int((wait / 60).rounded(.up))) menit lagi", "Starts in \(Int((wait / 60).rounded(.up))) min")
+                                          : L("Mulai sekarang", "Starting now"),
+                        action: .open(path: "/calendar")))
         }
     }
 

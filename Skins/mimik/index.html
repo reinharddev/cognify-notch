@@ -1,0 +1,32 @@
+<!doctype html>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; user-select: none; -webkit-user-select: none; }
+  /* Wajah hanya 68% jendela: boing (±24%) dan bounce (naik 14%) butuh ruang agar tidak terpotong tepi jendela. */
+  #bot { position: absolute; left: 16%; top: 16%; width: 68vmin; height: 68vmin; --face-skin: #000; --face-ink: #e9ebec; --face-ring: #34363a; cursor: default; }
+</style>
+<div id="bot"></div>
+<script type="module">
+  import { createFace } from './face.js'
+  const host = document.getElementById('bot')
+  const face = createFace(host, { expression: 'idle', mouth: false })
+  host.addEventListener('click', () => face.react('boing'))
+
+  // Suasana dari data Cognify Notch. Aturannya sengaja sederhana; ubah sesuka hati.
+  function mood(d) {
+    const now = d.now || Date.now(), hour = new Date(now).getHours()
+    if (d.media && d.media.playing) return 'happy'
+    if (hour < 5) return 'sleep'
+    const soon = (d.events || []).find((e) => e.isTask && e.start > now && e.start - now < 6 * 3600e3)
+    if (soon) return 'worried'
+    const open = (d.todos || []).filter((t) => !t.done)
+    if ((d.todos || []).length && !open.length) return 'joy'
+    if (hour >= 22) return 'sleepy'
+    return open.length ? 'curious' : 'idle'
+  }
+  let last = ''
+  cognify.on((d) => {
+    const m = mood(d)
+    if (m !== last) { last = m; face.set(m); if (m === 'joy' || m === 'happy') face.react('bounce') }
+  })
+</script>

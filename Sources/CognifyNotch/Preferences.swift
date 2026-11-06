@@ -77,6 +77,8 @@ final class Preferences: ObservableObject {
     /// Warna lirik (hex): baris aktif dan baris yang belum/sudah lewat; kosong = putih bawaan.
     /// Warna lirik otomatis dari sampul lagu.
     @Published var lyricAuto: Bool { didSet { save("prefs.lyricAuto", lyricAuto); LyricStyle.shared.auto = lyricAuto } }
+    @Published var clipboardUnlimited: Bool { didSet { save("prefs.clipboardUnlimited", clipboardUnlimited) } }
+    @Published var clipboardLimit: Int { didSet { save("prefs.clipboardLimit", clipboardLimit) } }
     @Published var lyricActiveHex: String {
         didSet { save("prefs.lyricActiveHex", lyricActiveHex); LyricStyle.shared.active = Color(hex: lyricActiveHex) }
     }
@@ -85,8 +87,8 @@ final class Preferences: ObservableObject {
     }
     /// Tema panel terbuka: gelap (bawaan) atau Liquid Glass.
     @Published var theme: NotchTheme { didSet { save("prefs.theme", theme.rawValue) } }
-    /// Tema yang dipakai: Liquid Glass hanya bila didukung macOS ini.
-    var activeTheme: NotchTheme { theme == .glass && NotchTheme.glassSupported ? .glass : .dark }
+    /// macOS 26 memakai material sistem; versi lama memakai fallback ringan.
+    var activeTheme: NotchTheme { theme }
     /// Liquid Glass: false = pengaturan bawaan, true = atur sendiri (bening↔berwarna, warna, distorsi).
     @Published var glassCustom: Bool { didSet { save("prefs.glassCustom", glassCustom) } }
     @Published var glassTint: Double { didSet { save("prefs.glassTint", glassTint) } }
@@ -170,6 +172,8 @@ final class Preferences: ObservableObject {
         glassTintHex = d?.string(forKey: "prefs.glassTintHex") ?? ""
         glassDistortion = d?.object(forKey: "prefs.glassDistortion") as? Double ?? 0.5
         lyricAuto = d?.object(forKey: "prefs.lyricAuto") as? Bool ?? false
+        clipboardUnlimited = d?.object(forKey: "prefs.clipboardUnlimited") as? Bool ?? true
+        clipboardLimit = max(1, min(100_000, d?.object(forKey: "prefs.clipboardLimit") as? Int ?? 40))
         lyricActiveHex = d?.string(forKey: "prefs.lyricActiveHex") ?? ""
         lyricIdleHex = d?.string(forKey: "prefs.lyricIdleHex") ?? ""
         scale = d?.object(forKey: "prefs.scale") as? Double ?? 1
@@ -222,8 +226,8 @@ struct FeatureToggle: Identifiable {
                       title: { L("Equalizer mengikuti suara", "Equalizer follows the audio") },
                       hint: { L("Suara hanya diubah jadi tinggi batang, tidak direkam.", "Audio only drives the bars; nothing is recorded.") }),
         FeatureToggle(key: \.calendar, defaultsKey: "feature.calendar",
-                      title: { L("Agenda dari Kalender", "Calendar agenda") },
-                      hint: { L("Termasuk tombol Gabung untuk rapat Zoom, Meet, dan Teams.", "Includes a Join button for Zoom, Meet, and Teams meetings.") }),
+                      title: { L("Agenda Kalender & Pengingat", "Calendar & Reminders agenda") },
+                      hint: { L("Menampilkan acara Kalender dan Pengingat terjadwal. Termasuk tombol Gabung untuk rapat Zoom, Meet, dan Teams.", "Shows Calendar events and scheduled Reminders, with Join buttons for Zoom, Meet, and Teams.") }),
         FeatureToggle(key: \.camera, defaultsKey: "feature.camera",
                       title: { L("Cermin kamera", "Camera mirror") },
                       hint: { L("Kamera hanya menyala selama tab Cermin dibuka.", "The camera is only on while the Mirror tab is open.") }),

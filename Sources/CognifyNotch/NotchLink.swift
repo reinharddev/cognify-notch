@@ -245,7 +245,7 @@ final class NotchLink {
             history: perDay.keys.sorted().map { Day(date: $0, ml: perDay[$0] ?? 0) }
         )
 
-        let agenda = m.calendar.events.prefix(maxAgenda).map {
+        let agenda = m.calendar.events.filter { !$0.fromCognify }.prefix(maxAgenda).map {
             Agenda(id: $0.id, title: $0.title, start: iso($0.start), end: $0.end.map(iso), allDay: $0.allDay, calendar: $0.calendar)
         }
 

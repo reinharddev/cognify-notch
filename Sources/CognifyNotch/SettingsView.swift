@@ -7,7 +7,7 @@ import SwiftUI
 
 enum SettingsPane: String, CaseIterable, Identifiable {
     // Urutan = urutan di sidebar.
-    case general, appearance, behavior, companion, features, weather, tabs, data
+    case general, appearance, behavior, companion, features, skins, weather, tabs, data
 
     var id: String { rawValue }
 
@@ -18,6 +18,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .behavior: return L("Cara buka", "Behavior")
         case .companion: return L("Teman kecil", "Little companion")
         case .features: return L("Fitur", "Features")
+        case .skins: return L("Skin", "Skins")
         case .weather: return L("Cuaca", "Weather")
         case .tabs: return L("Urutan tab", "Tab order")
         case .data: return L("Data", "Data")
@@ -31,6 +32,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .behavior: return L("Cara notch dibuka dan ditutup, layar, ukuran, dan shortcut.", "How the notch opens and closes, the screen, size, and shortcut.")
         case .companion: return L("Wajah di notch: cara memilih ekspresi, berkedip, dan ekspresi tiap kejadian.", "The face in the notch: how it picks expressions, blinking, and the expression for each event.")
         case .features: return L("Nyalakan atau matikan bagian notch yang kamu pakai.", "Turn the parts of the notch you use on or off.")
+        case .skins: return L("Jendela di desktop ala Rainmeter: wajah Mimik, lirik, dan lainnya.", "Rainmeter-style desktop windows: the Mimik face, lyrics, and more.")
         case .weather: return L("Cuaca di header dan halaman Langit (waktu matahari).", "Weather in the header and the Sky page (sun times).")
         case .tabs: return L("Atur urutan halaman di notch.", "Arrange the pages in the notch.")
         case .data: return L("Cadangkan atau pulihkan catatan, tugas, dan pengaturan.", "Back up or restore notes, tasks, and settings.")
@@ -44,6 +46,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .behavior: return "hand.point.up.left.fill"
         case .companion: return "face.smiling.fill"
         case .features: return "switch.2"
+        case .skins: return "macwindow.on.rectangle"
         case .weather: return "cloud.sun.fill"
         case .tabs: return "list.number"
         case .data: return "archivebox.fill"
@@ -58,6 +61,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .behavior: return (Color(red: 1.0, green: 0.7, blue: 0.3), Color(red: 0.95, green: 0.5, blue: 0.1))
         case .companion: return (Color(red: 1.0, green: 0.62, blue: 0.7), Color(red: 0.96, green: 0.3, blue: 0.48))
         case .features: return (Color(red: 0.38, green: 0.66, blue: 1.0), Color(red: 0.1, green: 0.4, blue: 0.95))
+        case .skins: return (Color(red: 0.98, green: 0.55, blue: 0.85), Color(red: 0.72, green: 0.25, blue: 0.78))
         case .weather: return (Color(red: 0.45, green: 0.8, blue: 1.0), Color(red: 0.15, green: 0.55, blue: 0.92))
         case .tabs: return (Color(red: 0.42, green: 0.88, blue: 0.5), Color(red: 0.14, green: 0.68, blue: 0.34))
         case .data: return (Color(red: 0.35, green: 0.85, blue: 0.88), Color(red: 0.08, green: 0.58, blue: 0.66))
@@ -266,6 +270,7 @@ struct SettingsView: View {
         case .behavior: behaviorPane
         case .companion: companionPane
         case .features: featuresPane
+        case .skins: if let skins = model.skinManager { SkinsPane(skins: skins) }
         case .weather: weatherPane
         case .tabs: tabsPane
         case .data: dataPane
@@ -368,14 +373,50 @@ struct SettingsView: View {
     // MARK: Fitur
 
     private func featureRow(_ toggle: FeatureToggle) -> some View {
-        Toggle(isOn: Binding(get: { model.features[keyPath: toggle.key] },
-                             set: { FeatureToggle.set(toggle, $0, model: model) })) {
-            VStack(alignment: .leading, spacing: 1) {
-                Text(toggle.title())
-                Text(toggle.hint()).font(.caption).foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 8) {
+            Toggle(isOn: Binding(get: { model.features[keyPath: toggle.key] },
+                                 set: { FeatureToggle.set(toggle, $0, model: model) })) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(toggle.title())
+                    Text(toggle.hint()).font(.caption).foregroundStyle(.secondary)
+                }
             }
+            if toggle.defaultsKey == "feature.clipboard" && model.features.clipboard { clipboardLimitControls }
         }
         .disabled(toggle.key == \.spectrum && !model.features.media)
+    }
+
+    private var clipboardLimitControls: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Picker(L("Batas riwayat", "History limit"), selection: Binding(
+                get: { prefs.clipboardUnlimited },
+                set: { value in
+                    prefs.clipboardUnlimited = value
+                    model.clipboard.applyLimit(unlimited: value, count: prefs.clipboardLimit)
+                })) {
+                    Text(L("Tanpa batas", "Unlimited")).tag(true)
+                    Text(L("Kustom", "Custom")).tag(false)
+                }
+                .pickerStyle(.segmented)
+            if !prefs.clipboardUnlimited {
+                HStack {
+                    Text(L("Jumlah item", "Item count"))
+                    Spacer()
+                    TextField("40", value: Binding(
+                        get: { prefs.clipboardLimit },
+                        set: { value in
+                            let safe = max(1, min(100_000, value))
+                            prefs.clipboardLimit = safe
+                            model.clipboard.applyLimit(unlimited: prefs.clipboardUnlimited, count: safe)
+                        }), format: .number)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 88)
+                }
+            }
+            Text(L("Item yang disematkan tidak ikut dihitung. Gambar clipboard hanya disimpan selama app berjalan.", "Pinned items do not count. Clipboard images are kept only while the app is running."))
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        .padding(.leading, 22)
     }
 
     /// Fitur dikelompokkan supaya mudah dicari. Teman kecil dan Cuaca punya halamannya sendiri.
@@ -413,6 +454,9 @@ struct SettingsView: View {
             Picker(L("Tema panel", "Panel theme"), selection: $prefs.theme) {
                 ForEach(NotchTheme.allCases) { Text($0.label).tag($0) }
             }
+            Text(L("macOS 26 ke atas memakai Liquid Glass bawaan. Mac yang lebih lama memakai material transparan dan refraksi ringan; shader distorsi tersedia mulai macOS 14.",
+                   "macOS 26 and later use native Liquid Glass. Older Macs use translucent material and subtle refraction; shader distortion is available on macOS 14 and later."))
+                .font(.footnote).foregroundStyle(.secondary)
             if prefs.theme == .glass {
                 Picker(L("Liquid Glass", "Liquid Glass"), selection: $prefs.glassCustom) {
                     Text(L("Bawaan", "Default")).tag(false)

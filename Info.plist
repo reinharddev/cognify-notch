@@ -21,12 +21,12 @@
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Cognify mengubah rekaman suaramu jadi teks catatan. Pengenalan suara berjalan di Mac ini, tidak dikirim ke internet.</string>
 	<key>NSRemindersUsageDescription</key>
-	<string>Bila sinkron Daftar Tugas dinyalakan, tugas di notch disimpan di daftar Pengingat bawaanmu supaya ikut ke iPhone. Tidak ada yang dikirim ke tempat lain.</string>
+	<string>Cognify menampilkan Pengingat terjadwal di Agenda. Jika sinkron Daftar Tugas dinyalakan, tugas Notch juga disimpan di daftar Pengingat bawaanmu. Data tidak dikirim ke mana pun.</string>
 	<key>NSRemindersFullAccessUsageDescription</key>
-	<string>Bila sinkron Daftar Tugas dinyalakan, tugas di notch disimpan di daftar Pengingat bawaanmu supaya ikut ke iPhone. Tidak ada yang dikirim ke tempat lain.</string>
+	<string>Cognify menampilkan Pengingat terjadwal di Agenda. Jika sinkron Daftar Tugas dinyalakan, tugas Notch juga disimpan di daftar Pengingat bawaanmu. Data tidak dikirim ke mana pun.</string>
 	<key>NSCalendarsUsageDescription</key>
-	<string>Cognify menampilkan acara hari ini dan besok dari app Kalender di notch. Tidak ada yang dikirim ke mana pun.</string>
+	<string>Cognify menampilkan acara Kalender dan Pengingat terjadwal hari ini dan besok di notch. Data tidak dikirim ke mana pun.</string>
 	<key>NSCalendarsFullAccessUsageDescription</key>
-	<string>Cognify menampilkan acara hari ini dan besok dari app Kalender di notch. Tidak ada yang dikirim ke mana pun.</string>
+	<string>Cognify menampilkan acara Kalender dan Pengingat terjadwal hari ini dan besok di notch. Data tidak dikirim ke mana pun.</string>
 </dict>
 </plist>

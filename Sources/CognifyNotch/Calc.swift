@@ -20,6 +20,22 @@ enum QuickCalc {
         return format(value)
     }
 
+    /// Pasangan kurs di catatan cepat, mis. "1 usd to idr". Angkanya dikonversi lewat Yahoo Finance.
+    static func currencyPair(_ raw: String) -> (amount: Double, from: String, to: String)? {
+        let text = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let pattern = #"^([\d.,]+)\s*([a-z]{3})\s+(?:to|ke|jadi|berapa)\s+([a-z]{3})$"#
+        let ns = text as NSString
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(in: text, range: NSRange(location: 0, length: ns.length)),
+              let amountRange = Range(match.range(at: 1), in: text),
+              let fromRange = Range(match.range(at: 2), in: text),
+              let toRange = Range(match.range(at: 3), in: text),
+              let amount = number(String(text[amountRange])) else { return nil }
+        let from = String(text[fromRange]), to = String(text[toRange])
+        guard from != to else { return nil }
+        return (amount, from, to)
+    }
+
     /// Hitungan di tengah kalimat ("beli susu 5 * 12000"): bagian hitungan terakhir di satu baris, nilai, dan hasil siap tampil.
     /// Tanggal ("22-10-2026"), jam ("16:06"), dan angka yang cuma dipisah tanda minus tanpa spasi tidak dianggap hitungan.
     static func inline(_ line: String) -> (expression: String, value: Double, result: String)? {
@@ -40,9 +56,14 @@ enum QuickCalc {
     static func annotated(_ text: String) -> String {
         var values: [Double] = []
         let lines = text.components(separatedBy: "\n").map { line -> String in
-            guard !line.contains("="), let hit = inline(line) else { return line }
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard !trimmed.contains("=") else { return line }
+            if let converted = convert(trimmed) {
+                return trimmed + "\n= " + converted
+            }
+            guard let hit = inline(line) else { return line }
             values.append(hit.value)
-            return line.trimmingCharacters(in: .whitespaces) + " = " + hit.result
+            return trimmed + " = " + hit.result
         }
         guard values.count >= 2 else { return lines.joined(separator: "\n") }
         return (lines + ["Total = " + format(values.reduce(0, +))]).joined(separator: "\n")
@@ -118,7 +139,7 @@ enum QuickCalc {
 
     /// "5 km ke mil" / "5km to mi" / "100 f in c".
     private static func convert(_ text: String) -> String? {
-        let pattern = #"^([\d.,]+)\s*([a-z°/]+)\s+(?:ke|to|in|=|jadi)\s+([a-z°/]+)$"#
+        let pattern = #"^([\d.,]+)\s*([a-z°/]+)\s*(?:\.\s*)?(?:(?:ke|to|in|=|jadi)\s+|(?:berapa)\s+)([a-z°/]+)$"#
         guard let regex = try? NSRegularExpression(pattern: pattern),
               let m = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
               let r1 = Range(m.range(at: 1), in: text), let r2 = Range(m.range(at: 2), in: text), let r3 = Range(m.range(at: 3), in: text),

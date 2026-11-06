@@ -14,8 +14,15 @@ struct CalendarEvent: Identifiable, Equatable {
     let allDay: Bool
     let calendar: String
     let color: Color
+    var link: String? = nil
+    var notes: String? = nil
     /// Tautan rapat online (Zoom, Google Meet, Teams, Webex) dari URL, lokasi, atau catatan acara.
     var meeting: URL? = nil
+    /// Acara dari kalender Cognify: menit sebelum mulai saat pengingat berbunyi (nil = tanpa pengingat).
+    var remindMin: Int? = nil
+    var fromCognify: Bool { id.hasPrefix("cognify:") }
+    /// Tugas (mis. dari Moodle), bukan acara berjam: tampil di To-do.
+    var isTask = false
 
     /// Tombol Gabung tampil dari 10 menit sebelum mulai sampai acara selesai.
     func joinable(at now: Date) -> Bool {
@@ -39,18 +46,21 @@ struct CalendarEvent: Identifiable, Equatable {
     }
 }
 
-/// Acara hari ini & besok dari app Kalender (iCloud, Google, dll. yang ditambahkan di Mac).
-/// Hanya aktif jika dinyalakan di Pengaturan Cognify; izin Kalender diminta saat itu.
+/// Acara Kalender dan Pengingat terjadwal hari ini & besok dari macOS.
+/// Hanya aktif saat agenda dinyalakan; macOS meminta izin Kalender dan Pengingat.
 @MainActor
 final class CalendarFeed: ObservableObject {
     enum Access { case unknown, granted, denied }
 
     @Published private(set) var events: [CalendarEvent] = []
     @Published private(set) var access: Access = .unknown
+    @Published private(set) var reminderAccess: Access = .unknown
 
     private let store = EKEventStore()
     private var enabled = false
     private var observer: NSObjectProtocol?
+    private var agendaPoll: Foundation.Timer?
+    private var agendaStamp: Date?
 
     func setEnabled(_ value: Bool) {
         guard value != enabled else { return }
@@ -59,39 +69,143 @@ final class CalendarFeed: ObservableObject {
             events = []
             if let observer { NotificationCenter.default.removeObserver(observer) }
             observer = nil
+            agendaPoll?.invalidate()
+            agendaPoll = nil
             return
         }
+        // Agenda Cognify ikut dibaca walau izin Kalender ditolak; berkasnya dipantau tiap 15 detik (hanya tanggal ubah).
+        let timer = Foundation.Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.reloadIfAgendaChanged() }
+        }
+        timer.tolerance = 5
+        agendaPoll = timer
         Task { await requestAndLoad() }
     }
 
     private func requestAndLoad() async {
-        let granted: Bool
+        let calendarGranted: Bool
         if #available(macOS 14.0, *) {
-            granted = (try? await store.requestFullAccessToEvents()) ?? false
+            calendarGranted = (try? await store.requestFullAccessToEvents()) ?? false
         } else {
-            granted = await withCheckedContinuation { cont in store.requestAccess(to: .event) { ok, _ in cont.resume(returning: ok) } }
+            calendarGranted = await withCheckedContinuation { cont in store.requestAccess(to: .event) { ok, _ in cont.resume(returning: ok) } }
         }
-        access = granted ? .granted : .denied
-        guard granted, enabled else { return }
+        access = calendarGranted ? .granted : .denied
+
+        let remindersGranted: Bool
+        if #available(macOS 14.0, *) {
+            remindersGranted = (try? await store.requestFullAccessToReminders()) ?? false
+        } else {
+            remindersGranted = await withCheckedContinuation { cont in store.requestAccess(to: .reminder) { ok, _ in cont.resume(returning: ok) } }
+        }
+        reminderAccess = remindersGranted ? .granted : .denied
+        guard enabled else { return }
         observer = NotificationCenter.default.addObserver(forName: .EKEventStoreChanged, object: store, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.load() }
         }
         load()
     }
 
+    private struct FetchedReminder: Sendable {
+        let id: String
+        let title: String
+        let due: Date
+        let allDay: Bool
+        let list: String
+        let link: String?
+        let notes: String?
+        let meeting: String?
+    }
+
     func load() {
-        guard enabled, access == .granted else { return }
-        let start = Calendar.current.startOfDay(for: Date())
+        guard enabled else { return }
+        let now = Date()
+        let start = Calendar.current.startOfDay(for: now)
         let end = Calendar.current.date(byAdding: .day, value: 2, to: start)!
-        let predicate = store.predicateForEvents(withStart: Date().addingTimeInterval(-15 * 60), end: end, calendars: nil)
-        events = store.events(matching: predicate)
-            .filter { $0.status != .canceled }
-            .sorted { $0.startDate < $1.startDate }
-            .prefix(8)
-            .map { CalendarEvent(id: $0.eventIdentifier ?? UUID().uuidString, title: $0.title ?? L("(Tanpa judul)", "(No title)"),
-                                 start: $0.startDate, end: $0.endDate, allDay: $0.isAllDay, calendar: $0.calendar.title,
-                                 color: Color(nsColor: $0.calendar.color),
-                                 meeting: CalendarEvent.meetingURL(in: [$0.url?.absoluteString, $0.location, $0.notes])) }
+        let calendarEvents: [CalendarEvent]
+        if access == .granted {
+            let predicate = store.predicateForEvents(withStart: now.addingTimeInterval(-15 * 60), end: end, calendars: nil)
+            calendarEvents = store.events(matching: predicate)
+                .filter { $0.status != .canceled }
+                .map { CalendarEvent(id: $0.eventIdentifier ?? UUID().uuidString, title: $0.title ?? L("(Tanpa judul)", "(No title)"),
+                                     start: $0.startDate, end: $0.endDate, allDay: $0.isAllDay, calendar: $0.calendar.title,
+                                     color: Color(nsColor: $0.calendar.color), link: $0.url?.absoluteString, notes: $0.notes,
+                                     meeting: CalendarEvent.meetingURL(in: [$0.url?.absoluteString, $0.location, $0.notes])) }
+        } else {
+            calendarEvents = []
+        }
+
+        let cognify = Self.cognifyEvents(from: now.addingTimeInterval(-15 * 60), to: end)
+        guard reminderAccess == .granted else {
+            events = Array((calendarEvents + cognify).sorted { $0.start < $1.start }.prefix(8))
+            return
+        }
+        let predicate = store.predicateForIncompleteReminders(withDueDateStarting: now.addingTimeInterval(-15 * 60), ending: end, calendars: nil)
+        store.fetchReminders(matching: predicate) { [weak self] reminders in
+            let fetched = (reminders ?? []).compactMap { reminder -> FetchedReminder? in
+                guard let components = reminder.dueDateComponents, let due = components.date else { return nil }
+                let allDay = components.hour == nil && components.minute == nil
+                let link = reminder.url?.absoluteString
+                let notes = reminder.notes
+                let meeting = CalendarEvent.meetingURL(in: [link, reminder.location, notes])?.absoluteString
+                return FetchedReminder(id: reminder.calendarItemIdentifier, title: reminder.title ?? L("(Tanpa judul)", "(No title)"),
+                                       due: due, allDay: allDay, list: reminder.calendar.title, link: link, notes: notes, meeting: meeting)
+            }
+            DispatchQueue.main.async {
+                guard let self, self.enabled else { return }
+                let reminderEvents = fetched.map { reminder in
+                    CalendarEvent(id: "reminder-" + reminder.id, title: reminder.title, start: reminder.due,
+                                  allDay: reminder.allDay, calendar: reminder.list, color: .accent, link: reminder.link, notes: reminder.notes,
+                                  meeting: reminder.meeting.flatMap(URL.init(string:)))
+                }
+                self.events = Array((calendarEvents + reminderEvents + cognify).sorted { $0.start < $1.start }.prefix(8))
+            }
+        }
+    }
+
+    static var agendaFile: URL { NotchLink.folder.appendingPathComponent("cognify-agenda.json") }
+
+    private func reloadIfAgendaChanged() {
+        let stamp = (try? FileManager.default.attributesOfItem(atPath: Self.agendaFile.path))?[.modificationDate] as? Date
+        guard stamp != agendaStamp else { return }
+        agendaStamp = stamp
+        load()
+    }
+
+    private struct AgendaFile: Decodable {
+        struct Item: Decodable {
+            let id: String
+            let title: String
+            let start: String
+            let end: String?
+            let allDay: Bool?
+            let remindMin: Int?
+            let kind: String?
+            let calendar: String?
+        }
+        let events: [Item]?
+    }
+
+    /// Acara dari kalender Cognify (cognify-agenda.json), hanya selagi Cognify terhubung (link.json menyatakan enabled).
+    /// Satu elemen rusak dilewati tanpa membuang yang lain. Berkas lebih dari 1 MB diabaikan.
+    static func cognifyEvents(from: Date, to: Date) -> [CalendarEvent] {
+        let fm = FileManager.default
+        let consentURL = NotchLink.folder.appendingPathComponent("link.json")
+        guard let consentBytes = try? Data(contentsOf: consentURL),
+              let consent = try? JSONDecoder().decode(NotchLink.Consent.self, from: consentBytes), consent.enabled == true,
+              let size = (try? fm.attributesOfItem(atPath: agendaFile.path))?[.size] as? Int, size <= 1_000_000,
+              let bytes = try? Data(contentsOf: agendaFile),
+              let file = try? JSONDecoder().decode(AgendaFile.self, from: bytes) else { return [] }
+        let iso = ISO8601DateFormatter()
+        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let plain = ISO8601DateFormatter()
+        func date(_ text: String) -> Date? { iso.date(from: text) ?? plain.date(from: text) }
+        return (file.events ?? []).compactMap { item -> CalendarEvent? in
+            guard let start = date(item.start) else { return nil }
+            let end = item.end.flatMap(date)
+            guard (end ?? start) >= from, start <= to else { return nil }
+            return CalendarEvent(id: "cognify:" + item.id, title: item.title, start: start, end: end, allDay: item.allDay ?? false,
+                                 calendar: item.calendar ?? "Cognify", color: .accent, remindMin: item.remindMin.map { max(0, $0) }, isTask: item.kind == "task")
+        }
     }
 
     func join(_ event: CalendarEvent) {
@@ -114,29 +228,64 @@ final class CalendarFeed: ObservableObject {
 // MARK: - Cermin kamera
 
 /// Kamera depan hanya menyala selama tab Cermin terlihat; tidak ada yang direkam atau disimpan.
+struct CameraInputChoice: Identifiable {
+    let id: String
+    let name: String
+}
+
 @MainActor
 final class CameraMirror: ObservableObject {
     enum State { case idle, running, denied, unavailable }
 
     @Published private(set) var state: State = .idle
+    @Published private(set) var devices: [CameraInputChoice] = []
+    @Published private(set) var selectedDeviceID: String? = UserDefaults.standard.string(forKey: "camera.input.id")
     let session = AVCaptureSession()
     /// Lapisan pratinjau milik kamera (bukan milik tampilan): terpasang ke sesi sekali saja.
     let preview = AVCaptureVideoPreviewLayer()
     /// Semua perintah ke sesi kamera (atur, mulai, berhenti) lewat satu antrean berurutan.
-    /// Mulai & berhenti yang berjalan bersamaan (pindah tab cepat) membuat AVFoundation crash
-    /// ("Collection was mutated while being enumerated").
     private let queue = DispatchQueue(label: "cognify.camera")
-    private var configured = false
     /// Keinginan terakhir (tab Cermin terlihat atau tidak); antrean menyamakan sesi dengannya.
     private var wanted = false
+    private var discoveredDevices: [AVCaptureDevice] = []
+
+    var selectedDeviceName: String {
+        devices.first(where: { $0.id == selectedDeviceID })?.name ?? L("Pilih kamera", "Choose camera")
+    }
+
+    func refreshDevices() {
+        var types: [AVCaptureDevice.DeviceType] = [.builtInWideAngleCamera, .externalUnknown]
+        if #available(macOS 14.0, *) { types.append(.continuityCamera) }
+        let discovery = AVCaptureDevice.DiscoverySession(
+            deviceTypes: types, mediaType: .video, position: .unspecified)
+        let found = discovery.devices
+        discoveredDevices = found
+        devices = found.map { CameraInputChoice(id: $0.uniqueID, name: $0.localizedName) }
+        if !devices.contains(where: { $0.id == selectedDeviceID }) {
+            let preferred = found.first(where: { $0.position == .front }) ?? found.first
+            selectedDeviceID = preferred?.uniqueID
+        }
+    }
+
+    func selectDevice(_ id: String) {
+        guard devices.contains(where: { $0.id == id }) else { return }
+        selectedDeviceID = id
+        UserDefaults.standard.set(id, forKey: "camera.input.id")
+        guard wanted, AVCaptureDevice.authorizationStatus(for: .video) == .authorized else { return }
+        run()
+    }
 
     func start() {
         wanted = true
+        refreshDevices()
         switch AVCaptureDevice.authorizationStatus(for: .video) {
         case .authorized: run()
         case .notDetermined:
             AVCaptureDevice.requestAccess(for: .video) { ok in
-                Task { @MainActor in ok ? self.run() : (self.state = .denied) }
+                Task { @MainActor in
+                    if ok { self.refreshDevices(); self.run() }
+                    else { self.state = .denied }
+                }
             }
         default: state = .denied
         }
@@ -144,50 +293,47 @@ final class CameraMirror: ObservableObject {
 
     private func run() {
         guard wanted else { return } // tab sudah ditinggal sebelum izin dijawab
-        if !configured {
-            guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .front)
-                    ?? AVCaptureDevice.default(for: .video),
-                  let input = try? AVCaptureDeviceInput(device: device) else {
-                state = .unavailable
-                return
-            }
-            configured = true
-            // Sekali saja, sebelum perintah mulai pertama masuk antrean: input + lapisan pratinjau
-            // (yang menambah koneksi ke sesi). Membuat pratinjau saat sesi sedang dinyalakan
-            // mengubah daftar koneksi di tengah `startRunning` → crash.
+        refreshDevices()
+        guard let id = selectedDeviceID,
+              let device = discoveredDevices.first(where: { $0.uniqueID == id }),
+              let input = try? AVCaptureDeviceInput(device: device) else {
+            state = .unavailable
+            return
+        }
+        // Sambungkan preview sebelum sesi dijalankan; perubahan input berikutnya tetap melalui antrean.
+        preview.session = session
+        preview.videoGravity = .resizeAspectFill
+        state = .running
+        let sessionBox = UncheckedBox(session)
+        let inputBox = UncheckedBox(input)
+        queue.async { [weak self] in
+            let session = sessionBox.value
+            if session.isRunning { session.stopRunning() }
             session.beginConfiguration()
             session.sessionPreset = .medium
-            if session.canAddInput(input) { session.addInput(input) }
+            for old in session.inputs { session.removeInput(old) }
+            let added = session.canAddInput(inputBox.value)
+            if added { session.addInput(inputBox.value) }
             session.commitConfiguration()
-            preview.session = session
-            preview.videoGravity = .resizeAspectFill
-            if let connection = preview.connection, connection.isVideoMirroringSupported {
-                connection.automaticallyAdjustsVideoMirroring = false
-                connection.isVideoMirrored = true // seperti cermin
+            if added { session.startRunning() }
+            DispatchQueue.main.async {
+                guard let self else { return }
+                if !added { self.state = .unavailable; return }
+                if let connection = self.preview.connection, connection.isVideoMirroringSupported {
+                    connection.automaticallyAdjustsVideoMirroring = false
+                    connection.isVideoMirrored = true
+                }
             }
         }
-        state = .running
-        sync()
     }
 
     func stop() {
         wanted = false
         guard state == .running else { return }
         state = .idle
-        sync()
-    }
-
-    /// Nyalakan/matikan sesi sesuai `wanted`, satu perintah dalam satu waktu.
-    private func sync() {
         let box = UncheckedBox(session)
-        let want = wanted
         queue.async {
-            let session = box.value
-            if want, !session.isRunning {
-                session.startRunning()
-            } else if !want, session.isRunning {
-                session.stopRunning()
-            }
+            if box.value.isRunning { box.value.stopRunning() }
         }
     }
 
@@ -244,6 +390,27 @@ struct MirrorPanel: View {
                 SectionLabel(text: L("Cermin", "Mirror"))
                 Text(L("Cek rambut & latar sebelum kelas online atau video call.", "Check your hair and background before a class or video call."))
                     .font(.system(size: 11.5)).foregroundStyle(.white.opacity(0.65)).fixedSize(horizontal: false, vertical: true)
+                if !camera.devices.isEmpty {
+                    Menu {
+                        ForEach(camera.devices) { device in
+                            Button {
+                                camera.selectDevice(device.id)
+                            } label: {
+                                if device.id == camera.selectedDeviceID {
+                                    Label(device.name, systemImage: "checkmark")
+                                } else {
+                                    Text(device.name)
+                                }
+                            }
+                        }
+                    } label: {
+                        Label(camera.selectedDeviceName, systemImage: "video")
+                            .lineLimit(1)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .menuStyle(.borderlessButton)
+                    .help(L("Pilih kamera", "Choose camera"))
+                }
                 HStack(spacing: 5) {
                     Circle().fill(camera.state == .running ? Color.green : .gray).frame(width: 6, height: 6)
                     Text(camera.state == .running ? L("Kamera menyala, tidak merekam", "Camera on, not recording") : L("Kamera mati", "Camera off"))

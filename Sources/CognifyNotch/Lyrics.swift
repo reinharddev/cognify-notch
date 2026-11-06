@@ -1,4 +1,5 @@
 import AppKit
+import CoreFoundation
 import CryptoKit
 import SwiftUI
 
@@ -13,6 +14,7 @@ final class LyricsService: ObservableObject {
         let id: Int
         let time: Double // detik
         let text: String
+        let reading: String?
     }
 
     enum State: Equatable {
@@ -174,15 +176,28 @@ final class LyricsService: ObservableObject {
                 lines.append((minutes * 60 + seconds, text))
             }
         }
-        return lines.sorted { $0.0 < $1.0 }.enumerated().map { Line(id: $0.offset, time: $0.element.0, text: $0.element.1) }
+        return lines.sorted { $0.0 < $1.0 }.enumerated().map {
+            Line(id: $0.offset, time: $0.element.0, text: $0.element.1, reading: reading(for: $0.element.1))
+        }
     }
 
-    // Untuk snapshot.
+    nonisolated static func reading(for text: String) -> String? {
+        let hasHangul = text.unicodeScalars.contains { (0xAC00...0xD7AF).contains(Int($0.value)) }
+        let hasKana = text.unicodeScalars.contains { (0x3040...0x30FF).contains(Int($0.value)) }
+        let hasHan = text.unicodeScalars.contains { (0x3400...0x9FFF).contains(Int($0.value)) }
+        let hasOtherNonLatin = text.unicodeScalars.contains {
+            CharacterSet.letters.contains($0) && $0.value > 0x024F
+        }
+        guard hasHangul || hasKana || hasHan || hasOtherNonLatin else { return nil }
+
+        if hasKana && hasHan {
+            return nil
+        }
+        return text.applyingTransform(.toLatin, reverse: false)?.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     func preview(_ value: State) { state = value }
 }
-
-/// Lirik berjalan: baris yang sedang dinyanyikan terang dan di tengah, baris lain redup.
-/// Klik baris untuk lompat ke bagian itu.
 struct LyricsView: View {
     @ObservedObject var lyrics: LyricsService
     @ObservedObject var media: MediaMonitor
@@ -203,8 +218,18 @@ struct LyricsView: View {
             }
         case .plain(let text):
             ScrollView(.vertical, showsIndicators: false) {
-                Text(text).font(.system(size: 12, weight: .medium)).foregroundStyle(style.resolved(artwork: media.artwork).idle?.opacity(0.9) ?? Color.white.opacity(0.75))
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                VStack(alignment: .leading, spacing: 7) {
+                    ForEach(Array(text.components(separatedBy: .newlines).enumerated()), id: \.offset) { _, line in
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(line).font(.system(size: 12, weight: .medium))
+                            if let reading = LyricsService.reading(for: line) {
+                                Text(reading).font(.system(size: 10, weight: .regular)).foregroundStyle(.white.opacity(0.52))
+                            }
+                        }
+                    }
+                }
+                .foregroundStyle(style.resolved(artwork: media.artwork).idle?.opacity(0.9) ?? Color.white.opacity(0.75))
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
         case .loading:
             message("music.note", L("Mencari lirik…", "Finding lyrics…"))
@@ -246,18 +271,27 @@ private struct SyncedLines: View {
         VStack(alignment: .leading, spacing: 7) {
             ForEach(lines[window]) { line in
                 let active = line.id == current
-                Button { seek(line.time) } label: {
-                    Text(line.text.isEmpty ? "♪" : line.text)
-                        .font(.system(size: active ? 15 : 12.5, weight: active ? .bold : .semibold, design: .rounded))
-                        .foregroundStyle(active ? (tone.active ?? .white)
-                                         : (tone.idle?.opacity(line.id < current ? 0.5 : 0.8) ?? Color.white.opacity(line.id < current ? 0.3 : 0.45)))
-                        .lineLimit(2)
-                        .multilineTextAlignment(.leading)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .contentShape(Rectangle())
+                VStack(alignment: .leading, spacing: 1) {
+                    Button { seek(line.time) } label: {
+                        Text(line.text.isEmpty ? "♪" : line.text)
+                            .font(.system(size: active ? 15 : 12.5, weight: active ? .bold : .semibold, design: .rounded))
+                            .foregroundStyle(active ? (tone.active ?? .white)
+                                             : (tone.idle?.opacity(line.id < current ? 0.5 : 0.8) ?? Color.white.opacity(line.id < current ? 0.3 : 0.45)))
+                            .lineLimit(2)
+                            .multilineTextAlignment(.leading)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help(L("Lompat ke baris ini", "Jump to this line"))
+                    if let reading = line.reading {
+                        Text(reading)
+                            .font(.system(size: active ? 10.5 : 9.5, weight: .medium, design: .rounded))
+                            .foregroundStyle(active ? (tone.active?.opacity(0.72) ?? .white.opacity(0.72)) : .white.opacity(0.42))
+                            .lineLimit(2)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
                 }
-                .buttonStyle(.plain)
-                .help(L("Lompat ke baris ini", "Jump to this line"))
             }
         }
         .animation(.spring(response: 0.45, dampingFraction: 0.85), value: current)

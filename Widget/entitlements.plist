@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Ekstensi widget wajib ber-sandbox. Ia hanya boleh MEMBACA satu folder: tempat app Notch menulis widget.json.
+     Tanpa App Group (tidak butuh provisioning profile); izin ini sah untuk distribusi Developer ID. -->
+<plist version="1.0">
+<dict>
+	<key>com.apple.security.app-sandbox</key><true/>
+	<key>com.apple.security.temporary-exception.files.home-relative-path.read-only</key>
+	<array><string>/Library/Application Support/Cognify Notch Widgets/</string></array>
+</dict>
+</plist>

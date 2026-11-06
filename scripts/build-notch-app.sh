@@ -46,6 +46,7 @@ cp "$BIN/cognify-notch" "$APP/Contents/MacOS/cognify-notch"
 cp "$BIN/libcognify-media.dylib" "$APP/Contents/Frameworks/"
 ditto $N/.sparkle/Sparkle.framework "$APP/Contents/Frameworks/Sparkle.framework" # ditto: symlink framework tetap utuh
 cp "$ICON" "$APP/Contents/Resources/AppIcon.icns"
+ditto $N/Skins "$APP/Contents/Resources/Skins" # skin desktop bawaan (disalin ke folder pengguna saat app jalan)
 cp $N/Info.plist "$APP/Contents/Info.plist"
 plist() { /usr/libexec/PlistBuddy -c "$1" "$APP/Contents/Info.plist"; }
 plist "Set :CFBundleIdentifier com.reinhard.cognify.notchapp"
@@ -83,6 +84,9 @@ codesign --force "${TS[@]}" --options runtime --preserve-metadata=entitlements -
 codesign --force "${TS[@]}" --options runtime --sign "$ID" "$SP/Autoupdate"
 codesign --force "${TS[@]}" --options runtime --sign "$ID" "$SP/Updater.app"
 codesign --force "${TS[@]}" --options runtime --sign "$ID" "$APP/Contents/Frameworks/Sparkle.framework"
+# Widget macOS (Agenda, To-do): ekstensi ditandatangani sendiri (sandbox), lalu app ditandatangani terakhir.
+mkdir -p "$APP/Contents/PlugIns"
+zsh scripts/build-widget.sh "$APP/Contents/PlugIns" "$ID" "$VERSION"
 codesign --force "${TS[@]}" --options runtime --entitlements $N/entitlements.plist --sign "$ID" "$APP"
 codesign --verify --deep --strict "$APP"
 

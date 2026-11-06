@@ -1,18 +1,14 @@
 import AppKit
 import SwiftUI
 
-/// Tema "Liquid Glass": hanya di macOS 26 ke atas, memakai Liquid Glass asli dari sistem (lensa dan pembiasan latar
-/// ikut dari sistem) ditambah kilau tepi.
+/// Tema kaca: macOS 26 memakai Liquid Glass asli; versi lama memakai material dan refraksi ringan buatan app.
 enum NotchTheme: String, CaseIterable, Identifiable {
     case dark, glass
     var id: String { rawValue }
     var label: String { self == .dark ? L("Gelap (bawaan)", "Dark (default)") : "Liquid Glass" }
 
-    /// Liquid Glass asli hanya ada di macOS 26 ke atas; di versi lama pilihannya tidak ditampilkan.
-    static var glassSupported: Bool {
-        if #available(macOS 26.0, *) { return true }
-        return false
-    }
+    /// Tema kaca punya fallback untuk versi lama; macOS 26 memakai Liquid Glass asli.
+    static var glassSupported: Bool { true }
 }
 
 struct GlassSurface: View {
@@ -20,7 +16,7 @@ struct GlassSurface: View {
     /// 0 = bening, 1 = berwarna penuh.
     let tint: Double
     let color: Color
-    /// 0 sampai 1: kekuatan kilau tepi dan pantulan cair yang bergerak pelan.
+    /// 0 sampai 1: kekuatan kilau tepi dan refraksi pada pantulan.
     let distortion: Double
 
     var body: some View {
@@ -29,6 +25,9 @@ struct GlassSurface: View {
             // Pelindung agar tulisan tetap terbaca di atas latar terang: makin berwarna, makin pekat.
             shape.fill(color.opacity(0.08 + 0.45 * tint))
             GlassSheen(shape: shape, distortion: distortion)
+            if #unavailable(macOS 26.0) {
+                LiquidRefraction(shape: shape, strength: min(distortion, 0.55))
+            }
         }
         .shadow(color: .black.opacity(0.35), radius: 16, y: 6)
     }
@@ -36,9 +35,52 @@ struct GlassSurface: View {
     @ViewBuilder private var base: some View {
         if #available(macOS 26.0, *) {
             Color.clear.glassEffect(tint < 0.15 ? Glass.clear : Glass.regular.tint(color.opacity(tint * 0.5)), in: shape)
+        } else {
+            shape.fill(.ultraThinMaterial)
         }
     }
 
+}
+
+/// Distorsi halus pada pantulan kaca, bukan pada desktop di balik panel. Tidak dianimasikan.
+private struct LiquidRefraction: View {
+    let shape: AnyShape
+    let strength: Double
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack {
+                LinearGradient(colors: [.white.opacity(0.08), .clear, .white.opacity(0.035)],
+                               startPoint: .topLeading, endPoint: .bottomTrailing)
+                Ellipse()
+                    .fill(RadialGradient(colors: [.white.opacity(0.14 * strength), .clear],
+                                         center: .center, startRadius: 0, endRadius: geo.size.width * 0.34))
+                    .frame(width: geo.size.width * 0.66, height: geo.size.height * 0.8)
+                    .position(x: geo.size.width * 0.32, y: geo.size.height * 0.3)
+            }
+            .frame(width: geo.size.width, height: geo.size.height)
+            .modifier(LiquidDistortion(size: geo.size, strength: strength))
+            .clipShape(shape)
+        }
+        .allowsHitTesting(false)
+    }
+}
+
+private struct LiquidDistortion: ViewModifier {
+    let size: CGSize
+    let strength: Double
+
+    @ViewBuilder func body(content: Content) -> some View {
+        if #available(macOS 14.0, *) {
+            content.distortionEffect(
+                ShaderLibrary.bundle(.module).liquidRefraction(
+                    .float2(CGSize(width: size.width, height: size.height)),
+                    .float(Float(strength * 1.8))),
+                maxSampleOffset: CGSize(width: 2, height: 2))
+        } else {
+            content
+        }
+    }
 }
 
 /// Kilau di tepi dan pantulan cahaya yang diam. Pantulan yang bergerak tiap frame membuat kaca asli digambar ulang

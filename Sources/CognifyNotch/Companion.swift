@@ -14,7 +14,7 @@ enum Deco { case none, z, question, bang, sweat, heart, spiral }
 struct Pose {
     var top = 0.0, bot = 0.0, tilt = 0.0, sx = 1.0, sy = 1.0
     var gx = 0.0, gy = 0.0, skew = 0.0
-    var mw = 3.6, mc = 0.9, mo = 0.0
+    var mw = 3.6, mc = 0.9, mo = 0.0, mr = 0.0
     var deco: Deco = .none
 }
 
@@ -76,17 +76,17 @@ enum Emotion: String, CaseIterable, Identifiable {
         case .excited: return Pose(sx: 1.15, sy: 1.15, mw: 5.4, mc: 3.6, mo: 3.6)
         case .love: return Pose(mw: 4.5, mc: 3.6, deco: .heart)
         case .hello: return Pose(bot: 0.6, mw: 5.5, mc: 4, mo: 1.8)
-        case .surprised: return Pose(sx: 1.2, sy: 1.25, mw: 1.8, mc: 0, mo: 4, deco: .bang)
-        case .scared: return Pose(top: 0.3, tilt: -14, sx: 1.2, sy: 1.2, mw: 4, mc: -1.8, mo: 2.2, deco: .sweat)
+        case .surprised: return Pose(sx: 1.2, sy: 1.25, mw: 3.2, mc: 0, mo: 3.2, mr: 1, deco: .bang)
+        case .scared: return Pose(top: 0.3, tilt: -14, sx: 1.2, sy: 1.2, mw: 4, mc: -1.8, mo: 2.6, mr: 0.55, deco: .sweat)
         case .curious: return Pose(gx: 2.5, skew: 0.25, mw: 2.7, mc: 0.5)
         case .confused: return Pose(top: 0.2, tilt: -6, skew: 0.15, mw: 3.2, mc: -1, deco: .question)
-        case .dizzy: return Pose(mw: 3.6, mc: 0, mo: 1.4, deco: .spiral)
+        case .dizzy: return Pose(mw: 3.6, mc: 0, mo: 1.8, mr: 0.65, deco: .spiral)
         case .suspicious: return Pose(top: 0.45, bot: 0.3, gx: 3, mw: 3.2, mc: -0.5)
         case .smug: return Pose(top: 0.35, tilt: -4, mw: 4.5, mc: 1.4)
         case .bored: return Pose(top: 0.55, gy: 1.5, mw: 3.6, mc: -0.5)
         case .tired: return Pose(top: 0.6, gy: 1.5, mw: 3.6, mc: -1)
         case .exhausted: return Pose(top: 0.8, tilt: -6, gy: 2, mw: 3.2, mc: -1.5, mo: 1.5, deco: .sweat)
-        case .yawn: return Pose(top: 0.85, mw: 4.5, mc: 0, mo: 5.5)
+        case .yawn: return Pose(top: 0.85, mw: 4.5, mc: 0, mo: 5.5, mr: 1)
         case .worried: return Pose(top: 0.35, tilt: -14, mw: 3.6, mc: -1.8, deco: .sweat)
         case .sad: return Pose(top: 0.4, tilt: -18, mw: 4, mc: -2.7)
         case .annoyed: return Pose(top: 0.5, tilt: 10, mw: 3.6, mc: -1)
@@ -128,7 +128,9 @@ struct EyeCanvas: View, Animatable {
                 let radius = h * 0.7, mid = ry + radius - h * bot
                 lit.clip(to: Path(ellipseIn: CGRect(x: -radius, y: mid - radius, width: radius * 2, height: radius * 2)).applying(turn), options: .inverse)
             }
-            lit.fill(eye, with: .color(.white.opacity(1 - closed)))
+            lit.fill(eye, with: .linearGradient(
+                Gradient(colors: [.white.opacity(1 - closed), Color(white: 0.85).opacity(1 - closed)]),
+                startPoint: CGPoint(x: cx, y: cy - ry), endPoint: CGPoint(x: cx, y: cy + ry)))
             if closed > 0 {
                 ctx.fill(Path(roundedRect: CGRect(x: cx - 4.5 * scale, y: cy + 1, width: 9 * scale, height: 2), cornerRadius: 1),
                          with: .color(.white.opacity(0.75 * closed)))
@@ -138,7 +140,7 @@ struct EyeCanvas: View, Animatable {
     }
 }
 
-/// Mulut: garis lengkung, terisi bila terbuka.
+/// Mulut garis lengkung; bentuk bulat untuk mulut terbuka digambar terpisah di FaceHead.
 struct MouthShape: Shape {
     var w: Double, c: Double, o: Double
 
@@ -152,10 +154,6 @@ struct MouthShape: Shape {
         let y = r.midY, corner = y - c * 0.3, control = y + c * 0.7
         p.move(to: CGPoint(x: r.midX - w, y: corner))
         p.addQuadCurve(to: CGPoint(x: r.midX + w, y: corner), control: CGPoint(x: r.midX, y: control))
-        if o > 0.3 {
-            p.addQuadCurve(to: CGPoint(x: r.midX - w, y: corner), control: CGPoint(x: r.midX, y: control + o * 2))
-            p.closeSubpath()
-        }
         return p
     }
 }
@@ -367,7 +365,7 @@ final class Face: ObservableObject {
 
     // MARK: Perintah
 
-    func set(_ next: Emotion, _ animation: Animation = .spring(response: 0.35, dampingFraction: 0.65)) {
+    func set(_ next: Emotion, _ animation: Animation = .easeInOut(duration: 0.45)) {
         withAnimation(animation) { emotion = next }
     }
 
@@ -646,11 +644,16 @@ struct FaceHead: View {
                 Eye(face: face, right: true, scale: 0.85)
             }
             .offset(y: -4)
-            MouthShape(w: p.mw, c: p.mc, o: p.mo)
-                .fill(Color.white.opacity(min(1, p.mo / 2)))
-                .overlay(MouthShape(w: p.mw, c: p.mc, o: p.mo).stroke(Color.white, style: StrokeStyle(lineWidth: 1.6, lineCap: .round, lineJoin: .round)))
-                .frame(width: 20, height: 14)
-                .offset(y: 10)
+            ZStack {
+                MouthShape(w: p.mw, c: p.mc, o: p.mo)
+                    .stroke(Color.white, style: StrokeStyle(lineWidth: 1.6, lineCap: .round, lineJoin: .round))
+                    .opacity(1 - p.mr)
+                Ellipse().fill(.white)
+                    .frame(width: max(2, p.mw * 1.1), height: max(2, p.mo * 1.15))
+                    .opacity(p.mr)
+            }
+            .frame(width: 20, height: 14)
+            .offset(y: 10)
         }
         .frame(width: diameter, height: diameter)
         .modifier(Wobble(kind: face.rx, amp: 4, t: face.rxT))

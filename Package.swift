@@ -15,6 +15,7 @@ let package = Package(
         .executableTarget(
             name: "cognify-notch",
             path: "Sources/CognifyNotch",
+            resources: [.process("Shaders")],
             linkerSettings: [
                 // Info.plist di dalam program: teks izin kamera & kalender (lihat notch/Info.plist).
                 .unsafeFlags(["-Xlinker", "-sectcreate", "-Xlinker", "__TEXT", "-Xlinker", "__info_plist",

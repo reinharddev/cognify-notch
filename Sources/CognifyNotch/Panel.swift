@@ -298,16 +298,16 @@ final class NotchController {
         }
     }
 
-    /// Setelah notch menutup, kembalikan keyboard ke app yang sedang dipakai.
+    /// Setelah notch menutup, kembalikan keyboard ke app yang sedang dipakai tanpa
+    /// menyembunyikan dan menampilkan ulang panel (yang membuat notch berkedip).
     private func returnFocus() {
         guard panel.isKeyWindow else { return }
         panel.makeFirstResponder(nil)
-        // orderOut menyembunyikan jendela seketika, jadi tunggu animasi menutup selesai dulu
-        // (kalau tidak, notch tampak melompat hilang setelah panel sempat diklik).
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
-            guard let self, !self.model.expanded, self.panel.isKeyWindow else { return }
-            self.panel.orderOut(nil)
-            self.panel.orderFrontRegardless()
+            guard let self, !self.model.expanded, self.panel.isKeyWindow,
+                  let app = NSWorkspace.shared.frontmostApplication,
+                  app.processIdentifier != NSRunningApplication.current.processIdentifier else { return }
+            app.activate(options: [])
         }
     }
 }
@@ -317,6 +317,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var model: NotchModel?
     private var statusMenu: StatusMenu?
     private var link: NotchLink?
+    private var widgetExport: WidgetExport?
+    private var skinManager: SkinManager?
     private let bridge = Bridge()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -327,6 +329,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // Menyalin data ke Cognify hanya setelah pengguna menghubungkannya di Cognify.
             link = NotchLink(model: model)
             link?.start()
+            widgetExport = WidgetExport(model: model)
+            widgetExport?.start()
+            skinManager = SkinManager(model: model)
+            model.skinManager = skinManager
+            skinManager?.start()
             if bridge.appMode {
                 statusMenu = StatusMenu(model: model)
                 // Pertama kali dibuka: tunjukkan di mana notch-nya.

@@ -30,8 +30,30 @@ final class TodoStore: ObservableObject {
     private var observer: NSObjectProtocol?
     private var notifiedExternal: Set<String> = Set(UserDefaults.standard.stringArray(forKey: "todo.notifiedReminders") ?? [])
 
+    /// Tugas dari Cognify (mis. Moodle), baca saja: hilang sendiri saat sudah dikumpulkan dan Cognify menyinkronkan ulang.
+    @Published private(set) var moodle: [CalendarEvent] = []
+    private var moodleStamp: Date?
+    private var moodleTimer: Foundation.Timer?
+
     init() {
         loadLocal()
+        refreshMoodle(force: true)
+        let timer = Foundation.Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.refreshMoodle() }
+        }
+        timer.tolerance = 5
+        moodleTimer = timer
+    }
+
+    /// Baca ulang `cognify-agenda.json` hanya bila tanggal ubahnya berganti (murah: satu pemeriksaan berkas tiap 15 detik).
+    private func refreshMoodle(force: Bool = false) {
+        let stamp = (try? FileManager.default.attributesOfItem(atPath: CalendarFeed.agendaFile.path))?[.modificationDate] as? Date
+        guard force || stamp != moodleStamp else { return }
+        moodleStamp = stamp
+        let now = Date()
+        moodle = CalendarFeed.cognifyEvents(from: now.addingTimeInterval(-30 * 86_400), to: now.addingTimeInterval(90 * 86_400))
+            .filter(\.isTask)
+            .sorted { $0.start < $1.start }
     }
 
     private func loadLocal() {
@@ -385,9 +407,9 @@ struct TodoPanel: View {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .firstTextBaseline, spacing: 2) {
                     Text("\(todo.doneToday)").font(.system(size: 34, weight: .bold, design: .rounded).monospacedDigit())
-                    Text("/\(todo.totalToday)").font(.system(size: 17, weight: .semibold, design: .rounded)).foregroundStyle(.white.opacity(0.5))
+                    Text("/\(todo.totalToday + todo.moodle.count)").font(.system(size: 17, weight: .semibold, design: .rounded)).foregroundStyle(.white.opacity(0.5))
                 }
-                Text(L("Tugas selesai hari ini", "Tasks done today")).font(.system(size: 11)).foregroundStyle(.white.opacity(0.55))
+                Text(todo.moodle.isEmpty ? L("Tugas selesai hari ini", "Tasks done today") : L("Selesai hari ini, dari semua tugas", "Done today, of all tasks")).font(.system(size: 11)).foregroundStyle(.white.opacity(0.55))
                 if let list = todo.listName {
                     Label(L("Tersinkron: \(list)", "Synced: \(list)"), systemImage: "arrow.triangle.2.circlepath")
                         .font(.system(size: 9.5)).foregroundStyle(Color.accent)
@@ -463,7 +485,7 @@ struct TodoPanel: View {
 
     private var list: some View {
         Group {
-            if todo.items.isEmpty {
+            if todo.items.isEmpty && todo.moodle.isEmpty {
                 Placeholder(icon: "checklist", text: L("Belum ada tugas. Tulis di kiri, tekan Enter.", "No tasks yet. Type on the left and press Enter."))
                     .frame(maxWidth: .infinity, alignment: .leading)
             } else if snapshot {
@@ -478,6 +500,7 @@ struct TodoPanel: View {
     private var rows: some View {
         VStack(alignment: .leading, spacing: 5) {
             ForEach(todo.sorted) { item in TodoRow(item: item, todo: todo, now: model.now) }
+            ForEach(todo.moodle) { task in CognifyTaskRow(task: task, now: model.now) }
         }
     }
 
@@ -532,5 +555,42 @@ private struct TodoRow: View {
         .padding(.horizontal, 9).padding(.vertical, 6)
         .background(RoundedRectangle(cornerRadius: 9).fill(Color.white.opacity(hover ? 0.1 : 0.06)))
         .notchHover { hover = $0 }
+    }
+}
+
+/// Tugas dari Cognify (Moodle): baca saja, dengan nama mata pelajaran dan sisa waktu. Dikumpulkan di Moodle, bukan dicentang di sini.
+private struct CognifyTaskRow: View {
+    let task: CalendarEvent
+    let now: Date
+    @State private var hover = false
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "graduationcap.fill")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Color.accent)
+                .frame(width: 14)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(task.title).font(.system(size: 11.5, weight: .medium)).foregroundStyle(.white.opacity(0.95)).lineLimit(1)
+                Text(task.calendar).font(.system(size: 9.5)).foregroundStyle(.white.opacity(0.45)).lineLimit(1)
+            }
+            Spacer(minLength: 4)
+            Text(task.start < now ? Self.late(task.start, now: now) : Relative.long(task.start, allDay: false, now: now))
+                .font(.system(size: 10, weight: .medium).monospacedDigit())
+                .foregroundStyle(task.start < now ? Color.orange : .white.opacity(0.5))
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 9).padding(.vertical, 6)
+        .background(RoundedRectangle(cornerRadius: 9).fill(Color.white.opacity(hover ? 0.1 : 0.06)))
+        .notchHover { hover = $0 }
+        .help(L("Tugas dari Cognify. Kumpulkan di Moodle; hilang dari sini setelah terkirim.", "Task from Cognify. Submit it in Moodle; it disappears here once submitted."))
+    }
+
+    /// "Terlambat 3 jam" / "Terlambat 2 hari" untuk tugas yang lewat tenggat.
+    private static func late(_ due: Date, now: Date) -> String {
+        let minutes = max(1, Int(now.timeIntervalSince(due) / 60))
+        if minutes < 60 { return L("Terlambat \(minutes) mnt", "\(minutes) min late") }
+        if minutes < 1440 { return L("Terlambat \(minutes / 60) jam", "\(minutes / 60) h late") }
+        return L("Terlambat \(minutes / 1440) hari", "\(minutes / 1440) d late")
     }
 }
