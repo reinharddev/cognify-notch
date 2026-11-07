@@ -14,6 +14,7 @@ window.I18N = (() => {
     'reviews.alexa': 'Honestly, Cognify Notch is already really good. It is seriously cool.',
     'reviews.jaya': 'Cognify Notch has helped me copy things without losing the previous item when I copy something new. The water reminder helps me keep track of my hydration, and the cute icon blinks and falls asleep when it is not being used.',
     'reviews.dominick': 'It feels great to use, and I have not run into any bugs. The settings are detailed, so it is easy to customize. Overall, it feels reliable and works really well.',
+    'reviews.lyrics': 'I think the app is already very good and everything works as it should. I like the lyrics feature because it is cool. In the future, it could add customizable backgrounds, with your own imported image or a choice of colors. So far there are no bugs.',
     'reviews.rating': '5 stars',
     'nav.get': 'Download',
     'lang.btn': 'ID',
