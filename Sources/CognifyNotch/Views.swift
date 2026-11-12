@@ -57,6 +57,12 @@ struct NotchRoot: View {
                 bodyShape.fill(Color.black)
                     .shadow(color: .black.opacity(glass ? 0 : model.expanded ? 0.45 : model.headMode ? 0.35 : 0), radius: model.headMode ? 6 : 16, y: model.headMode ? 2 : 6)
                     .opacity(glass ? 0 : 1)
+                // Latar kustom (warna, gradien, gambar): hanya panel terbuka dan notch melayang; notch tertutup yang menempel tetap hitam.
+                if model.prefs.customBackgroundActive && (model.expanded || model.detached) && !model.headMode {
+                    CustomBackground(prefs: model.prefs)
+                        .clipShape(bodyShape)
+                        .transition(.opacity)
+                }
                 if glass {
                     GlassSurface(shape: bodyShape, tint: model.prefs.glassTintValue, color: model.prefs.glassColor,
                                  distortion: model.prefs.glassDistortionValue)

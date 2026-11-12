@@ -7,7 +7,32 @@ import SwiftUI
 
 enum SettingsPane: String, CaseIterable, Identifiable {
     // Urutan = urutan di sidebar.
-    case general, appearance, behavior, companion, features, skins, weather, tabs, data
+    case appearance, behavior, companion, features, skins, weather, tabs, general, data
+
+    /// Kelompok di sidebar: 0 Notch, 1 Fitur, 2 App.
+    var group: Int {
+        switch self {
+        case .appearance, .behavior, .companion: return 0
+        case .features, .skins, .weather, .tabs: return 1
+        case .general, .data: return 2
+        }
+    }
+    static var groupNames: [String] { ["Notch", L("Fitur", "Features"), L("App", "App")] }
+
+    /// Kata kunci isi bagian ini, supaya pencarian menemukan pengaturan, bukan hanya nama bagiannya.
+    var keywords: String {
+        switch self {
+        case .general: return L("bahasa buka login pembaruan versi update", "language login launch update version")
+        case .appearance: return L("tema latar gambar warna aksen gradien bentuk ukuran lengkung liquid glass paket tema melayang lirik equalizer", "theme background image color accent gradient shape size roundness liquid glass floating lyric equalizer")
+        case .behavior: return L("buka sembunyi otomatis klik hover jeda layar pintasan keyboard", "open hide auto click hover delay screen shortcut keyboard")
+        case .companion: return L("wajah ekspresi mata kedip mode reaksi", "face expression eyes blink mode reaction")
+        case .features: return L("lagu musik lirik equalizer clipboard tugas minum air kalkulator kamera stopwatch alarm baterai charger download headphone caps lock internet", "music lyrics equalizer clipboard tasks water calculator camera stopwatch alarm battery charger download headphone caps lock internet")
+        case .skins: return L("skin desktop widget mimik rainmeter", "desktop skin widget mimik rainmeter")
+        case .weather: return L("cuaca kota kalender ics agenda lokasi", "weather city calendar ics agenda location")
+        case .tabs: return L("urutan tab halaman", "order tab page")
+        case .data: return L("cadangan ekspor impor pulihkan reset", "backup export import restore reset")
+        }
+    }
 
     var id: String { rawValue }
 
@@ -167,8 +192,9 @@ struct SettingsView: View {
     @ObservedObject var model: NotchModel
     @ObservedObject var prefs: Preferences
     var updater: Updater?
-    @State private var pane: SettingsPane? = .general
+    @State private var pane: SettingsPane? = .appearance
     @State private var query = ""
+    @State private var bgError = ""
     @State private var loginOn = SMAppService.mainApp.status == .enabled
     @State private var autoUpdate = false
     /// Wajah contoh di bagian Teman kecil: menunjukkan pilihan yang sedang diubah.
@@ -178,87 +204,122 @@ struct SettingsView: View {
     private var panes: [SettingsPane] {
         let q = query.trimmingCharacters(in: .whitespaces).lowercased()
         guard !q.isEmpty else { return SettingsPane.allCases }
-        return SettingsPane.allCases.filter { $0.title.lowercased().contains(q) || $0.subtitle.lowercased().contains(q) }
+        return SettingsPane.allCases.filter { ($0.title + " " + $0.subtitle + " " + $0.keywords).lowercased().contains(q) }
     }
+
+    private var accent: Color { Color(hex: prefs.accentHex) ?? AccentStyle.fallback }
 
     var body: some View {
         HStack(spacing: 0) {
             sidebar
                 .frame(width: 230)
-                .background(SidebarBackground().ignoresSafeArea())
-            Divider()
+                .background(Color.black.opacity(0.34))
+            Rectangle().fill(Color.white.opacity(0.07)).frame(width: 1)
             detail
         }
+        .background(SettingsBackdrop())
         .frame(minWidth: 520, idealWidth: 780, minHeight: 360, idealHeight: 580)
         .ignoresSafeArea()
+        .preferredColorScheme(.dark)
+        .tint(accent)
     }
 
     // MARK: Sidebar
 
     private var sidebar: some View {
         VStack(spacing: 0) {
+            HStack(spacing: 9) {
+                MiniNotchMark(accent: accent)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(L("Pengaturan", "Settings")).font(.system(size: 14, weight: .semibold))
+                    Text("Cognify Notch").font(.system(size: 11)).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 18)
+            .padding(.top, 52) // di bawah tombol jendela
+            .padding(.bottom, 12)
             HStack(spacing: 6) {
-                Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                TextField(L("Cari", "Search"), text: $query).textFieldStyle(.plain)
+                Image(systemName: "magnifyingglass").foregroundStyle(.secondary).font(.system(size: 12))
+                TextField(L("Cari pengaturan", "Search settings"), text: $query).textFieldStyle(.plain)
                 if !query.isEmpty {
                     Button { query = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }.buttonStyle(.plain)
                 }
             }
-            .padding(.horizontal, 10)
+            .padding(.horizontal, 11)
             .frame(height: 30)
-            .background(Capsule().fill(Color(nsColor: .controlBackgroundColor).opacity(0.7)))
-            .overlay(Capsule().strokeBorder(Color.primary.opacity(0.1)))
+            .background(Capsule().fill(Color.white.opacity(0.07)))
+            .overlay(Capsule().strokeBorder(Color.white.opacity(0.08)))
             .padding(.horizontal, 14)
-            .padding(.top, 52) // di bawah tombol jendela
-            .padding(.bottom, 10)
+            .padding(.bottom, 4)
             ScrollView {
                 VStack(spacing: 2) {
-                    ForEach(panes) { p in
-                        let selected = p == current
-                        Button { pane = p } label: {
-                            HStack(spacing: 10) {
-                                PaneIcon(pane: p)
-                                Text(p.title).font(.system(size: 13, weight: selected ? .semibold : .regular))
-                                Spacer(minLength: 0)
+                    ForEach(0..<3, id: \.self) { g in
+                        let items = panes.filter { $0.group == g }
+                        if !items.isEmpty {
+                            Text(SettingsPane.groupNames[g].uppercased())
+                                .font(.system(size: 10, weight: .semibold)).tracking(0.9).foregroundStyle(.secondary.opacity(0.8))
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, 10).padding(.top, 14).padding(.bottom, 3)
+                            ForEach(items) { p in
+                                let selected = p == current
+                                Button { pane = p } label: {
+                                    HStack(spacing: 10) {
+                                        Image(systemName: p.symbol).font(.system(size: 14, weight: .medium)).frame(width: 22)
+                                            .foregroundStyle(selected ? accent : Color.secondary)
+                                        Text(p.title).font(.system(size: 13, weight: selected ? .semibold : .regular))
+                                        Spacer(minLength: 0)
+                                    }
+                                    .padding(.horizontal, 10)
+                                    .frame(height: 34)
+                                    .foregroundStyle(selected ? Color.white : Color.white.opacity(0.62))
+                                    .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(selected ? accent.opacity(0.2) : Color.clear))
+                                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(selected ? accent.opacity(0.55) : Color.clear))
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
                             }
-                            .padding(.horizontal, 8)
-                            .frame(height: 36)
-                            .foregroundStyle(selected ? Color.white : Color.primary)
-                            .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(selected ? Color(nsColor: .controlAccentColor) : Color.clear))
-                            .contentShape(Rectangle())
                         }
-                        .buttonStyle(.plain)
                     }
                     if panes.isEmpty {
                         Text(L("Tidak ada hasil", "No results")).font(.callout).foregroundStyle(.secondary).padding(.top, 20)
                     }
                 }
                 .padding(.horizontal, 10)
+                .padding(.bottom, 16)
             }
+            .scrollIndicators(.hidden)
         }
     }
 
     // MARK: Detail
 
-    private var current: SettingsPane { pane ?? panes.first ?? .general }
+    private var current: SettingsPane { pane.flatMap { panes.contains($0) ? $0 : nil } ?? panes.first ?? .appearance }
 
     private var detail: some View {
-        Form {
-            Section {
-                VStack(spacing: 6) {
-                    PaneIcon(pane: current, size: 64)
-                    Text(current.title).font(.system(size: 24, weight: .bold))
-                    Text(current.subtitle).font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 10)
+        VStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(current.title).font(.system(size: 22, weight: .semibold))
+                Text(current.subtitle).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
-            content(for: current)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 28)
+            .padding(.top, 46) // sejajar dengan sidebar, di bawah tombol jendela
+            .padding(.bottom, 4)
+            Form {
+                if current == .appearance || current == .companion {
+                    Section {
+                        SettingsStage(prefs: prefs, model: model, height: current == .appearance ? 140 : 104)
+                            .listRowInsets(EdgeInsets())
+                            .listRowBackground(Color.clear)
+                    }
+                }
+                content(for: current)
+            }
+            .formStyle(.grouped)
+            .scrollContentBackground(.hidden)
+            .scrollIndicators(.hidden)
         }
-        .formStyle(.grouped)
-        .scrollContentBackground(.hidden)
-        .background(Color(nsColor: .windowBackgroundColor).ignoresSafeArea())
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .id(current)
     }
@@ -486,6 +547,15 @@ struct SettingsView: View {
     private static let lyricColors = ["#ffffff", "#ffd60a", "#30d158", "#0a84ff", "#ff375f", "#ff9f0a", "#bf5af2", "#8e8e93"]
     private static let equalizerColors = ["#ffffff", "#30d158", "#0a84ff", "#bf5af2", "#ff375f", "#ff9f0a", "#ffd60a"]
 
+    private func chooseBackgroundImage() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.image]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        bgError = prefs.chooseBackgroundImage(url) ? "" : L("Gambar ini tidak bisa dibuka.", "This image could not be opened.")
+    }
+
     @ViewBuilder private var appearancePane: some View {
         if NotchTheme.glassSupported {
         Section(L("Tema", "Theme")) {
@@ -526,6 +596,83 @@ struct SettingsView: View {
                 }
             }
         }
+        }
+        Section(L("Paket tema", "Theme packs")) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 12) {
+                    ForEach(ThemePreset.all) { preset in
+                        Button { prefs.applyPreset(preset) } label: {
+                            VStack(spacing: 6) {
+                                ZStack(alignment: .bottomTrailing) {
+                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                        .fill(preset.mode == .none ? AnyShapeStyle(Color.black)
+                                              : AnyShapeStyle(LinearGradient(colors: [Color(hex: preset.color1) ?? .black, Color(hex: preset.color2) ?? .black],
+                                                                             startPoint: CustomBackground.point(preset.angle, start: true), endPoint: CustomBackground.point(preset.angle, start: false))))
+                                        .frame(width: 64, height: 40)
+                                        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Color.primary.opacity(0.15), lineWidth: 1))
+                                    Circle().fill(Color(hex: preset.accent) ?? Color.accent).frame(width: 12, height: 12).padding(5)
+                                }
+                                Text(preset.name()).font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.vertical, 2)
+            }
+            Text(L("Satu klik mengatur warna aksen dan latar sekaligus. Tema Liquid Glass diganti ke Gelap supaya latarnya terlihat.", "One click sets the accent color and the background together. The Liquid Glass theme is switched to Dark so the background shows."))
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        Section(L("Latar panel", "Panel background")) {
+            Picker(L("Latar", "Background"), selection: $prefs.bgMode) {
+                ForEach(BackgroundMode.allCases) { Text($0.label).tag($0) }
+            }
+            if prefs.theme == .glass {
+                Text(L("Tema Liquid Glass aktif, jadi latar kustom tidak dipakai. Pilih tema Gelap di atas untuk memakainya.", "The Liquid Glass theme is on, so the custom background is not used. Pick the Dark theme above to use it."))
+                    .font(.caption).foregroundStyle(.orange)
+            }
+            if prefs.bgMode == .color || prefs.bgMode == .gradient {
+                LabeledContent(prefs.bgMode == .gradient ? L("Warna awal", "Start color") : L("Warna", "Color")) {
+                    ColorPicker("", selection: Binding(get: { Color(hex: prefs.bgColorHex) ?? .black }, set: { prefs.bgColorHex = $0.hex }), supportsOpacity: false).labelsHidden()
+                }
+            }
+            if prefs.bgMode == .gradient {
+                LabeledContent(L("Warna akhir", "End color")) {
+                    ColorPicker("", selection: Binding(get: { Color(hex: prefs.bgColor2Hex) ?? .black }, set: { prefs.bgColor2Hex = $0.hex }), supportsOpacity: false).labelsHidden()
+                }
+                LabeledContent(L("Arah", "Direction")) {
+                    Slider(value: $prefs.bgAngle, in: 0...360, step: 5) { EmptyView() }
+                    Text("\(Int(prefs.bgAngle))°").monospacedDigit().frame(width: 60, alignment: .trailing)
+                }
+            }
+            if prefs.bgMode == .image {
+                LabeledContent(L("Gambar", "Image")) {
+                    HStack(spacing: 8) {
+                        if let image = BackgroundStore.image(named: prefs.bgImageName) {
+                            Image(nsImage: image).resizable().scaledToFill().frame(width: 52, height: 32).clipShape(RoundedRectangle(cornerRadius: 6))
+                        }
+                        Button(prefs.bgImageName.isEmpty ? L("Pilih gambar…", "Choose image…") : L("Ganti gambar…", "Change image…")) { chooseBackgroundImage() }
+                    }
+                }
+                LabeledContent(L("Buram", "Blur")) {
+                    Slider(value: $prefs.bgBlur, in: 0...1, step: 0.05) { EmptyView() }
+                    Text("\(Int(prefs.bgBlur * 100))%").monospacedDigit().frame(width: 60, alignment: .trailing)
+                }
+                Text(L("Gambar disalin ke folder data app (diperkecil) dan tidak dikirim ke mana pun.", "The image is copied into the app's data folder (downsized) and never sent anywhere."))
+                    .font(.caption).foregroundStyle(.secondary)
+                if !bgError.isEmpty { Text(bgError).font(.caption).foregroundStyle(.orange) }
+            }
+            if prefs.bgMode == .image || prefs.bgMode == .gradient {
+                LabeledContent(L("Peredam gelap", "Dim")) {
+                    Slider(value: $prefs.bgDim, in: 0...0.8, step: 0.05) { EmptyView() }
+                    Text("\(Int(prefs.bgDim * 100))%").monospacedDigit().frame(width: 60, alignment: .trailing)
+                }
+            }
+            if prefs.bgMode != .none {
+                Text(model.hasNotch ? L("Di Mac berponi, notch yang menempel dan tertutup tetap hitam agar menyatu dengan poni; latar tampil di panel terbuka dan notch melayang.", "On a Mac with a notch, the attached closed notch stays black to blend with the physical notch; the background shows in the open panel and a floating notch.")
+                                    : L("Latar tampil di panel terbuka dan notch melayang.", "The background shows in the open panel and a floating notch."))
+                    .font(.caption).foregroundStyle(.secondary)
+            }
         }
         Section(L("Bentuk, ukuran, dan warna aksen", "Shape, size, and accent color")) {
             Toggle(L("Melayang juga di Mac berponi", "Float on Macs with a notch too"), isOn: $prefs.floatOnNotch)
@@ -787,5 +934,98 @@ struct FloatPositionMap: View {
             Text(L("Klik atau seret titik di peta, atau seret notch langsung di layar.", "Click or drag the dot on the map, or drag the notch itself on the screen."))
                 .font(.caption).foregroundStyle(.secondary)
         }
+    }
+}
+
+
+/// Latar jendela Pengaturan: gelap dengan dua cahaya ungu dan merah muda, seperti panel notch.
+struct SettingsBackdrop: View {
+    var body: some View {
+        ZStack {
+            Color(red: 0.08, green: 0.07, blue: 0.12)
+            RadialGradient(colors: [Color(red: 0.23, green: 0.16, blue: 0.53), .clear], center: UnitPoint(x: 0.2, y: -0.1), startRadius: 0, endRadius: 520)
+            RadialGradient(colors: [Color(red: 0.66, green: 0.28, blue: 0.56).opacity(0.85), .clear], center: UnitPoint(x: 1.05, y: 1.1), startRadius: 0, endRadius: 440)
+        }
+    }
+}
+
+/// Lambang kecil di sidebar: notch hitam dengan dua mata beraksen.
+struct MiniNotchMark: View {
+    let accent: Color
+    var body: some View {
+        UnderRounded(radius: 8).fill(Color.black)
+            .frame(width: 22, height: 15)
+            .overlay(UnderRounded(radius: 8).stroke(Color.white.opacity(0.2), lineWidth: 1))
+            .overlay(alignment: .topLeading) {
+                HStack(spacing: 4) {
+                    Capsule().fill(accent).frame(width: 3, height: 6)
+                    Capsule().fill(accent).frame(width: 3, height: 6)
+                }
+                .padding(.leading, 6).padding(.top, 3)
+            }
+    }
+}
+
+/// Bentuk dengan dua sudut bawah membulat (bentuk notch yang menempel).
+struct UnderRounded: Shape {
+    var radius: CGFloat
+    func path(in r: CGRect) -> Path {
+        let k = min(radius, r.height, r.width / 2)
+        var p = Path()
+        p.move(to: CGPoint(x: r.minX, y: r.minY))
+        p.addLine(to: CGPoint(x: r.maxX, y: r.minY))
+        p.addLine(to: CGPoint(x: r.maxX, y: r.maxY - k))
+        p.addQuadCurve(to: CGPoint(x: r.maxX - k, y: r.maxY), control: CGPoint(x: r.maxX, y: r.maxY))
+        p.addLine(to: CGPoint(x: r.minX + k, y: r.maxY))
+        p.addQuadCurve(to: CGPoint(x: r.minX, y: r.maxY - k), control: CGPoint(x: r.minX, y: r.maxY))
+        p.closeSubpath()
+        return p
+    }
+}
+
+/// Pratinjau hidup di Pengaturan: bentuk notch, ukuran, lengkung, aksen, dan latar mengikuti pilihan saat ini.
+struct SettingsStage: View {
+    @ObservedObject var prefs: Preferences
+    @ObservedObject var model: NotchModel
+    var height: CGFloat
+    @State private var open = false
+
+    private var accent: Color { Color(hex: prefs.accentHex) ?? AccentStyle.fallback }
+
+    var body: some View {
+        let closedW = 150 * prefs.idleScale + 12 // termasuk lengkung cekung di kiri dan kanan atas
+        ZStack(alignment: .top) {
+            LinearGradient(colors: [Color(red: 0.1, green: 0.09, blue: 0.19), Color(red: 0.24, green: 0.16, blue: 0.39), Color(red: 0.44, green: 0.23, blue: 0.49)], startPoint: .topLeading, endPoint: .bottomTrailing)
+            Color.black.opacity(0.28).frame(height: 22).frame(maxHeight: .infinity, alignment: .top)
+            ZStack(alignment: .top) {
+                if open && prefs.customBackgroundActive { CustomBackground(prefs: prefs) } else { Color.black }
+                HStack(spacing: 10) {
+                    if model.features.companion {
+                        Capsule().fill(accent).frame(width: 8, height: 13)
+                        Capsule().fill(accent).frame(width: 8, height: 13)
+                    }
+                }
+                .frame(height: 32)
+            }
+            .frame(width: open ? 340 : closedW, height: open ? 92 : 32)
+            .clipShape(AnyShape(NotchShape(top: open ? 12 : 6, bottom: open ? CGFloat(prefs.roundness) : 12)))
+            .animation(.easeOut(duration: 0.15), value: open)
+            .animation(.easeOut(duration: 0.15), value: prefs.idleScale)
+            VStack {
+                Spacer()
+                HStack(spacing: 8) {
+                    Spacer()
+                    Text(L("Pratinjau langsung", "Live preview")).font(.system(size: 11)).foregroundStyle(.white.opacity(0.7))
+                    Button(L("Buka / tutup", "Open / close")) { open.toggle() }
+                        .buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(.white)
+                        .padding(.horizontal, 9).padding(.vertical, 2).background(Capsule().fill(Color.white.opacity(0.18)))
+                }
+                .padding(.trailing, 10).padding(.bottom, 8)
+            }
+        }
+        .frame(height: height)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color.white.opacity(0.08)))
+        .padding(.horizontal, 2)
     }
 }

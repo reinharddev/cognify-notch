@@ -98,6 +98,36 @@ final class Preferences: ObservableObject {
     var glassTintValue: Double { glassCustom ? glassTint : 0.3 }
     var glassDistortionValue: Double { glassCustom ? glassDistortion : 0.5 }
     var glassColor: Color { glassCustom ? (Color(hex: glassTintHex) ?? .black) : .black }
+    /// Latar kustom panel (tidak dipakai bila tema Liquid Glass aktif). Lihat Background.swift.
+    @Published var bgMode: BackgroundMode { didSet { save("prefs.bgMode", bgMode.rawValue) } }
+    @Published var bgColorHex: String { didSet { save("prefs.bgColorHex", bgColorHex) } }
+    @Published var bgColor2Hex: String { didSet { save("prefs.bgColor2Hex", bgColor2Hex) } }
+    @Published var bgAngle: Double { didSet { save("prefs.bgAngle", bgAngle) } }
+    /// Nama berkas gambar latar di folder data app (bukan jalur asli).
+    @Published var bgImageName: String { didSet { save("prefs.bgImageName", bgImageName) } }
+    @Published var bgDim: Double { didSet { save("prefs.bgDim", bgDim) } }
+    @Published var bgBlur: Double { didSet { save("prefs.bgBlur", bgBlur) } }
+    /// Latar kustom dipakai bila dipilih dan tema kaca tidak aktif.
+    var customBackgroundActive: Bool { bgMode != .none && theme != .glass }
+
+    func applyPreset(_ preset: ThemePreset) {
+        accentHex = preset.accent
+        AccentStyle.color = Color(hex: preset.accent)
+        bgMode = preset.mode
+        bgColorHex = preset.color1
+        bgColor2Hex = preset.color2
+        bgAngle = preset.angle
+        if theme == .glass { theme = .dark }
+    }
+
+    func chooseBackgroundImage(_ url: URL) -> Bool {
+        guard let name = BackgroundStore.importImage(from: url) else { return false }
+        let old = bgImageName
+        bgImageName = name
+        bgMode = .image
+        if old != name { BackgroundStore.clear(old) }
+        return true
+    }
     /// Sembunyikan notch saat tidak dipakai.
     /// Pakai bentuk melayang juga di Mac yang punya notch fisik.
     @Published var floatOnNotch: Bool { didSet { save("prefs.floatOnNotch", floatOnNotch) } }
@@ -182,6 +212,13 @@ final class Preferences: ObservableObject {
         glassTint = d?.object(forKey: "prefs.glassTint") as? Double ?? 0.3
         glassTintHex = d?.string(forKey: "prefs.glassTintHex") ?? ""
         glassDistortion = d?.object(forKey: "prefs.glassDistortion") as? Double ?? 0.5
+        bgMode = (d?.string(forKey: "prefs.bgMode")).flatMap(BackgroundMode.init) ?? .none
+        bgColorHex = d?.string(forKey: "prefs.bgColorHex") ?? "#1b1b22"
+        bgColor2Hex = d?.string(forKey: "prefs.bgColor2Hex") ?? "#3a2a6a"
+        bgAngle = d?.object(forKey: "prefs.bgAngle") as? Double ?? 135
+        bgImageName = d?.string(forKey: "prefs.bgImageName") ?? ""
+        bgDim = d?.object(forKey: "prefs.bgDim") as? Double ?? 0.35
+        bgBlur = d?.object(forKey: "prefs.bgBlur") as? Double ?? 0
         lyricAuto = d?.object(forKey: "prefs.lyricAuto") as? Bool ?? false
         clipboardUnlimited = d?.object(forKey: "prefs.clipboardUnlimited") as? Bool ?? true
         clipboardLimit = max(1, min(100_000, d?.object(forKey: "prefs.clipboardLimit") as? Int ?? 40))

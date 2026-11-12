@@ -209,7 +209,7 @@ struct SkyBackground: View {
     }
 
 
-    /// Bintang, garis rasi, nama rasi, dan planet pada posisi sebenarnya untuk lokasi dan waktu pengamat.
+    /// Bintang, garis rasi bintang, nama rasi, dan planet pada posisi sebenarnya untuk lokasi dan waktu pengamat
     private static func drawChart(_ ctx: inout GraphicsContext, _ size: CGSize, _ sight: SkyChart.Sight, t: Double, alpha: Double) {
         var seg = Path()
         for line in SkyChart.lines {

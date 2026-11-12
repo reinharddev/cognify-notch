@@ -382,6 +382,11 @@ final class NotchModel: ObservableObject {
             self?.show(.alert(title: L("Timer \(countdown.label) selesai", "\(countdown.label) timer done"),
                               detail: L("Waktunya!", "Time's up!"), action: nil))
         }
+        clock.onAlarm = { [weak self] alarm in
+            NSSound(named: "Glass")?.play()
+            let title = alarm.label.isEmpty ? L("Alarm \(String(format: "%02d:%02d", alarm.hour, alarm.minute))", "Alarm \(String(format: "%02d:%02d", alarm.hour, alarm.minute))") : alarm.label
+            self?.show(.alert(title: title, detail: L("Waktunya!", "Time's up!"), action: nil))
+        }
         Publishers.CombineLatest(self.prefs.$weatherCity, self.prefs.$weatherCoords).dropFirst().removeDuplicates { $0 == $1 }.sink { [weak self] city, coords in
             DispatchQueue.main.async {
                 guard let self else { return }

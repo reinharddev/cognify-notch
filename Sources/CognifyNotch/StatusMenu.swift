@@ -64,6 +64,8 @@ final class StatusMenu: NSObject, NSMenuDelegate {
             window.isReleasedWhenClosed = false
             window.titlebarAppearsTransparent = true
             window.titleVisibility = .hidden
+            window.appearance = NSAppearance(named: .darkAqua)
+            window.backgroundColor = NSColor(red: 0.08, green: 0.07, blue: 0.12, alpha: 1)
             window.minSize = NSSize(width: min(520, w), height: min(360, h))
             window.contentView = NSHostingView(rootView: SettingsView(model: model, prefs: model.prefs, updater: updater))
             window.center()

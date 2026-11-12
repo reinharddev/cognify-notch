@@ -1,3 +1,4 @@
+import NotchTime
 import SwiftUI
 
 /// Stopwatch (dengan lap) dan hitung mundur cepat ("10 menit" untuk masak), terpisah dari
@@ -19,6 +20,25 @@ final class ClockTools: ObservableObject {
 
     @Published private(set) var countdowns: [Countdown] = []
     var onFinish: ((Countdown) -> Void)?
+
+    // Alarm: jam tertentu, berulang di hari terpilih (kosong = sekali saja). Disimpan sebagai jam dan hari, bukan satu waktu absolut.
+    struct Alarm: Codable, Identifiable, Equatable {
+        let id: UUID
+        var hour: Int
+        var minute: Int
+        /// Hari berulang menurut Calendar.weekday (1 Minggu sampai 7 Sabtu); kosong = sekali.
+        var days: [Int]
+        var label: String
+        var enabled: Bool
+        /// Tanggal (yyyy-MM-dd) terakhir alarm berbunyi, supaya tidak berbunyi dua kali sehari.
+        var firedOn: String?
+    }
+    @Published private(set) var alarms: [Alarm] = []
+    var onAlarm: ((Alarm) -> Void)?
+    private var alarmTicker: Timer?
+    private let alarmKey = "clock.alarms"
+    /// Alarm yang terlambat (Mac tidur atau notch baru dibuka) tetap berbunyi sampai selama ini sesudah jamnya.
+    private static let alarmGrace = 10
     private var ticker: Timer?
     private let key = "clock.countdowns"
 
@@ -27,6 +47,13 @@ final class ClockTools: ObservableObject {
             countdowns = saved.filter { $0.end > Date() }
         }
         schedule()
+        if let data = UserDefaults.standard.data(forKey: alarmKey), let saved = try? JSONDecoder().decode([Alarm].self, from: data) { alarms = saved }
+        let t = Timer.scheduledTimer(withTimeInterval: 20, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.checkAlarms() }
+        }
+        t.tolerance = 5
+        alarmTicker = t
+        checkAlarms()
     }
 
     var running: Bool { started != nil }
@@ -69,6 +96,49 @@ final class ClockTools: ObservableObject {
         withAnimation(.notch) { countdowns.removeAll { $0.id == id } }
         save()
         schedule()
+    }
+
+    // MARK: Alarm
+
+    func addAlarm(hour: Int, minute: Int, days: [Int], label: String) {
+        let alarm = Alarm(id: UUID(), hour: hour, minute: minute, days: days.sorted(), label: label.trimmingCharacters(in: .whitespaces), enabled: true, firedOn: nil)
+        withAnimation(.notch) { alarms.append(alarm); alarms.sort { ($0.hour, $0.minute) < ($1.hour, $1.minute) } }
+        saveAlarms()
+        checkAlarms()
+    }
+
+    func setAlarm(_ id: UUID, enabled: Bool) {
+        guard let i = alarms.firstIndex(where: { $0.id == id }) else { return }
+        alarms[i].enabled = enabled
+        if enabled { alarms[i].firedOn = nil }
+        saveAlarms()
+    }
+
+    func removeAlarm(_ id: UUID) {
+        withAnimation(.notch) { alarms.removeAll { $0.id == id } }
+        saveAlarms()
+    }
+
+    private func saveAlarms() {
+        if let data = try? JSONEncoder().encode(alarms) { UserDefaults.standard.set(data, forKey: alarmKey) }
+    }
+
+    /// Alarm yang sedang jatuh tempo pada `now` (aturannya di NotchTime/AlarmSchedule.swift, ada tesnya).
+    static func dueAlarms(_ alarms: [Alarm], at now: Date) -> [Alarm] {
+        alarms.filter { AlarmSchedule.isDue(hour: $0.hour, minute: $0.minute, days: $0.days, enabled: $0.enabled, firedOn: $0.firedOn, now: now, graceMinutes: alarmGrace) }
+    }
+
+    private func checkAlarms() {
+        let now = Date()
+        let due = Self.dueAlarms(alarms, at: now)
+        guard !due.isEmpty else { return }
+        for alarm in due {
+            guard let i = alarms.firstIndex(where: { $0.id == alarm.id }) else { continue }
+            alarms[i].firedOn = AlarmSchedule.dayKey(now)
+            if alarm.days.isEmpty { alarms[i].enabled = false } // alarm sekali padam sesudah berbunyi
+        }
+        saveAlarms()
+        due.forEach { onAlarm?($0) }
     }
 
     /// Hitung mundur yang paling cepat selesai (untuk sayap notch).
@@ -125,6 +195,8 @@ struct ClockPanel: View {
             stopwatch.frame(width: 250, alignment: .leading)
             Divider().overlay(Color.white.opacity(0.08))
             countdownColumn
+            Divider().overlay(Color.white.opacity(0.08))
+            alarmColumn
         }
         .frame(maxHeight: .infinity, alignment: .top)
     }
@@ -159,6 +231,68 @@ struct ClockPanel: View {
                 }
             }
         }
+    }
+
+    @State private var alarmTime = Calendar.current.date(bySettingHour: 7, minute: 0, second: 0, of: Date()) ?? Date()
+    @State private var alarmDays: Set<Int> = []
+    @State private var alarmLabel = ""
+
+    private static let dayOrder: [(weekday: Int, id: String, en: String)] = [(2, "Sen", "Mon"), (3, "Sel", "Tue"), (4, "Rab", "Wed"), (5, "Kam", "Thu"), (6, "Jum", "Fri"), (7, "Sab", "Sat"), (1, "Min", "Sun")]
+
+    private var alarmColumn: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            SectionLabel(text: L("Alarm", "Alarm"))
+            HStack(spacing: 6) {
+                DatePicker("", selection: $alarmTime, displayedComponents: .hourAndMinute).labelsHidden().datePickerStyle(.field)
+                Button {
+                    let c = Calendar.current.dateComponents([.hour, .minute], from: alarmTime)
+                    clock.addAlarm(hour: c.hour ?? 7, minute: c.minute ?? 0, days: Array(alarmDays), label: alarmLabel)
+                    alarmLabel = ""
+                } label: { Label(L("Tambah", "Add"), systemImage: "plus") }
+                    .buttonStyle(PillButtonStyle(prominent: true))
+            }
+            HStack(spacing: 3) {
+                ForEach(Self.dayOrder, id: \.weekday) { d in
+                    let on = alarmDays.contains(d.weekday)
+                    Button { if on { alarmDays.remove(d.weekday) } else { alarmDays.insert(d.weekday) } } label: {
+                        Text(L(d.id, d.en)).font(.system(size: 9.5, weight: .semibold)).lineLimit(1).fixedSize()
+                            .padding(.horizontal, 5).padding(.vertical, 3)
+                            .background(Capsule().fill(on ? Color.accent.opacity(0.85) : Color.white.opacity(0.1)))
+                            .foregroundStyle(on ? Color.black : Color.white.opacity(0.75))
+                    }
+                    .buttonStyle(PressableStyle())
+                }
+            }
+            Text(alarmDays.isEmpty ? L("Tanpa hari dipilih: berbunyi sekali.", "No day picked: rings once.") : L("Berulang di hari terpilih.", "Repeats on the picked days."))
+                .font(.system(size: 9.5)).foregroundStyle(.white.opacity(0.4))
+            if clock.alarms.isEmpty {
+                Placeholder(icon: "alarm", text: L("Atur jam, lalu Tambah.", "Set a time, then Add."))
+            } else {
+                VStack(spacing: 5) {
+                    ForEach(clock.alarms) { alarm in
+                        HStack(spacing: 8) {
+                            Text(String(format: "%02d:%02d", alarm.hour, alarm.minute))
+                                .font(.system(size: 14, weight: .semibold, design: .rounded).monospacedDigit())
+                                .foregroundStyle(alarm.enabled ? .white : .white.opacity(0.35))
+                            Text(alarmSubtitle(alarm)).font(.system(size: 10)).foregroundStyle(.white.opacity(0.5)).lineLimit(1)
+                            Spacer()
+                            Toggle("", isOn: Binding(get: { alarm.enabled }, set: { clock.setAlarm(alarm.id, enabled: $0) }))
+                                .toggleStyle(.switch).controlSize(.mini).labelsHidden()
+                            Button { clock.removeAlarm(alarm.id) } label: { Image(systemName: "xmark").font(.system(size: 9, weight: .bold)) }
+                                .buttonStyle(.plain).foregroundStyle(.white.opacity(0.5)).help(L("Hapus", "Delete"))
+                        }
+                        .padding(.horizontal, 9).padding(.vertical, 5)
+                        .background(RoundedRectangle(cornerRadius: 9).fill(Color.white.opacity(0.06)))
+                    }
+                }
+            }
+        }
+        .frame(width: 250, alignment: .leading)
+    }
+
+    private func alarmSubtitle(_ a: ClockTools.Alarm) -> String {
+        let days = a.days.isEmpty ? L("sekali", "once") : (a.days.count == 7 ? L("tiap hari", "every day") : Self.dayOrder.filter { a.days.contains($0.weekday) }.map { L($0.id, $0.en) }.joined(separator: " "))
+        return a.label.isEmpty ? days : "\(a.label) · \(days)"
     }
 
     private var countdownColumn: some View {
