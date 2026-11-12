@@ -98,7 +98,18 @@ final class Preferences: ObservableObject {
     var glassTintValue: Double { glassCustom ? glassTint : 0.3 }
     var glassDistortionValue: Double { glassCustom ? glassDistortion : 0.5 }
     var glassColor: Color { glassCustom ? (Color(hex: glassTintHex) ?? .black) : .black }
+    /// Sembunyikan notch saat tidak dipakai.
+    /// Pakai bentuk melayang juga di Mac yang punya notch fisik.
+    @Published var floatOnNotch: Bool { didSet { save("prefs.floatOnNotch", floatOnNotch) } }
+    /// Geseran notch melayang dari tengah-atas layar (titik): kanan positif, ke bawah positif.
+    @Published var floatDX: Double { didSet { save("prefs.floatDX", floatDX) } }
+    @Published var floatDY: Double { didSet { save("prefs.floatDY", floatDY) } }
+    @Published var autoHide: Bool { didSet { save("prefs.autoHide", autoHide) } }
+    /// Pengali ukuran notch saat diam/tertutup (0.6 sampai 1.5). Di Mac ber-notch tidak bisa lebih kecil dari notch fisik.
+    @Published var idleScale: Double { didSet { save("prefs.idleScale", idleScale) } }
     @Published var scale: Double { didSet { save("prefs.scale", scale) } }
+    /// Bundle id app yang notifikasinya diteruskan ke notch.
+    @Published var notifyApps: [String] { didSet { save("prefs.notifyApps", notifyApps) } }
     @Published var hotKey: HotKeyChoice { didSet { save("prefs.hotKey", hotKey.rawValue) } }
     @Published var language: Language {
         didSet {
@@ -124,7 +135,7 @@ final class Preferences: ObservableObject {
         var id: String { rawValue }
         var label: String {
             switch self {
-            case .head: return L("Kepala bulat (mengambang)", "Round head (floating)")
+            case .head: return L("Melayang", "Floating")
             case .attached: return L("Menempel di atas", "Attached to the top")
             }
         }
@@ -176,9 +187,15 @@ final class Preferences: ObservableObject {
         clipboardLimit = max(1, min(100_000, d?.object(forKey: "prefs.clipboardLimit") as? Int ?? 40))
         lyricActiveHex = d?.string(forKey: "prefs.lyricActiveHex") ?? ""
         lyricIdleHex = d?.string(forKey: "prefs.lyricIdleHex") ?? ""
+        floatOnNotch = d?.bool(forKey: "prefs.floatOnNotch") ?? false
+        floatDX = d?.object(forKey: "prefs.floatDX") as? Double ?? 0
+        floatDY = d?.object(forKey: "prefs.floatDY") as? Double ?? 0
+        autoHide = d?.bool(forKey: "prefs.autoHide") ?? false
+        idleScale = min(1.5, max(0.6, d?.object(forKey: "prefs.idleScale") as? Double ?? 1))
         scale = d?.object(forKey: "prefs.scale") as? Double ?? 1
         hotKey = (d?.string(forKey: "prefs.hotKey")).flatMap(HotKeyChoice.init) ?? .ctrlOptN
         language = (d?.string(forKey: "prefs.language")).flatMap(Language.init) ?? .id
+        notifyApps = d?.stringArray(forKey: "prefs.notifyApps") ?? ["net.whatsapp.WhatsApp", "com.hnc.Discord"]
         tabOrder = d?.stringArray(forKey: "prefs.tabOrder") ?? NotchModel.Tab.allCases.map(\.rawValue)
         openOnClick = d?.bool(forKey: "prefs.openOnClick") ?? false
         display = (d?.string(forKey: "prefs.display")).flatMap(Display.init) ?? .notch
@@ -289,6 +306,10 @@ struct FeatureToggle: Identifiable {
         FeatureToggle(key: \.weather, defaultsKey: "feature.weather",
                       title: { L("Cuaca di header", "Weather in the header") },
                       hint: { L("Butuh internet dan nama kota (di bawah): kota dan koordinatnya dikirim ke Open-Meteo tiap 30 menit.", "Needs internet and a city (below): the city and its coordinates are sent to Open-Meteo every 30 minutes.") }),
+        FeatureToggle(key: \.appNotifications, defaultsKey: "feature.appNotifications",
+                      title: { L("Notifikasi app lain", "Other apps' notifications") },
+                      hint: { L("WhatsApp, Discord, dan app pilihanmu muncul di notch. Dibaca dari Pusat Notifikasi di Mac ini, perlu Akses Disk Penuh. Isinya tidak disimpan dan tidak dikirim ke mana pun.",
+                                "WhatsApp, Discord and the apps you pick show up in the notch. Read from Notification Center on this Mac; needs Full Disk Access. Contents are never stored or sent anywhere.") }),
         FeatureToggle(key: \.hotkey, defaultsKey: "feature.hotkey",
                       title: { L("Buka dengan shortcut keyboard", "Open with a keyboard shortcut") },
                       hint: { L("Esc atau klik di luar notch menutupnya.", "Esc or a click outside closes it.") }),

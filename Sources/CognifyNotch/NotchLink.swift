@@ -1,7 +1,7 @@
 import Combine
 import Foundation
 
-/// Menulis salinan data Notch untuk Cognify utama. Protokol lengkap: docs/NOTCH_LINK.md di repo Cognify.
+/// Menulis salinan data Notch untuk Cognify utama. Protokol lengkap: docs/notch/protokol-tautan.md di repo Cognify.
 ///
 /// Tidak menulis apa pun sampai pengguna menekan "Hubungkan ke Cognify Notch" di Cognify, yang membuat
 /// `link.json` di folder bersama. Berkas itu hilang atau `enabled` bukan true → data dihapus dan
@@ -13,7 +13,7 @@ final class NotchLink {
     nonisolated static let maxClipboard = 40
     nonisolated static let maxAgenda = 50
 
-    // MARK: - Format berkas (harus sinkron dengan docs/NOTCH_LINK.md)
+    // MARK: - Format berkas (harus sinkron dengan docs/notch/protokol-tautan.md)
 
     struct Consent: Decodable {
         var enabled: Bool?

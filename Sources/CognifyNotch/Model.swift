@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import NotchTime
 import SwiftUI
 
 // MARK: - Timer belajar (Pomodoro)
@@ -138,7 +139,7 @@ final class StudyTimer: ObservableObject {
 final class NotchModel: ObservableObject {
     /// Halaman panel terbuka (digeser dengan panah, titik, atau dua jari).
     enum Tab: String, CaseIterable {
-        case home, music, timer, clock, sky, water, todo, notes, clipboard, tray, mirror, shortcuts
+        case home, music, timer, clock, sky, water, todo, notes, clipboard, tray, mirror, shortcuts, cognify
 
         var icon: String {
             switch self {
@@ -154,6 +155,7 @@ final class NotchModel: ObservableObject {
             case .timer: return "timer"
             case .mirror: return "person.crop.square"
             case .shortcuts: return "bolt.fill"
+            case .cognify: return "books.vertical.fill"
             }
         }
 
@@ -171,6 +173,7 @@ final class NotchModel: ObservableObject {
             case .timer: return "Pomodoro"
             case .mirror: return L("Cermin", "Mirror")
             case .shortcuts: return L("Pintasan", "Shortcuts")
+            case .cognify: return "Cognify"
             }
         }
     }
@@ -201,6 +204,7 @@ final class NotchModel: ObservableObject {
         var weather = false // cuaca di header (internet, perlu nama kota)
         var calculator = true // hitungan & konversi di catatan cepat
         var clockTools = true // halaman stopwatch & hitung mundur
+        var appNotifications = false // notifikasi WhatsApp, Discord, dll di notch (perlu Akses Disk Penuh)
     }
 
     /// Kartu kabar singkat di bawah notch (charger, AirPods, unduhan, Caps Lock, internet).
@@ -237,6 +241,7 @@ final class NotchModel: ObservableObject {
         case join(URL) // rapat online dari Kalender
         case drink // pengingat minum
         case todoDone(UUID) // pengingat tugas
+        case openApp(String) // notifikasi app lain: buka app-nya (bundle id)
     }
 
     /// Isi "sayap" kiri-kanan notch saat tertutup (mirip Live Activity).
@@ -263,6 +268,20 @@ final class NotchModel: ObservableObject {
     @Published var savingNote = false
     @Published var notchSize = CGSize(width: 185, height: 32)
     @Published var hasNotch = true
+    /// Ukuran notch bawaan layar (sebelum pilihan "Ukuran notch diam") dan ukuran layar, untuk membatasi panel di layar kecil.
+    var baseNotchSize = CGSize(width: 185, height: 32)
+    /// Batas atas posisi melayang: di Mac ber-notch, notch melayang tidak boleh masuk ke area notch fisik.
+    var floatMinDY: Double = 0
+    /// Notch melayang yang tidak menempel di tepi atas layar: semua sudutnya membulat.
+    /// Ruang kosong di atas bentuk saat melayang, supaya rim dan lengkung kaca di sisi atas tidak terpotong tepi jendela.
+    var topInset: CGFloat { detached ? 12 : 0 }
+    var detached: Bool { !hasNotch && max(floatMinDY, prefs.floatDY) > 0.5 }
+    var screenSize = CGSize(width: 1728, height: 1117)
+    /// Geseran bentuk notch di dalam jendelanya agar panel terbuka tidak keluar dari layar (notch melayang di dekat tepi).
+    @Published var edgeShift = CGSize.zero
+    /// Notch disembunyikan saat tidak dipakai (Pengaturan > Perilaku); muncul lagi saat kursor menyentuh tepi atas.
+    @Published var autoHidden = false
+    private var idleSince: Date?
     @Published var now = Date()
     @Published private(set) var features = Features()
     @Published private(set) var level: Level?
@@ -293,6 +312,8 @@ final class NotchModel: ObservableObject {
     var skinManager: SkinManager?
     let camera = CameraMirror()
     let shortcuts = ShortcutsModel()
+    /// Ringkasan dan perintah Cognify; aktif hanya selagi Cognify terhubung.
+    let hub = CognifyHub()
     let clipboard = ClipboardHistory()
     let downloads = DownloadWatcher()
     let voice = VoiceNote()
@@ -303,6 +324,7 @@ final class NotchModel: ObservableObject {
     let weather = WeatherFeed()
     let prefs: Preferences
     private let keyboard = KeyboardWatcher()
+    let appNotes = AppNotificationWatcher()
     private let network = NetworkWatcher()
     private let levels = SystemLevels()
     private var levelTask: Task<Void, Never>?
@@ -312,6 +334,8 @@ final class NotchModel: ObservableObject {
     private var noticeTask: Task<Void, Never>?
     /// Notch dibuka lewat ⌃⌥N: jendela notch perlu menerima ketikan (diatur NotchController).
     var onKeyboardOpen: (() -> Void)?
+    /// Dipasang StatusMenu: membuka jendela Pengaturan dari ikon roda gigi di header panel.
+    var onOpenSettings: (() -> Void)?
     let bridge: Bridge?
     private(set) var api: API?
 
@@ -338,7 +362,7 @@ final class NotchModel: ObservableObject {
                           clipboard.objectWillChange.eraseToAnyPublisher(), self.prefs.objectWillChange.eraseToAnyPublisher(),
                           lyrics.objectWillChange.eraseToAnyPublisher(), water.objectWillChange.eraseToAnyPublisher(),
                           todo.objectWillChange.eraseToAnyPublisher(), clock.objectWillChange.eraseToAnyPublisher(),
-                          weather.objectWillChange.eraseToAnyPublisher()] {
+                          weather.objectWillChange.eraseToAnyPublisher(), hub.objectWillChange.eraseToAnyPublisher()] {
             publisher.sink { [weak self] in self?.objectWillChange.send() }.store(in: &changes)
         }
         levels.onChange = { [weak self] level in self?.showLevel(level) }
@@ -347,6 +371,12 @@ final class NotchModel: ObservableObject {
             self?.battery = PowerMonitor.current()
         }
         keyboard.onCapsLock = { [weak self] on in self?.showNotice(.capsLock(on)) }
+        appNotes.allowed = { [weak self] in Set(self?.prefs.notifyApps ?? []) }
+        appNotes.onMessage = { [weak self] message in
+            guard let self, self.features.appNotifications else { return }
+            let title = message.title.isEmpty ? message.app : "\(message.app) · \(message.title)"
+            self.show(.alert(title: title, detail: message.body, action: .openApp(message.bundle)))
+        }
         clock.onFinish = { [weak self] countdown in
             NSSound(named: "Glass")?.play()
             self?.show(.alert(title: L("Timer \(countdown.label) selesai", "\(countdown.label) timer done"),
@@ -440,12 +470,32 @@ final class NotchModel: ObservableObject {
     /// Lebar sayap kiri & kanan saat tertutup.
     var wings: (left: CGFloat, right: CGFloat) {
         guard !expanded, card == nil, let live else { return (0, 0) }
-        if live.eyes { return headMode ? (0, 0) : (Self.eyeWing, Self.eyeWing) }
+        if live.eyes { let w = max(24, (Self.eyeWing * CGFloat(prefs.idleScale)).rounded()); return headMode ? (0, 0) : (w, w) }
         guard let _ = live.title else { return (Self.wing, Self.wing) }
         return live.wideRight ? (Self.wideWing, Self.wideWing) : (Self.songWing, Self.wing)
     }
 
     /// Geser horizontal bentuk notch dari tengah layar (sayap kiri lebih lebar → bergeser ke kiri).
+    /// Skala panel terbuka: pilihan pengguna, tetapi tidak melebihi 80% lebar dan 65% tinggi layar (laptop kecil).
+    var scale: CGFloat {
+        let wanted = CGFloat(prefs.scale)
+        let fitW = screenSize.width * 0.8 / Self.expandedSize.width
+        let fitH = screenSize.height * 0.65 / (Self.expandedSize.height + max(0, baseNotchSize.height - 32))
+        return max(0.6, min(wanted, fitW, fitH))
+    }
+
+    /// Dipanggil sekitar sekali per detik: menyembunyikan notch setelah 3 detik tanpa kegiatan, menampilkannya lagi saat ada.
+    func tickAutoHide() {
+        let busy = expanded || hovering || dropTargeted || card != nil || level != nil || voice.recording
+        guard prefs.autoHide, !detached, !busy else {
+            idleSince = nil
+            if autoHidden { withAnimation(.notch) { autoHidden = false } }
+            return
+        }
+        if idleSince == nil { idleSince = Date() }
+        if !autoHidden, Date().timeIntervalSince(idleSince ?? Date()) >= 3 { withAnimation(.notch) { autoHidden = true } }
+    }
+
     var shapeOffset: CGFloat { (wings.right - wings.left) / 2 }
 
     /// Notch mengambang (Mac tanpa notch) yang sedang diam: tampil sebagai kepala bulat, bukan pil.
@@ -461,15 +511,15 @@ final class NotchModel: ObservableObject {
 
     /// Ukuran panel terbuka. Isi digambar tetap pada ukuran ini, jadi tidak ikut menyusut saat notch menutup.
     var expandedBox: CGSize {
-        let scale = CGFloat(prefs.scale)
-        return CGSize(width: Self.expandedSize.width * scale, height: (Self.expandedSize.height + notchSize.height - 32) * scale)
+        let scale = scale
+        return CGSize(width: Self.expandedSize.width * scale, height: (Self.expandedSize.height + notchSize.height - 32) * scale + (detached ? 12 : 0))
     }
 
     var size: CGSize {
         if headMode { return CGSize(width: Self.headSize, height: Self.headSize) }
         if expanded {
-            let scale = CGFloat(prefs.scale)
-            return CGSize(width: Self.expandedSize.width * scale, height: (Self.expandedSize.height + notchSize.height - 32) * scale)
+            let scale = scale
+            return CGSize(width: Self.expandedSize.width * scale, height: (Self.expandedSize.height + notchSize.height - 32) * scale + (detached ? 12 : 0))
         }
         if card != nil { return CGSize(width: max(notchSize.width + 220, 380), height: notchSize.height + 48) }
         if live != nil { return CGSize(width: barGap + wings.left + wings.right, height: notchSize.height) }
@@ -603,6 +653,7 @@ final class NotchModel: ObservableObject {
             case .todo: return features.todo
             case .clock: return features.clockTools
             case .notes: return appMode
+            case .cognify: return hub.linked
             default: return true
             }
         })
@@ -626,6 +677,7 @@ final class NotchModel: ObservableObject {
         if !next.voice { voice.stop() }
         if !next.lyrics { lyrics.reset() }
         keyboard.setEnabled(next.keyboard)
+        appNotes.setEnabled(next.appNotifications)
         network.setEnabled(next.network)
         todo.setSync(next.remindersSync)
         weather.configure(enabled: next.weather, city: prefs.weatherCity, coords: prefs.weatherCoords)
@@ -895,13 +947,14 @@ final class NotchModel: ObservableObject {
         for event in calendar.events.filter(\.fromCognify) + todo.moodle where !event.allDay && !announcedMeetings.contains(event.id) {
             guard let lead = event.remindMin else { continue }
             let wait = event.start.timeIntervalSince(now)
-            guard wait <= Double(lead) * 60, wait > -60 else { continue }
+            // Sampai 30 menit setelah mulai tetap diumumkan (Mac baru bangun, Notch baru dibuka), dengan label "Terlewat".
+            guard wait <= Double(lead) * 60, wait > -30 * 60 else { continue }
             announcedMeetings.insert(event.id)
             NSSound(named: "Glass")?.play()
-            show(.alert(title: event.title,
-                        detail: wait > 30 ? L("Mulai \(Int((wait / 60).rounded(.up))) menit lagi", "Starts in \(Int((wait / 60).rounded(.up))) min")
-                                          : L("Mulai sekarang", "Starting now"),
-                        action: .open(path: "/calendar")))
+            let detail = wait > 30 ? L("Mulai \(Int((wait / 60).rounded(.up))) menit lagi", "Starts in \(Int((wait / 60).rounded(.up))) min")
+                : wait > -60 ? L("Mulai sekarang", "Starting now")
+                : L("Terlewat \(Int((-wait / 60).rounded())) menit lalu", "Missed \(Int((-wait / 60).rounded())) min ago")
+            show(.alert(title: event.title, detail: detail, action: .open(path: "/calendar")))
         }
     }
 
@@ -920,14 +973,39 @@ final class NotchModel: ObservableObject {
         }
     }
 
+    /// Pengingat dari catatan: waktu yang terbaca (kecuali dimatikan lewat baris pratinjau) masuk ke To-do.
+    @Published var noteReminderOff = false
+
+    private func reminderFromNote(_ raw: String) -> Date? {
+        guard features.todo, !noteReminderOff, let parsed = TimeParser.parse(raw), !parsed.isPast else { return nil }
+        todo.add(raw, due: parsed.date)
+        return parsed.date
+    }
+
+    /// Kirim catatan sebagai dokumen ke Cognify (tanpa mengganggu yang sedang terbuka di sana).
+    func noteToDoc(_ text: String? = nil) {
+        let body = (text ?? note).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !body.isEmpty else { return }
+        if hub.send(.noteToDoc(text: body, title: nil)) {
+            if text == nil { note = ""; noteReminderOff = false }
+            show(.done(L("Dikirim ke Cognify sebagai dokumen", "Sent to Cognify as a document")))
+        } else {
+            show(.failed(L("Cognify belum terhubung", "Cognify is not connected")))
+        }
+    }
+
     func saveNote() {
         if voice.recording { voice.stop() }
-        var text = note.trimmingCharacters(in: .whitespacesAndNewlines)
+        let raw = note.trimmingCharacters(in: .whitespacesAndNewlines)
+        var text = raw
         if features.calculator { text = QuickCalc.annotated(text) }
         if appMode, !text.isEmpty {
             notes.add(text)
+            let due = reminderFromNote(raw)
             note = ""
-            show(.done(L("Catatan tersimpan di tab Catatan", "Saved to the Notes tab")))
+            noteReminderOff = false
+            show(.done(due.map { L("Catatan tersimpan, pengingat \(Relative.long($0, allDay: false, now: now))", "Saved, reminder \(Relative.long($0, allDay: false, now: now))") }
+                      ?? L("Catatan tersimpan di tab Catatan", "Saved to the Notes tab")))
             return
         }
         guard !text.isEmpty, let api, !savingNote else { return }
@@ -935,8 +1013,10 @@ final class NotchModel: ObservableObject {
         Task {
             do {
                 let title = try await api.quickNote(text)
+                let due = reminderFromNote(raw)
                 note = ""
-                show(.done("Catatan “\(title)” tersimpan"))
+                noteReminderOff = false
+                show(.done("Catatan “\(title)” tersimpan" + (due.map { ", pengingat \(Relative.long($0, allDay: false, now: now))" } ?? "")))
                 await load()
             } catch {
                 show(.failed(error.localizedDescription))

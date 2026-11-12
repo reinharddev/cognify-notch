@@ -24,6 +24,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         let menu = NSMenu()
         menu.delegate = self
         item.menu = menu
+        model.onOpenSettings = { [weak self] in self?.showSettings() }
         model.apply(FeatureToggle.saved())
     }
 
@@ -55,14 +56,21 @@ final class StatusMenu: NSObject, NSMenuDelegate {
 
     @objc private func showSettings() {
         if settings == nil {
-            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 780, height: 580),
+            // Muat di layar kecil: tidak melebihi area layar yang terlihat (di bawah menu bar dan notch).
+            let area = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1280, height: 720)
+            let w = min(780, area.width - 40), h = min(580, area.height - 70)
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: w, height: h),
                                   styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
             window.isReleasedWhenClosed = false
             window.titlebarAppearsTransparent = true
             window.titleVisibility = .hidden
-            window.minSize = NSSize(width: 680, height: 460)
+            window.minSize = NSSize(width: min(520, w), height: min(360, h))
             window.contentView = NSHostingView(rootView: SettingsView(model: model, prefs: model.prefs, updater: updater))
             window.center()
+            var f = window.frame
+            f.origin.y = min(f.origin.y, area.maxY - f.height - 40) // di bawah notch yang terbuka
+            f.origin.y = max(f.origin.y, area.minY)
+            window.setFrame(f, display: false)
             settings = window
         }
         settings?.title = L("Pengaturan Cognify Notch", "Cognify Notch Settings")

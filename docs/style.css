@@ -312,9 +312,9 @@ body.dark .lead { color: rgba(244, 239, 230, .7); }
 .d-right { gap: 12px; font-variant-numeric: tabular-nums; font-weight: 600; }
 .shape { position: absolute; display: block; }
 .shape.sun { width: 26%; aspect-ratio: 1; border-radius: 50%; background: #ffd23f; right: 9%; top: 14%; }
-.shape.hill.a { width: 80%; aspect-ratio: 2 / 1; border-radius: 50% 50% 0 0; background: #ff7a59; left: -18%; bottom: -22%; }
-.shape.hill.b { width: 70%; aspect-ratio: 2 / 1; border-radius: 50% 50% 0 0; background: #3fb27f; right: -14%; bottom: -26%; }
-.shape.hill.c { width: 40%; aspect-ratio: 2 / 1; border-radius: 50% 50% 0 0; background: #5b52e0; left: 34%; bottom: -12%; }
+.shape.hill.a { width: 24%; aspect-ratio: 1; border-radius: 50%; background: #ff7a59; left: 6%; bottom: 8%; }
+.shape.hill.b { width: 20%; aspect-ratio: 1; border-radius: 50%; background: #3fb27f; right: 5%; bottom: 8%; }
+.shape.hill.c { width: 16%; aspect-ratio: 1; border-radius: 50%; background: #5b52e0; left: 42%; bottom: 14%; }
 .win { position: absolute; background: #fffdf8; border-radius: 12px; padding: 0 16px 16px; box-shadow: 0 10px 0 rgba(20, 20, 20, .14); z-index: 1; }
 .win-bar { display: flex; align-items: center; gap: 6px; height: 30px; font-size: 11px; color: var(--muted); }
 .win-bar i { width: 9px; height: 9px; border-radius: 50%; background: #e2ddd3; }

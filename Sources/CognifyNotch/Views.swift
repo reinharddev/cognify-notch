@@ -1,3 +1,4 @@
+import NotchTime
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -49,6 +50,7 @@ struct NotchRoot: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            Color.clear.frame(height: model.topInset)
             ZStack(alignment: .top) {
                 // Tema kaca mencakup notch terbuka dan tertutup, termasuk sayap dengan mata.
                 let glass = model.prefs.activeTheme == .glass
@@ -74,12 +76,14 @@ struct NotchRoot: View {
                 }
                 content
                     .id(model.prefs.accentHex) // ganti warna aksen: gambar ulang semua isi
-                    .padding(.horizontal, model.expanded ? 12 : model.headMode ? 0 : 6) // di dalam lengkungan atas
+                    .padding(.horizontal, model.expanded ? (model.detached ? 20 : 12) : model.headMode ? 0 : 6) // di dalam lengkungan atas
+                    .padding(.top, model.expanded && model.detached ? 12 : 0)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                     .clipShape(bodyShape)
             }
             .frame(width: model.size.width, height: model.size.height)
-            .offset(x: model.shapeOffset)
+            .offset(x: model.shapeOffset + model.edgeShift.width, y: model.edgeShift.height + (model.autoHidden ? -(model.size.height + 12) : 0))
+            .opacity(model.autoHidden ? 0 : 1)
             .animation(.easeInOut(duration: 0.4), value: model.tab == .sky)
             .animation(.notch, value: model.expanded) // menutup saat pindah tab tetap meluncur, tidak melompat
             Spacer(minLength: 0)
@@ -92,7 +96,12 @@ struct NotchRoot: View {
     }
 
     private var bodyShape: AnyShape {
-        model.headMode ? AnyShape(Circle()) : AnyShape(NotchShape(top: model.expanded ? 12 : 6, bottom: model.expanded ? CGFloat(model.prefs.roundness) : 12))
+        if model.headMode { return AnyShape(Circle()) }
+        if model.detached {
+            let r = model.expanded ? max(16, CGFloat(model.prefs.roundness)) : min(14, model.size.height / 2)
+            return AnyShape(RoundedRectangle(cornerRadius: r, style: .continuous))
+        }
+        return AnyShape(NotchShape(top: model.expanded ? 12 : 6, bottom: model.expanded ? CGFloat(model.prefs.roundness) : 12))
     }
 
     @ViewBuilder private var content: some View {
@@ -101,11 +110,11 @@ struct NotchRoot: View {
                 .transition(.opacity.combined(with: .scale(scale: 0.8)))
         } else if model.expanded {
             // Ukuran "Besar": isi digambar pada ukuran normal lalu diperbesar dari atas.
-            let scale = CGFloat(model.prefs.scale)
+            let scale = model.scale
             ExpandedView(model: model)
-                .frame(width: (model.expandedBox.width - 24) / scale, height: model.expandedBox.height / scale)
+                .frame(width: (model.expandedBox.width - (model.detached ? 40 : 24)) / scale, height: model.expandedBox.height / scale)
                 .scaleEffect(scale, anchor: .top)
-                .frame(width: model.expandedBox.width - 24, height: model.expandedBox.height, alignment: .top)
+                .frame(width: model.expandedBox.width - (model.detached ? 40 : 24), height: model.expandedBox.height, alignment: .top)
                 .transition(.asymmetric(
                     insertion: .opacity.combined(with: .scale(scale: 0.96, anchor: .top)).animation(.notch.delay(0.06)),
                     removal: .opacity.animation(.easeIn(duration: 0.2))
@@ -135,14 +144,17 @@ struct LiveWings: View {
     var lyrics: LyricsService? = nil
     var onBannerDone: (String) -> Void = { _ in }
 
+    /// Mata mengecil bersama sayapnya supaya tidak terpotong.
+    private var eyeScale: CGFloat { min(1, max(0.75, (min(wings.left, wings.right) - 6) / 24)) }
+
     var body: some View {
         if live.eyes {
             // Notch fisik sebagai wajah: satu mata di tiap sisinya.
             HStack(spacing: 0) {
                 if let face {
-                    Eye(face: face, right: false).frame(width: max(0, wings.left - 6), alignment: .trailing)
+                    Eye(face: face, right: false).scaleEffect(eyeScale, anchor: .trailing).frame(width: max(0, wings.left - 6), alignment: .trailing)
                     Color.clear.frame(width: gap)
-                    Eye(face: face, right: true).frame(width: max(0, wings.right - 6), alignment: .leading)
+                    Eye(face: face, right: true).scaleEffect(eyeScale, anchor: .leading).frame(width: max(0, wings.right - 6), alignment: .leading)
                 }
             }
             .modifier(Wobble(kind: face?.rx ?? .none, amp: 2, t: face?.rxT ?? 0))
@@ -405,6 +417,7 @@ struct ExpandedView: View {
         case .timer: TimerPanel(timer: model.timer)
         case .mirror: MirrorPanel(camera: model.camera)
         case .shortcuts: ShortcutsPanel(model: model, shortcuts: model.shortcuts)
+        case .cognify: CognifyPanel(model: model, hub: model.hub)
         }
     }
 
@@ -416,7 +429,8 @@ struct ExpandedView: View {
     private var header: some View {
         GeometryReader { geo in
             // Lebar notch fisik dalam koordinat isi (isi diperbesar `scale` kali saat ukuran Besar).
-            let gap = model.notchSize.width / CGFloat(model.prefs.scale) + 10
+            // Tanpa notch fisik (melayang) tidak ada yang perlu dihindari di tengah, jadi sisi kanan boleh lebih lebar.
+            let gap = model.hasNotch ? model.notchSize.width / model.scale + 10 : 16
             let side = max(0, (geo.size.width - gap) / 2)
             HStack(spacing: 0) {
                 HStack(spacing: 6) {
@@ -449,6 +463,13 @@ struct ExpandedView: View {
                         .font(.system(size: 11.5, weight: .semibold).monospacedDigit())
                         .foregroundStyle(headInk.opacity(0.8))
                         .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Button { model.onOpenSettings?() } label: {
+                        Image(systemName: "gearshape.fill").font(.system(size: 11.5, weight: .semibold)).foregroundStyle(headInk.opacity(0.8))
+                    }
+                    .buttonStyle(.plain)
+                    .help(L("Pengaturan", "Settings"))
                     if model.features.media, model.media.nowPlaying?.playing == true {
                         Equalizer(playing: true, spectrum: model.spectrum)
                     }
@@ -779,19 +800,14 @@ struct CalendarRow: View {
                     RoundedRectangle(cornerRadius: 2).fill(event.color).frame(width: 4, height: 24).frame(width: 24)
                     VStack(alignment: .leading, spacing: 1) {
                         Text(event.title).font(.system(size: 12, weight: .medium)).lineLimit(1)
-                        Text(compact ? "\(Relative.long(event.start, allDay: event.allDay, now: now)) · \(event.calendar)" : event.calendar)
+                        Text("\(Relative.long(event.start, allDay: event.allDay, now: now)) · \(event.calendar)")
                             .font(.system(size: 10.5)).foregroundStyle(.white.opacity(0.5)).lineLimit(1)
-                        if let description = event.notes?.trimmingCharacters(in: .whitespacesAndNewlines), !description.isEmpty {
+                        if compact, let description = event.notes?.trimmingCharacters(in: .whitespacesAndNewlines), !description.isEmpty {
                             Text(description).font(.system(size: 9.5)).foregroundStyle(.white.opacity(0.62))
                                 .lineLimit(1).truncationMode(.tail)
                         }
                     }
                     Spacer(minLength: 6)
-                    if !compact {
-                        Text(Relative.long(event.start, allDay: event.allDay, now: now))
-                            .font(.system(size: 10.5, weight: .medium).monospacedDigit())
-                            .foregroundStyle(.white.opacity(0.6)).lineLimit(1)
-                    }
                 }
                 .padding(.horizontal, 6).padding(.vertical, 2)
                 .contentShape(Rectangle())
@@ -813,12 +829,16 @@ struct CalendarRow: View {
                     Label(compact ? "" : L("Gabung", "Join"), systemImage: "video.fill").labelStyle(.titleAndIcon)
                 }
                 .buttonStyle(PillButtonStyle(prominent: true))
+                .padding(.trailing, 4)
                 .help(L("Gabung rapat", "Join meeting"))
             }
         }
-        .background(RoundedRectangle(cornerRadius: 9).fill(Color.white.opacity(hover ? 0.08 : 0)))
+        .background(RoundedRectangle(cornerRadius: 9).fill(Color.white.opacity(hover || imminent ? 0.07 : 0)))
         .notchHover { hover = $0 }
     }
+
+    /// Acara yang segera mulai atau sedang berlangsung diberi latar, seperti desain.
+    private var imminent: Bool { !event.allDay && (event.joinable(at: now) || event.start.timeIntervalSince(now) < 60 * 60 && event.start > now) }
 }
 
 struct QuickNote: View {
@@ -828,6 +848,34 @@ struct QuickNote: View {
     @Environment(\.snapshot) private var snapshot
     @State private var currencyResult: String?
     @State private var currencyFailed = false
+
+    /// Waktu yang terbaca dari catatan; pengingat dibuat saat Enter, kecuali dimatikan.
+    private var reminder: ParsedTime? { model.features.todo ? TimeParser.parse(model.note) : nil }
+    private var calcActive: Bool {
+        model.features.calculator && (QuickCalc.currencyPair(model.note) != nil || QuickCalc.preview(model.note) != nil)
+    }
+
+    @ViewBuilder private var reminderLine: some View {
+        if let reminder {
+            if reminder.isPast {
+                Label(L("Waktu sudah lewat, pengingat tidak dibuat", "Time has passed, no reminder"), systemImage: "clock.badge.exclamationmark")
+                    .font(.system(size: 10.5)).foregroundStyle(Color.orange).lineLimit(1)
+            } else {
+                Button { model.noteReminderOff.toggle() } label: {
+                    let when = Relative.long(reminder.date, allDay: false, now: model.now) + (reminder.tentative ? "?" : "")
+                    Label(model.noteReminderOff ? L("Pengingat dimatikan", "Reminder off") : L("Pengingat: ", "Reminder: ") + when,
+                          systemImage: model.noteReminderOff ? "bell.slash" : "bell.fill")
+                        .font(.system(size: 10.5, weight: .semibold))
+                        .foregroundStyle(model.noteReminderOff ? .white.opacity(0.4) : Color.accent)
+                        .strikethrough(model.noteReminderOff)
+                        .lineLimit(1)
+                }
+                .buttonStyle(.plain)
+                .help(model.noteReminderOff ? L("Klik untuk menyalakan pengingat", "Click to turn the reminder on")
+                                            : L("Dibuat saat Enter · klik untuk mematikan", "Created on Enter · click to turn off"))
+            }
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -845,13 +893,19 @@ struct QuickNote: View {
                     TextField(L("Tulis sesuatu, tekan Enter…", "Type something, press Enter…"), text: $model.note, axis: .vertical)
                         .textFieldStyle(.plain)
                         .font(.system(size: 12))
-                        .lineLimit(3, reservesSpace: true)
+                        .lineLimit(compact ? 3 : 1, reservesSpace: compact)
                         .focused($focused)
                         .onSubmit { model.saveNote() }
                         .padding(8)
+                        .padding(.trailing, compact ? 0 : 26)
+                }
+                if !compact && model.features.voice {
+                    MicButton(voice: model.voice, toggle: model.toggleVoice)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+                        .padding(.trailing, 8)
                 }
             }
-            .frame(height: 66)
+            .frame(height: compact ? 66 : 36)
             HStack(spacing: 5) {
                 if model.features.calculator, QuickCalc.currencyPair(model.note) != nil {
                     if let currencyResult {
@@ -881,18 +935,28 @@ struct QuickNote: View {
                     }
                     .buttonStyle(.plain)
                     .help(L("Klik untuk menyalin hasil", "Click to copy the result"))
+                } else if reminder != nil {
+                    reminderLine
                 } else if !compact {
-                    Image(systemName: "tray.and.arrow.down").font(.system(size: 10))
-                    Text(model.appMode ? L("Seret file ke notch → tray", "Drop files on the notch → tray") : L("Seret file atau tautan ke notch", "Drop files or links on the notch")).font(.system(size: 10.5))
+                    Text(model.savingNote ? L("Menyimpan…", "Saving…") : L("Enter menyimpan ke Catatan", "Enter saves to Notes")).font(.system(size: 10.5))
                 }
                 Spacer()
-                if model.features.voice { MicButton(voice: model.voice, toggle: model.toggleVoice) }
-                Button(model.savingNote ? L("Menyimpan…", "Saving…") : L("Simpan", "Save")) { model.saveNote() }
-                    .buttonStyle(PillButtonStyle(prominent: true))
-                    .disabled(model.note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || model.savingNote)
+                if model.hub.linked {
+                    Button(L("Jadikan dokumen", "Make doc")) { model.noteToDoc() }
+                        .buttonStyle(PillButtonStyle(prominent: false))
+                        .disabled(model.note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+                if calcActive, reminder != nil { reminderLine }
+                if compact {
+                    if model.features.voice { MicButton(voice: model.voice, toggle: model.toggleVoice) }
+                    Button(model.savingNote ? L("Menyimpan…", "Saving…") : L("Simpan", "Save")) { model.saveNote() }
+                        .buttonStyle(PillButtonStyle(prominent: true))
+                        .disabled(model.note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || model.savingNote)
+                }
             }
             .foregroundStyle(.white.opacity(0.5))
         }
+        .onChange(of: model.note) { if $0.isEmpty { model.noteReminderOff = false } }
         .task(id: model.note) {
             currencyResult = nil
             currencyFailed = false
@@ -1167,6 +1231,10 @@ struct NoteRow: View {
             if hover {
                 Button { notes.copy(note); model.show(.done(L("Catatan disalin", "Note copied"))) } label: { Image(systemName: "doc.on.doc") }
                     .buttonStyle(.plain).help(L("Salin", "Copy"))
+                if model.hub.linked {
+                    Button { model.noteToDoc(note.text) } label: { Image(systemName: "doc.badge.plus") }
+                        .buttonStyle(.plain).help(L("Jadikan dokumen di Cognify", "Make a Cognify doc"))
+                }
                 Button { notes.remove(note) } label: { Image(systemName: "trash") }
                     .buttonStyle(.plain).help(L("Hapus", "Delete"))
             }
@@ -1226,6 +1294,12 @@ struct ToastBanner: View {
                         .buttonStyle(PillButtonStyle(prominent: true, large: true))
                 case .open(let path):
                     Button(L("Buka", "Open")) { model.toast = nil; model.open(path) }.buttonStyle(PillButtonStyle(prominent: true, large: true))
+                case .openApp(let bundle):
+                    Button(L("Buka", "Open")) {
+                        model.toast = nil
+                        if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundle) { NSWorkspace.shared.openApplication(at: url, configuration: .init()) }
+                        model.setExpanded(false)
+                    }.buttonStyle(PillButtonStyle(prominent: true, large: true))
                 }
             }
         }
@@ -1241,6 +1315,7 @@ struct ToastBanner: View {
         case .alert(_, _, .join?): return "video.fill"
         case .alert(_, _, .drink?): return "drop.fill"
         case .alert(_, _, .todoDone?): return "checklist"
+        case .alert(_, _, .openApp?): return "message.fill"
         default: return "bell.fill"
         }
     }

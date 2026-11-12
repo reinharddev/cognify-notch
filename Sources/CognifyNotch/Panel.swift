@@ -28,7 +28,7 @@ final class NotchPanel: NSPanel {
 @MainActor
 final class NotchController {
     /// Cukup untuk panel terbuka + bayangannya; area transparan lainnya meneruskan klik.
-    static let windowSize = CGSize(width: 820, height: 330)
+    static let windowSize = CGSize(width: 1060, height: 420)
 
     private let panel = NotchPanel()
     private let model: NotchModel
@@ -74,7 +74,7 @@ final class NotchController {
         }
         fallback?.tolerance = 0.5
         model.$expanded.removeDuplicates().sink { [weak self] _ in
-            DispatchQueue.main.async { self?.wake() }
+            DispatchQueue.main.async { self?.updateEdgeShift(); self?.wake() }
         }.store(in: &cancellables)
         wake()
         model.$expanded.removeDuplicates().sink { [weak self] expanded in
@@ -100,6 +100,26 @@ final class NotchController {
             }
             return event
         }
+        // Seret notch melayang untuk memindahkannya (seperti di Windows).
+        for mask: NSEvent.EventTypeMask in [.leftMouseDown, .leftMouseDragged, .leftMouseUp] {
+            NSEvent.addGlobalMonitorForEvents(matching: mask) { [weak self] event in
+                let type = event.type
+                MainActor.assumeIsolated { self?.drag(type) }
+            }
+            NSEvent.addLocalMonitorForEvents(matching: mask) { [weak self] event in
+                let type = event.type
+                MainActor.assumeIsolated { self?.drag(type) }
+                return event
+            }
+        }
+        model.prefs.$floatDX.dropFirst().sink { [weak self] _ in DispatchQueue.main.async { self?.place() } }.store(in: &cancellables)
+        model.prefs.$floatDY.dropFirst().sink { [weak self] _ in DispatchQueue.main.async { self?.place() } }.store(in: &cancellables)
+        model.prefs.$idleScale.dropFirst().sink { [weak self] _ in
+            DispatchQueue.main.async { self?.applyIdleScale() }
+        }.store(in: &cancellables)
+        model.prefs.$floatOnNotch.dropFirst().sink { [weak self] _ in
+            DispatchQueue.main.async { self?.place() }
+        }.store(in: &cancellables)
         model.prefs.$display.dropFirst().sink { [weak self] _ in
             DispatchQueue.main.async { self?.place() }
         }.store(in: &cancellables)
@@ -164,25 +184,105 @@ final class NotchController {
         guard let target else { return }
         screen = target
         let frame = target.frame
-        if target.safeAreaInsets.top > 0 {
+        if target.safeAreaInsets.top > 0 && !model.prefs.floatOnNotch {
             let left = target.auxiliaryTopLeftArea?.width ?? 0
             let right = target.auxiliaryTopRightArea?.width ?? 0
-            model.notchSize = CGSize(width: max(120, frame.width - left - right), height: target.safeAreaInsets.top)
+            model.baseNotchSize = CGSize(width: max(120, frame.width - left - right), height: target.safeAreaInsets.top)
             model.hasNotch = true
         } else {
             let menuBar = max(24, frame.maxY - target.visibleFrame.maxY)
-            model.notchSize = CGSize(width: 190, height: menuBar)
+            model.baseNotchSize = CGSize(width: 190, height: menuBar)
             model.hasNotch = false
         }
+        model.screenSize = frame.size
+        model.floatMinDY = target.safeAreaInsets.top > 0 ? Double(target.safeAreaInsets.top) + 2 : 0
+        applyIdleScale()
         let size = Self.windowSize
-        panel.setFrame(NSRect(x: frame.midX - size.width / 2, y: frame.maxY - size.height, width: size.width, height: size.height), display: true)
+        // Notch melayang boleh dipindah dengan menyeretnya; geseran dijaga tetap di dalam layar.
+        var dx = 0.0, dy = 0.0
+        if !model.hasNotch {
+            dx = max(-(frame.width / 2 - 60), min(frame.width / 2 - 60, model.prefs.floatDX))
+            dy = max(model.floatMinDY, min(frame.height - 120, model.prefs.floatDY))
+        }
+        let base = NSRect(x: frame.midX - size.width / 2 + dx, y: frame.maxY - size.height - dy + model.topInset, width: size.width, height: size.height)
+        baseFrame = base
+        if model.detached && model.prefs.autoHide { model.prefs.autoHide = false } // melayang tidak bisa bersembunyi di tepi atas
+        panel.setFrame(base, display: true)
+        model.edgeShift = .zero
+    }
+
+    /// Posisi jendela saat notch tertutup (sebelum digeser untuk panel terbuka).
+    private var baseFrame: NSRect?
+
+    /// Notch melayang yang dibuka dekat tepi kiri, kanan, atau bawah layar: jendelanya digeser supaya panel penuh
+    /// terlihat. Bentuk diberi geseran awal yang sama dengan arah sebaliknya lalu meluncur ke 0, jadi tidak melompat.
+    private func updateEdgeShift() {
+        guard let screen, let base = baseFrame else { return }
+        if model.expanded && !model.hasNotch {
+            let area = screen.visibleFrame.insetBy(dx: 8, dy: 8)
+            let size = model.size
+            let left = base.midX - size.width / 2 + model.shapeOffset
+            var sx: CGFloat = 0, sy: CGFloat = 0
+            if size.width >= area.width { sx = area.midX - (left + size.width / 2) }
+            else if left < area.minX { sx = area.minX - left }
+            else if left + size.width > area.maxX { sx = area.maxX - (left + size.width) }
+            let bottom = base.maxY - model.topInset - size.height
+            if bottom < area.minY { sy = area.minY - bottom }
+            guard sx != 0 || sy != 0 else { return }
+            let target = base.offsetBy(dx: sx, dy: sy)
+            guard panel.frame != target else { return }
+            panel.setFrame(target, display: true)
+            var t = Transaction(); t.disablesAnimations = true
+            withTransaction(t) { model.edgeShift = CGSize(width: -sx, height: sy) } // SwiftUI y ke bawah
+            withAnimation(.notch) { model.edgeShift = .zero }
+        } else if panel.frame != base, !model.expanded {
+            // Menutup: bentuk meluncur ke posisi lama, lalu jendela dikembalikan.
+            let back = CGSize(width: base.midX - panel.frame.midX, height: panel.frame.minY - base.minY)
+            withAnimation(.notch) { model.edgeShift = back }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.55) { [weak self] in
+                guard let self, !self.model.expanded, let base = self.baseFrame else { return }
+                var t = Transaction(); t.disablesAnimations = true
+                withTransaction(t) { self.model.edgeShift = .zero }
+                self.panel.setFrame(base, display: true)
+            }
+        }
+    }
+
+    private var dragStart: (mouse: NSPoint, dx: Double, dy: Double)?
+
+    private func drag(_ type: NSEvent.EventType) {
+        let mouse = NSEvent.mouseLocation
+        switch type {
+        case .leftMouseDown:
+            dragStart = nil
+            guard !model.hasNotch, !model.expanded, hotRect(margin: 4).contains(mouse) else { return }
+            dragStart = (mouse, model.prefs.floatDX, model.prefs.floatDY)
+        case .leftMouseDragged:
+            guard let s = dragStart, !model.expanded else { return }
+            let mx = mouse.x - s.mouse.x, my = mouse.y - s.mouse.y
+            guard abs(mx) + abs(my) > 4 else { return }
+            model.prefs.floatDX = s.dx + mx
+            model.prefs.floatDY = s.dy - my
+            place()
+        default:
+            dragStart = nil
+        }
+    }
+
+    /// Ukuran notch diam = ukuran bawaan layar × pilihan pengguna. Di Mac ber-notch tidak lebih kecil dari notch fisik.
+    private func applyIdleScale() {
+        let s = CGFloat(model.prefs.idleScale)
+        let f = model.hasNotch ? max(1, s) : s
+        let base = model.baseNotchSize
+        model.notchSize = CGSize(width: (base.width * f).rounded(), height: model.hasNotch ? base.height : max(20, (base.height * f).rounded()))
     }
 
     /// Area notch saat ini (koordinat layar), sedikit diperlebar supaya mudah dituju.
     private func hotRect(margin: CGFloat) -> NSRect {
-        guard let frame = screen?.frame else { return .zero }
+        guard screen != nil else { return .zero }
+        let frame = panel.frame // ikut bergeser saat notch melayang dipindah
         let size = model.size
-        return NSRect(x: frame.midX - size.width / 2 + model.shapeOffset, y: frame.maxY - size.height, width: size.width, height: size.height)
+        return NSRect(x: frame.midX - size.width / 2 + model.shapeOffset, y: frame.maxY - model.topInset - size.height, width: size.width, height: size.height)
             .insetBy(dx: -margin, dy: -margin)
     }
 
@@ -194,6 +294,7 @@ final class NotchController {
 
     private func wake() {
         model.noteActivity()
+        model.tickAutoHide()
         // "Layar yang sedang dipakai": notch pindah begitu kursor pindah ke layar lain.
         if model.prefs.display == .active, !model.expanded,
            let here = NSScreen.screens.first(where: { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) }), here != screen {
@@ -329,6 +430,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // Menyalin data ke Cognify hanya setelah pengguna menghubungkannya di Cognify.
             link = NotchLink(model: model)
             link?.start()
+            model.hub.start()
             widgetExport = WidgetExport(model: model)
             widgetExport?.start()
             skinManager = SkinManager(model: model)

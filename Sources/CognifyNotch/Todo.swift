@@ -1,5 +1,6 @@
 import CryptoKit
 import EventKit
+import NotchTime
 import SwiftUI
 
 /// Daftar tugas dengan pengingat. Tanpa sinkron: tugas di UserDefaults Mac ini, yang selesai
@@ -252,140 +253,10 @@ final class TodoStore: ObservableObject {
         return due
     }
 
-    private nonisolated static let monthNumbers: [String: Int] = [
-        "januari": 1, "january": 1, "jan": 1, "februari": 2, "pebruari": 2, "february": 2, "feb": 2,
-        "maret": 3, "march": 3, "mar": 3, "april": 4, "apr": 4, "mei": 5, "may": 5,
-        "juni": 6, "june": 6, "jun": 6, "juli": 7, "july": 7, "jul": 7,
-        "agustus": 8, "august": 8, "agu": 8, "agt": 8, "aug": 8,
-        "september": 9, "sept": 9, "sep": 9, "oktober": 10, "october": 10, "okt": 10, "oct": 10,
-        "november": 11, "nopember": 11, "nov": 11, "desember": 12, "december": 12, "des": 12, "dec": 12,
-    ]
-    private nonisolated static let weekdayNumbers: [String: Int] = [
-        "minggu": 1, "ahad": 1, "sunday": 1, "senin": 2, "monday": 2, "selasa": 3, "tuesday": 3,
-        "rabu": 4, "wednesday": 4, "kamis": 5, "thursday": 5, "jumat": 6, "jum'at": 6, "jumaat": 6, "friday": 6,
-        "sabtu": 7, "saturday": 7,
-    ]
-
-    /// Cari pola pertama di teks; mengembalikan grup (0 = seluruh cocokan) dan rentangnya.
-    private nonisolated static func find(_ pattern: String, in text: String) -> (groups: [String?], range: Range<String.Index>)? {
-        guard let regex = try? NSRegularExpression(pattern: pattern),
-              let m = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
-              let range = Range(m.range, in: text) else { return nil }
-        let groups = (0..<m.numberOfRanges).map { i in Range(m.range(at: i), in: text).map { String(text[$0]) } }
-        return (groups, range)
-    }
-
-    /// Tanggal dari teks (huruf kecil); bagian yang dikenali dihapus dari `text`. Mendukung:
-    /// 25/10/2026, 25-10-2026, 25.10.2026, 25/10 (tahun ini; 2 bagian hanya dengan garis miring), 25 oktober 2026, 25 okt, oct 25 2026,
-    /// "tgl 25" (bulan ini), "bulan oktober", "tahun 2027", hari ini/besok/lusa, nama hari, "minggu depan".
-    /// Tanggal D atau DD, bulan M atau MM atau nama, tahun harus 4 angka. Tanpa tahun: tahun ini, atau tahun depan bila sudah lewat.
-    nonisolated static func parseDay(_ text: inout String, now: Date) -> (date: Date, weekday: Bool)? {
-        let cal = Calendar.current
-        let today = cal.startOfDay(for: now)
-        let thisYear = cal.component(.year, from: now)
-        let names = monthNumbers.keys.sorted { $0.count > $1.count }.joined(separator: "|")
-
-        func make(_ d: Int, _ m: Int, _ y: Int?) -> Date? {
-            guard (1...12).contains(m), (1...31).contains(d) else { return nil }
-            var c = DateComponents(); c.day = d; c.month = m; c.year = y ?? thisYear
-            guard let date = cal.date(from: c), cal.component(.day, from: date) == d else { return nil } // 31 Februari tidak ada
-            if y == nil, date < today { c.year = thisYear + 1; return cal.date(from: c) }
-            return date
-        }
-        func take(_ found: (groups: [String?], range: Range<String.Index>), _ date: Date?, weekday: Bool = false) -> (Date, Bool)? {
-            guard let date else { return nil }
-            text.replaceSubrange(found.range, with: " ")
-            return (date, weekday)
-        }
-        func int(_ s: String?) -> Int? { s.flatMap { Int($0) } }
-
-        // 25/10/2026, 25-10-2026, 25.10.2026, 25/10, 25-10 (titik tanpa tahun dianggap jam 25.10 → bukan tanggal)
-        if let f = find(#"(?<![\d/.\-:])(\d{1,2})([/\-.])(\d{1,2})(?:\2(\d{4}))?(?![\d:])"#, in: text),
-           f.groups[4] != nil || f.groups[2] == "/", // 2 bagian hanya dengan "/" ("bab 1-2" dan "14.30" bukan tanggal)
-           let r = take(f, make(int(f.groups[1]) ?? 0, int(f.groups[3]) ?? 0, int(f.groups[4]))) { return (r.0, r.1) }
-        // 25 oktober 2026, 25 okt, 25th oct
-        if let f = find(#"\b(\d{1,2})(?:st|nd|rd|th)?\s+("# + names + #")\b(?:\s+(\d{4})\b)?"#, in: text),
-           let r = take(f, make(int(f.groups[1]) ?? 0, monthNumbers[f.groups[2] ?? ""] ?? 0, int(f.groups[3]))) { return (r.0, r.1) }
-        // oct 25, 2026
-        if let f = find(#"\b("# + names + #")\s+(\d{1,2})(?:st|nd|rd|th)?\b(?:,?\s+(\d{4})\b)?"#, in: text),
-           let r = take(f, make(int(f.groups[2]) ?? 0, monthNumbers[f.groups[1] ?? ""] ?? 0, int(f.groups[3]))) { return (r.0, r.1) }
-        // minggu/bulan/tahun depan
-        if let f = find(#"\b(?:minggu depan|next week)\b"#, in: text), let r = take(f, cal.date(byAdding: .day, value: 7, to: today)) { return (r.0, r.1) }
-        if let f = find(#"\b(?:bulan depan|next month)\b"#, in: text), let r = take(f, cal.date(byAdding: .month, value: 1, to: today)) { return (r.0, r.1) }
-        if let f = find(#"\b(?:tahun depan|next year)\b"#, in: text), let r = take(f, cal.date(byAdding: .year, value: 1, to: today)) { return (r.0, r.1) }
-        // tahun 2027
-        if let f = find(#"\b(?:tahun|year)\s+(\d{4})\b"#, in: text), let y = int(f.groups[1]), y >= thisYear {
-            var c = DateComponents(); c.year = y; c.month = 1; c.day = 1
-            let date = y == thisYear ? today : cal.date(from: c)
-            if let r = take(f, date) { return (r.0, r.1) }
-        }
-        // bulan oktober
-        if let f = find(#"\b(?:bulan|month|in)\s+("# + names + #")\b"#, in: text), let m = monthNumbers[f.groups[1] ?? ""] {
-            let date = m == cal.component(.month, from: now) ? today : make(1, m, nil)
-            if let r = take(f, date) { return (r.0, r.1) }
-        }
-        // tgl 25 / tanggal 25 (bulan ini, atau bulan depan bila sudah lewat)
-        if let f = find(#"\b(?:tgl|tanggal|date)\.?\s*(\d{1,2})\b(?![/.:\-]\d)"#, in: text), let d = int(f.groups[1]) {
-            let month = cal.component(.month, from: now)
-            var date = make(d, month, thisYear)
-            if let current = date, current < today {
-                date = cal.date(byAdding: .month, value: 1, to: cal.date(from: DateComponents(year: thisYear, month: month, day: 1)) ?? today)
-                    .flatMap { cal.date(bySetting: .day, value: d, of: $0) }
-            }
-            if let r = take(f, date) { return (r.0, r.1) }
-        }
-        // hari ini, besok, lusa
-        if let f = find(#"\b(?:lusa|day after tomorrow)\b"#, in: text), let r = take(f, cal.date(byAdding: .day, value: 2, to: today)) { return (r.0, r.1) }
-        if let f = find(#"\b(?:besok|tomorrow)\b"#, in: text), let r = take(f, cal.date(byAdding: .day, value: 1, to: today)) { return (r.0, r.1) }
-        if let f = find(#"\b(?:hari ini|today)\b"#, in: text), let r = take(f, today) { return (r.0, r.1) }
-        // nama hari
-        let days = weekdayNumbers.keys.sorted { $0.count > $1.count }.joined(separator: "|")
-        if let f = find(#"\b(?:hari\s+)?("# + days + #")\b(?!\s+(?:ini|lalu|depan))"#, in: text), let wd = weekdayNumbers[f.groups[1] ?? ""] {
-            let ahead = (wd - cal.component(.weekday, from: now) + 7) % 7
-            if let r = take(f, cal.date(byAdding: .day, value: ahead, to: today), weekday: true) { return (r.0, r.1) }
-        }
-        return nil
-    }
-
-    /// Waktu dari teks: tanggal (lihat `parseDay`) dan/atau jam: "jam 7", "pukul 19.30", "14:00", "besok jam 9",
-    /// "at 5pm", "25 oktober", "senin jam 10". Tanggal tanpa jam = pukul 09.00.
+    /// Waktu dari teks bebas ("besok jam 10", "2 jam lagi", "jam setengah 8"); lihat `TimeParser`. Nil bila tidak ada atau sudah lewat.
     nonisolated static func parseDue(_ text: String, now: Date = Date()) -> Date? {
-        var lower = text.lowercased()
-        let parsed = parseDay(&lower, now: now)
-        let pattern = #"(?:\b(?:jam|pukul|at)|@)\s*(\d{1,2})(?:[.:](\d{2}))?\s*(am|pm|pagi|siang|sore|malam)?|\b(\d{1,2})[.:](\d{2})\b"#
-        let m = try? NSRegularExpression(pattern: pattern).firstMatch(in: lower, range: NSRange(lower.startIndex..., in: lower))
-        func group(_ i: Int) -> String? { m.flatMap { Range($0.range(at: i), in: lower) }.map { String(lower[$0]) } }
-        var hour = 9, minute = 0
-        var period: String?
-        if m != nil {
-            guard let h = Int(group(1) ?? group(4) ?? ""), h < 24 else { return nil }
-            hour = h
-            minute = Int(group(2) ?? group(5) ?? "0") ?? 0
-            guard minute < 60 else { return nil }
-            period = group(3)
-            switch period {
-            case "pm", "sore", "malam": if hour < 12 { hour += 12 }
-            case "siang": if hour < 11 { hour += 12 }
-            case "am", "pagi": if hour == 12 { hour = 0 }
-            default: break
-            }
-        } else if parsed == nil {
-            return nil
-        }
-        let calendar = Calendar.current
-        let day = parsed?.date ?? now
-        guard var date = calendar.date(bySettingHour: hour, minute: minute, second: 0, of: day) else { return nil }
-        if date >= now { return date }
-        // "jam 7" pukul 10 pagi tanpa keterangan pagi/sore = 19.00 hari ini, bukan 07.00 besok.
-        if m != nil, period == nil, hour < 12, calendar.isDateInToday(day),
-           let evening = calendar.date(bySettingHour: hour + 12, minute: minute, second: 0, of: day), evening > now {
-            return evening
-        }
-        if parsed?.weekday == true { return calendar.date(byAdding: .day, value: 7, to: date) }
-        if parsed == nil, m != nil { // hanya jam ("jam 7") yang sudah lewat = besok
-            return calendar.date(byAdding: .day, value: 1, to: date) ?? date
-        }
-        return nil // tanggal atau hari ini yang jamnya sudah lewat: tanpa pengingat
+        guard let parsed = TimeParser.parse(text, now: now), !parsed.isPast else { return nil }
+        return parsed.date
     }
 
     // Untuk snapshot.

@@ -12,8 +12,15 @@ let package = Package(
         .library(name: "cognify-media", type: .dynamic, targets: ["CognifyMedia"]),
     ],
     targets: [
+        // Pembaca waktu dari teks ("besok jam 10", "2 jam lagi"); terpisah supaya bisa diuji.
+        .target(name: "NotchTime", path: "Sources/NotchTime"),
+        .testTarget(name: "NotchTimeTests", dependencies: ["NotchTime"], path: "Tests/NotchTimeTests"),
+        // Ringkasan Cognify (cognify-hub.json) dan perintah inbox/; terpisah supaya bisa diuji.
+        .target(name: "NotchHub", path: "Sources/NotchHub"),
+        .testTarget(name: "NotchHubTests", dependencies: ["NotchHub"], path: "Tests/NotchHubTests"),
         .executableTarget(
             name: "cognify-notch",
+            dependencies: ["NotchTime", "NotchHub"],
             path: "Sources/CognifyNotch",
             resources: [.process("Shaders")],
             linkerSettings: [

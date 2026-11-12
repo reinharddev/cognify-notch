@@ -15,8 +15,8 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         switch self {
         case .general: return L("Umum", "General")
         case .appearance: return L("Tampilan", "Appearance")
-        case .behavior: return L("Cara buka", "Behavior")
-        case .companion: return L("Teman kecil", "Little companion")
+        case .behavior: return L("Perilaku", "Behavior")
+        case .companion: return L("Teman kecil", "Companion")
         case .features: return L("Fitur", "Features")
         case .skins: return L("Skin", "Skins")
         case .weather: return L("Cuaca", "Weather")
@@ -27,13 +27,13 @@ enum SettingsPane: String, CaseIterable, Identifiable {
 
     var subtitle: String {
         switch self {
-        case .general: return L("Bahasa, buka saat Mac dinyalakan, dan pembaruan app.", "Language, open at login, and app updates.")
-        case .appearance: return L("Tema, bentuk, dan warna: aksen, lirik, dan equalizer.", "Theme, shape, and colors: accent, lyrics, and equalizer.")
-        case .behavior: return L("Cara notch dibuka dan ditutup, layar, ukuran, dan shortcut.", "How the notch opens and closes, the screen, size, and shortcut.")
-        case .companion: return L("Wajah di notch: cara memilih ekspresi, berkedip, dan ekspresi tiap kejadian.", "The face in the notch: how it picks expressions, blinking, and the expression for each event.")
-        case .features: return L("Nyalakan atau matikan bagian notch yang kamu pakai.", "Turn the parts of the notch you use on or off.")
-        case .skins: return L("Jendela di desktop ala Rainmeter: wajah Mimik, lirik, dan lainnya.", "Rainmeter-style desktop windows: the Mimik face, lyrics, and more.")
-        case .weather: return L("Cuaca di header dan halaman Langit (waktu matahari).", "Weather in the header and the Sky page (sun times).")
+        case .general: return L("Bahasa, buka otomatis saat login, dan pembaruan.", "Language, launch at login, and updates.")
+        case .appearance: return L("Tema, bentuk, ukuran, dan warna.", "Theme, shape, size, and colors.")
+        case .behavior: return L("Cara notch terbuka, tertutup, dan bersembunyi, serta layar dan pintasan.", "How the notch opens, closes, and hides, plus the screen and shortcut.")
+        case .companion: return L("Wajah di notch: pilihan ekspresi, kedipan, dan reaksi untuk tiap kejadian.", "The face in the notch: expressions, blinking, and how it reacts to each event.")
+        case .features: return L("Pilih fitur notch yang ingin dipakai.", "Choose which notch features to use.")
+        case .skins: return L("Widget di desktop ala Rainmeter: wajah Mimik, lirik, dan lainnya.", "Rainmeter-style desktop widgets: the Mimik face, lyrics, and more.")
+        case .weather: return L("Cuaca di header dan halaman Langit.", "Weather in the header and on the Sky page.")
         case .tabs: return L("Atur urutan halaman di notch.", "Arrange the pages in the notch.")
         case .data: return L("Cadangkan atau pulihkan catatan, tugas, dan pengaturan.", "Back up or restore notes, tasks, and settings.")
         }
@@ -189,7 +189,7 @@ struct SettingsView: View {
             Divider()
             detail
         }
-        .frame(minWidth: 680, idealWidth: 780, minHeight: 460, idealHeight: 580)
+        .frame(minWidth: 520, idealWidth: 780, minHeight: 360, idealHeight: 580)
         .ignoresSafeArea()
     }
 
@@ -304,9 +304,13 @@ struct SettingsView: View {
             if let toggle = FeatureToggle.all.first(where: { $0.key == \.companion }) { featureRow(toggle) }
         }
         Section {
+            if !model.features.companion {
+                Text(L("Nyalakan Teman kecil dulu untuk mengatur yang di bawah.", "Turn on Little companion first to change the settings below."))
+                    .font(.caption).foregroundStyle(.orange)
+            }
             HStack(alignment: .center, spacing: 14) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Picker(L("Cara kerja", "How it works"), selection: $prefs.companionMode) {
+                    Picker(L("Mode", "Mode"), selection: $prefs.companionMode) {
                         ForEach(CompanionMode.allCases) { Text($0.label).tag($0) }
                     }
                     Text(prefs.companionMode.hint).font(.caption).foregroundStyle(.secondary)
@@ -320,8 +324,9 @@ struct SettingsView: View {
                 }
                 .onChange(of: prefs.companionFixed) { preview.set($0) }
             }
-            Toggle(L("Berkedip", "Blink"), isOn: $prefs.companionBlink)
+            Toggle(L("Berkedip berkala", "Blink now and then"), isOn: $prefs.companionBlink)
         }
+        .disabled(!model.features.companion)
         .onAppear { if prefs.companionMode == .fixed { preview.set(prefs.companionFixed) } }
         if prefs.companionMode == .custom {
             Section(L("Keadaan", "Situations")) {
@@ -343,7 +348,7 @@ struct SettingsView: View {
         do {
             if on { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
         } catch {
-            model.show(.failed(L("Tidak bisa mengubah pengaturan login: ", "Couldn't change the login setting: ") + error.localizedDescription))
+            model.show(.failed(L("Gagal mengubah pengaturan buka saat login: ", "Couldn't change the launch-at-login setting: ") + error.localizedDescription))
         }
         loginOn = SMAppService.mainApp.status == .enabled
     }
@@ -355,16 +360,16 @@ struct SettingsView: View {
             }
         }
         Section {
-            Toggle(L("Buka saat Mac dinyalakan", "Open at login"), isOn: Binding(get: { loginOn }, set: setLogin))
+            Toggle(L("Buka saat login", "Launch at login"), isOn: Binding(get: { loginOn }, set: setLogin))
             if let updater {
-                Toggle(L("Pasang update otomatis", "Install updates automatically"), isOn: Binding(
+                Toggle(L("Pasang pembaruan otomatis", "Install updates automatically"), isOn: Binding(
                     get: { autoUpdate },
                     set: { autoUpdate = $0; updater.automatic = $0 }))
                     .onAppear { autoUpdate = updater.automatic }
                 HStack {
                     Text(L("Versi app", "App version"))
                     Spacer()
-                    Button(L("Periksa update…", "Check for updates…")) { updater.checkForUpdates() }
+                    Button(L("Cek pembaruan…", "Check for updates…")) { updater.checkForUpdates() }
                 }
             }
         }
@@ -379,11 +384,44 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 1) {
                     Text(toggle.title())
                     Text(toggle.hint()).font(.caption).foregroundStyle(.secondary)
+                    if let why = blockReason(toggle) { Text(why).font(.caption).foregroundStyle(.orange) }
                 }
             }
             if toggle.defaultsKey == "feature.clipboard" && model.features.clipboard { clipboardLimitControls }
+            if toggle.defaultsKey == "feature.appNotifications" && model.features.appNotifications { appNotificationControls }
         }
-        .disabled(toggle.key == \.spectrum && !model.features.media)
+        .disabled(blockReason(toggle) != nil)
+    }
+
+    /// Fitur yang bergantung pada fitur lain: alasan kenapa barisnya mati, supaya tidak ada saklar yang diam-diam tidak bisa dipakai.
+    private func blockReason(_ toggle: FeatureToggle) -> String? {
+        let needsMedia = toggle.key == \.spectrum || toggle.key == \.lyrics || toggle.key == \.lyricsWing
+        if needsMedia && !model.features.media { return L("Nyalakan \"Lagu & video yang diputar\" dulu.", "Turn on \"Now playing\" first.") }
+        if toggle.key == \.lyricsWing && !model.features.lyrics { return L("Nyalakan \"Lirik lagu\" dulu.", "Turn on \"Synced lyrics\" first.") }
+        return nil
+    }
+
+    private var appNotificationControls: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if model.appNotes.access == .denied {
+                Text(L("Belum ada izin. Beri Akses Disk Penuh ke Cognify Notch di Pengaturan Sistem, lalu nyalakan ulang fitur ini.",
+                       "No access yet. Give Cognify Notch Full Disk Access in System Settings, then turn this feature off and on."))
+                    .font(.caption).foregroundStyle(.orange)
+                HStack {
+                    Button(L("Buka Pengaturan Sistem", "Open System Settings")) { AppNotificationWatcher.openPrivacySettings() }
+                    Button(L("Cek lagi", "Check again")) { model.appNotes.refreshAccess() }
+                }
+            }
+            Text(L("Teruskan notifikasi dari:", "Forward notifications from:")).font(.caption).foregroundStyle(.secondary)
+            ForEach(AppNotificationWatcher.known, id: \.bundle) { app in
+                Toggle(app.name, isOn: Binding(
+                    get: { prefs.notifyApps.contains(app.bundle) },
+                    set: { on in
+                        if on { if !prefs.notifyApps.contains(app.bundle) { prefs.notifyApps.append(app.bundle) } }
+                        else { prefs.notifyApps.removeAll { $0 == app.bundle } }
+                    }))
+            }
+        }
     }
 
     private var clipboardLimitControls: some View {
@@ -395,7 +433,7 @@ struct SettingsView: View {
                     model.clipboard.applyLimit(unlimited: value, count: prefs.clipboardLimit)
                 })) {
                     Text(L("Tanpa batas", "Unlimited")).tag(true)
-                    Text(L("Kustom", "Custom")).tag(false)
+                    Text(L("Atur sendiri", "Custom")).tag(false)
                 }
                 .pickerStyle(.segmented)
             if !prefs.clipboardUnlimited {
@@ -413,7 +451,7 @@ struct SettingsView: View {
                         .frame(width: 88)
                 }
             }
-            Text(L("Item yang disematkan tidak ikut dihitung. Gambar clipboard hanya disimpan selama app berjalan.", "Pinned items do not count. Clipboard images are kept only while the app is running."))
+            Text(L("Item yang disematkan tidak dihitung. Gambar hanya disimpan selama app berjalan.", "Pinned items aren't counted. Images are kept only while the app is running."))
                 .font(.caption).foregroundStyle(.secondary)
         }
         .padding(.leading, 22)
@@ -424,7 +462,7 @@ struct SettingsView: View {
         [
             (L("Musik", "Music"), [\.media, \.spectrum, \.lyrics, \.lyricsWing]),
             (L("Produktivitas", "Productivity"), [\.calendar, \.todo, \.remindersSync, \.water, \.clockTools, \.clipboard, \.voice, \.calculator, \.shortcuts, \.camera]),
-            (L("Sistem dan perangkat", "System and devices"), [\.hud, \.power, \.devices, \.downloads, \.keyboard, \.network, \.hideFullscreen, \.hotkey]),
+            (L("Sistem dan perangkat", "System and devices"), [\.hud, \.power, \.devices, \.downloads, \.keyboard, \.network, \.appNotifications, \.hideFullscreen, \.hotkey]),
         ]
     }
 
@@ -454,17 +492,16 @@ struct SettingsView: View {
             Picker(L("Tema panel", "Panel theme"), selection: $prefs.theme) {
                 ForEach(NotchTheme.allCases) { Text($0.label).tag($0) }
             }
-            Text(L("macOS 26 ke atas memakai Liquid Glass bawaan. Mac yang lebih lama memakai material transparan dan refraksi ringan; shader distorsi tersedia mulai macOS 14.",
-                   "macOS 26 and later use native Liquid Glass. Older Macs use translucent material and subtle refraction; shader distortion is available on macOS 14 and later."))
+            Text(L("macOS 26 ke atas memakai Liquid Glass. Mac yang lebih lama memakai material transparan dengan pembiasan ringan; efek distorsi tersedia mulai macOS 14.", "macOS 26 and later use Liquid Glass. Older Macs use a translucent material with light refraction; the distortion effect needs macOS 14 or later."))
                 .font(.footnote).foregroundStyle(.secondary)
             if prefs.theme == .glass {
                 Picker(L("Liquid Glass", "Liquid Glass"), selection: $prefs.glassCustom) {
                     Text(L("Bawaan", "Default")).tag(false)
-                    Text(L("Kustom", "Custom")).tag(true)
+                    Text(L("Atur sendiri", "Custom")).tag(true)
                 }
                 .pickerStyle(.segmented)
                 if prefs.glassCustom {
-                    LabeledContent(L("Bening ↔ berwarna", "Clear ↔ tinted")) {
+                    LabeledContent(L("Bening ke berwarna", "Clear to tinted")) {
                         HStack(spacing: 8) {
                             Image(systemName: "square.on.square").foregroundStyle(.secondary)
                             Slider(value: $prefs.glassTint, in: 0...1) { EmptyView() }
@@ -490,15 +527,25 @@ struct SettingsView: View {
             }
         }
         }
-        Section(L("Bentuk dan warna aksen", "Shape and accent color")) {
-            Picker(L("Bentuk di Mac tanpa notch", "Shape on Macs without a notch"), selection: $prefs.floatingStyle) {
+        Section(L("Bentuk, ukuran, dan warna aksen", "Shape, size, and accent color")) {
+            Toggle(L("Melayang juga di Mac berponi", "Float on Macs with a notch too"), isOn: $prefs.floatOnNotch)
+            if !model.hasNotch { FloatPositionMap(model: model, prefs: prefs) }
+            Picker(L("Gaya melayang", "Floating style"), selection: $prefs.floatingStyle) {
                 ForEach(Preferences.FloatingStyle.allCases) { Text($0.label).tag($0) }
             }
-            Picker(L("Ukuran panel", "Panel size"), selection: $prefs.scale) {
-                Text(L("Normal", "Normal")).tag(1.0)
-                Text(L("Besar", "Large")).tag(1.12)
+            LabeledContent(L("Ukuran panel terbuka", "Open panel size")) {
+                Slider(value: $prefs.scale, in: 0.7...1.5, step: 0.05) { EmptyView() }
+                Text("\(Int((prefs.scale * 100).rounded()))%").monospacedDigit().frame(width: 60, alignment: .trailing)
             }
-            LabeledContent(L("Lengkung sudut bawah", "Bottom corner roundness")) {
+            LabeledContent(L("Ukuran notch saat diam", "Idle notch size")) {
+                Slider(value: $prefs.idleScale, in: 0.6...1.5, step: 0.05) { EmptyView() }
+                Text("\(Int(prefs.idleScale * 100))%").monospacedDigit().frame(width: 60, alignment: .trailing)
+            }
+            if model.hasNotch {
+                Text(L("Di Mac berponi, bagian hitam tidak bisa lebih kecil dari poni aslinya; hanya mata di kedua sisi yang mengecil. Pakai Sembunyikan otomatis untuk menghilangkannya sepenuhnya.", "On a Mac with a notch, the black shape can't shrink below the physical notch; only the eyes on each side get smaller. Use auto-hide to hide it completely."))
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            LabeledContent(L("Kebulatan sudut", "Corner roundness")) {
                 Slider(value: $prefs.roundness, in: 0...40, step: 1) { EmptyView() }
                 Text("\(Int(prefs.roundness)) pt").monospacedDigit().frame(width: 60, alignment: .trailing)
             }
@@ -519,9 +566,14 @@ struct SettingsView: View {
             }
         }
         Section(L("Warna lirik dan equalizer", "Lyric and equalizer colors")) {
-            Toggle(L("Warna lirik otomatis dari sampul", "Lyric colors from the album cover"), isOn: $prefs.lyricAuto)
-            if !prefs.lyricAuto {
-            LabeledContent(L("Warna lirik aktif", "Active lyric color")) {
+            Toggle(L("Ambil warna lirik dari sampul", "Take lyric colors from the cover"), isOn: $prefs.lyricAuto)
+                .disabled(!model.features.lyrics)
+            if !model.features.lyrics {
+                Text(L("Warna lirik tersedia setelah \"Lirik lagu\" dinyalakan di Fitur.", "Lyric colors become available once \"Synced lyrics\" is on in Features."))
+                    .font(.caption).foregroundStyle(.orange)
+            }
+            if !prefs.lyricAuto && model.features.lyrics {
+            LabeledContent(L("Baris lirik yang sedang dinyanyikan", "Current lyric line")) {
                 HStack(spacing: 8) {
                     ForEach(Self.lyricColors, id: \.self) { hex in
                         Circle().fill(Color(hex: hex) ?? .white).frame(width: 18, height: 18)
@@ -535,7 +587,7 @@ struct SettingsView: View {
                     Button(L("Bawaan", "Default")) { prefs.lyricActiveHex = "" }.disabled(prefs.lyricActiveHex.isEmpty)
                 }
             }
-            LabeledContent(L("Warna lirik lainnya", "Other lyrics color")) {
+            LabeledContent(L("Baris lirik lainnya", "Other lyric lines")) {
                 HStack(spacing: 8) {
                     ForEach(Self.lyricColors, id: \.self) { hex in
                         Circle().fill(Color(hex: hex) ?? .white).frame(width: 18, height: 18)
@@ -550,7 +602,7 @@ struct SettingsView: View {
                 }
             }
             }
-            Toggle(L("Warna equalizer otomatis dari sampul", "Equalizer color from the album cover"), isOn: $prefs.equalizerAuto)
+            Toggle(L("Ambil warna equalizer dari sampul", "Take equalizer color from the cover"), isOn: $prefs.equalizerAuto)
             if !prefs.equalizerAuto {
             LabeledContent(L("Warna equalizer", "Equalizer color")) {
                 HStack(spacing: 8) {
@@ -572,25 +624,44 @@ struct SettingsView: View {
     }
 
     @ViewBuilder private var behaviorPane: some View {
-        Section(L("Membuka", "Opening")) {
-            Picker(L("Buka notch dengan", "Open the notch by"), selection: $prefs.openOnClick) {
-                Text(L("Mengarahkan kursor", "Hovering")).tag(false)
-                Text(L("Klik", "Clicking")).tag(true)
+        Section(L("Buka dan sembunyi", "Open and hide")) {
+            Picker(L("Notch terbuka saat", "Open the notch on"), selection: $prefs.openOnClick) {
+                Text(L("Kursor diarahkan", "Hover")).tag(false)
+                Text(L("Diklik", "Click")).tag(true)
             }
-            Picker(L("Tampil di", "Show on"), selection: $prefs.display) {
+            Toggle(L("Sembunyikan saat tidak dipakai", "Hide when idle"), isOn: $prefs.autoHide)
+                .disabled(model.detached)
+                .help(model.detached ? L("Dinonaktifkan karena notch sedang melayang dan tidak menempel di tepi atas layar, jadi tidak bisa bersembunyi di sana. Tempelkan notch ke tepi atas (posisi Y 0%) untuk memakainya.", "Disabled because the notch is floating and not attached to the top edge, so it cannot hide there. Attach the notch to the top edge (Y 0%) to use it.") : "")
+            if model.detached {
+                Text(L("Tidak tersedia saat notch melayang.", "Not available while the notch is floating."))
+                    .font(.caption).foregroundStyle(.secondary)
+            } else if prefs.autoHide {
+                Text(L("Notch bersembunyi setelah 3 detik tidak dipakai dan muncul lagi saat kursor ke tepi atas layar. Lagu, pengingat, dan notifikasi tetap muncul sendiri.", "The notch hides after 3 idle seconds and returns when you move the cursor to the top edge. Music, reminders, and alerts still appear on their own."))
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Picker(L("Tampil di layar", "Show on screen"), selection: $prefs.display) {
                 ForEach(Preferences.Display.allCases) { Text($0.label).tag($0) }
             }
-            Picker(L("Shortcut keyboard", "Keyboard shortcut"), selection: $prefs.hotKey) {
+            Picker(L("Pintasan keyboard", "Keyboard shortcut"), selection: $prefs.hotKey) {
                 ForEach(Preferences.HotKeyChoice.allCases) { Text($0.label).tag($0) }
             }
             .disabled(!model.features.hotkey)
+            if !model.features.hotkey {
+                Text(L("Nyalakan \"Buka dengan pintasan keyboard\" di Fitur dulu.", "Turn on \"Open with a keyboard shortcut\" in Features first."))
+                    .font(.caption).foregroundStyle(.orange)
+            }
         }
-        Section(L("Jeda", "Delays")) {
-            LabeledContent(L("Sebelum terbuka", "Before opening")) {
+        Section(L("Waktu tunggu", "Timing")) {
+            if prefs.openOnClick {
+                Text(L("Jeda sebelum membuka tidak dipakai saat notch dibuka dengan klik.", "The opening delay is not used when the notch opens by clicking."))
+                    .font(.caption).foregroundStyle(.orange)
+            }
+            LabeledContent(L("Tunggu sebelum membuka", "Delay before opening")) {
                 Slider(value: $prefs.hoverDelay, in: 0...0.6, step: 0.05) { EmptyView() }
                 Text("\(Int(prefs.hoverDelay * 1000)) ms").monospacedDigit().frame(width: 60, alignment: .trailing)
             }
-            LabeledContent(L("Sebelum menutup", "Before closing")) {
+            .disabled(prefs.openOnClick)
+            LabeledContent(L("Tunggu sebelum menutup", "Delay before closing")) {
                 Slider(value: $prefs.closeDelay, in: 0.1...1.5, step: 0.05) { EmptyView() }
                 Text("\(Int(prefs.closeDelay * 1000)) ms").monospacedDigit().frame(width: 60, alignment: .trailing)
             }
@@ -602,7 +673,7 @@ struct SettingsView: View {
             if let toggle = FeatureToggle.all.first(where: { $0.key == \.weather }) { featureRow(toggle) }
         }
         Section(L("Lokasi", "Location")) {
-            LabeledContent(L("Kota untuk cuaca", "City for weather")) {
+            LabeledContent(L("Kota", "City")) {
                 TextField(L("mis. Jakarta", "e.g. Jakarta"), text: Binding(get: { prefs.weatherCity },
                                                                          set: { prefs.weatherCity = $0; prefs.weatherCoords = "" }))
                     .textFieldStyle(.roundedBorder)
@@ -615,11 +686,11 @@ struct SettingsView: View {
                         prefs.weatherCity = name
                     }
                 } label: {
-                    Label(locator.state == .detecting ? L("Mendeteksi…", "Detecting…") : L("Deteksi lokasi saat ini", "Detect current location"), systemImage: "location.fill")
+                    Label(locator.state == .detecting ? L("Mendeteksi…", "Detecting…") : L("Pakai lokasi saat ini", "Use current location"), systemImage: "location.fill")
                 }
                 .disabled(!model.features.weather || locator.state == .detecting)
                 if !prefs.weatherCoords.isEmpty {
-                    Text(L("Memakai lokasi terdeteksi", "Using detected location")).font(.caption).foregroundStyle(.secondary)
+                    Text(L("Memakai lokasi saat ini", "Using current location")).font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
             }
@@ -661,6 +732,60 @@ struct SettingsView: View {
                 Button(L("Ekspor…", "Export…")) { DataBackup.export() }
                 Button(L("Impor…", "Import…")) { DataBackup.importFile() }
             }
+        }
+    }
+}
+
+/// Peta posisi notch melayang (seperti peta pil di Windows): layar kecil dengan titik notch. Klik atau seret titiknya.
+struct FloatPositionMap: View {
+    @ObservedObject var model: NotchModel
+    @ObservedObject var prefs: Preferences
+
+    private var screen: CGSize { model.screenSize }
+    private var maxDX: Double { Double(screen.width) / 2 - 60 }
+    private var maxDY: Double { Double(screen.height) - 120 }
+    private var fx: Double { 0.5 + prefs.floatDX / Double(screen.width) }
+    private var fy: Double { (max(model.floatMinDY, prefs.floatDY) + 21) / Double(screen.height) }
+
+    private func set(x: Double, y: Double) {
+        prefs.floatDX = max(-maxDX, min(maxDX, (x - 0.5) * Double(screen.width)))
+        prefs.floatDY = max(model.floatMinDY, min(maxDY, y * Double(screen.height) - 21))
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(L("Posisi notch melayang", "Floating notch position"))
+            GeometryReader { geo in
+                let w = geo.size.width, h = geo.size.height
+                ZStack(alignment: .topLeading) {
+                    RoundedRectangle(cornerRadius: 8).fill(Color.black.opacity(0.18))
+                    RoundedRectangle(cornerRadius: 8).stroke(Color.secondary.opacity(0.4))
+                    Capsule().fill(Color.accentColor)
+                        .frame(width: 14, height: 8)
+                        .position(x: w * fx, y: h * fy)
+                }
+                .contentShape(Rectangle())
+                .gesture(DragGesture(minimumDistance: 0).onChanged { v in
+                    set(x: v.location.x / w, y: v.location.y / h)
+                })
+            }
+            .aspectRatio(screen.width / max(1, screen.height), contentMode: .fit)
+            .frame(maxWidth: 320)
+            HStack(spacing: 12) {
+                Text("X").foregroundStyle(.secondary)
+                Stepper(value: Binding(get: { Int((fx * 100).rounded()) }, set: { set(x: Double($0) / 100, y: fy) }), in: 0...100) {
+                    Text("\(Int((fx * 100).rounded())) %").monospacedDigit()
+                }
+                Text("Y").foregroundStyle(.secondary)
+                Stepper(value: Binding(get: { Int((fy * 100).rounded()) }, set: { set(x: fx, y: Double($0) / 100) }), in: 0...100) {
+                    Text("\(Int((fy * 100).rounded())) %").monospacedDigit()
+                }
+                Spacer()
+                Button(L("Kembalikan", "Reset")) { prefs.floatDX = 0; prefs.floatDY = 0 }
+                    .disabled(prefs.floatDX == 0 && prefs.floatDY == 0)
+            }
+            Text(L("Klik atau seret titik di peta, atau seret notch langsung di layar.", "Click or drag the dot on the map, or drag the notch itself on the screen."))
+                .font(.caption).foregroundStyle(.secondary)
         }
     }
 }
