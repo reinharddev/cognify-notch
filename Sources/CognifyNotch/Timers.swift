@@ -191,14 +191,17 @@ struct ClockPanel: View {
     private static let presets = [1, 3, 5, 10, 15, 30]
 
     var body: some View {
-        HStack(alignment: .top, spacing: 18) {
-            stopwatch.frame(width: 250, alignment: .leading)
-            Divider().overlay(Color.white.opacity(0.08))
-            countdownColumn
-            Divider().overlay(Color.white.opacity(0.08))
-            alarmColumn
+        // Tiga kolom berbagi lebar panel; isi tiap kolom turun baris bila sempit, jadi tidak ada yang terpotong.
+        ScrollView(.vertical, showsIndicators: false) {
+            HStack(alignment: .top, spacing: 14) {
+                stopwatch.frame(maxWidth: .infinity, alignment: .leading)
+                Divider().overlay(Color.white.opacity(0.08))
+                countdownColumn.frame(maxWidth: .infinity, alignment: .leading)
+                Divider().overlay(Color.white.opacity(0.08))
+                alarmColumn.frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(maxWidth: .infinity, alignment: .top)
         }
-        .frame(maxHeight: .infinity, alignment: .top)
     }
 
     private var stopwatch: some View {
@@ -214,7 +217,7 @@ struct ClockPanel: View {
                 }
             }
             .font(.system(size: 30, weight: .semibold, design: .rounded).monospacedDigit())
-            HStack(spacing: 6) {
+            FlowLayout(spacing: 6, lineSpacing: 6) {
                 Button(action: clock.toggleStopwatch) {
                     Label(clock.running ? L("Jeda", "Pause") : (clock.elapsed() > 0 ? L("Lanjut", "Resume") : L("Mulai", "Start")),
                           systemImage: clock.running ? "pause.fill" : "play.fill")
@@ -242,7 +245,7 @@ struct ClockPanel: View {
     private var alarmColumn: some View {
         VStack(alignment: .leading, spacing: 8) {
             SectionLabel(text: L("Alarm", "Alarm"))
-            HStack(spacing: 6) {
+            FlowLayout(spacing: 6, lineSpacing: 6) {
                 DatePicker("", selection: $alarmTime, displayedComponents: .hourAndMinute).labelsHidden().datePickerStyle(.field)
                 Button {
                     let c = Calendar.current.dateComponents([.hour, .minute], from: alarmTime)
@@ -251,7 +254,7 @@ struct ClockPanel: View {
                 } label: { Label(L("Tambah", "Add"), systemImage: "plus") }
                     .buttonStyle(PillButtonStyle(prominent: true))
             }
-            HStack(spacing: 3) {
+            FlowLayout(spacing: 3, lineSpacing: 3) {
                 ForEach(Self.dayOrder, id: \.weekday) { d in
                     let on = alarmDays.contains(d.weekday)
                     Button { if on { alarmDays.remove(d.weekday) } else { alarmDays.insert(d.weekday) } } label: {
@@ -287,7 +290,6 @@ struct ClockPanel: View {
                 }
             }
         }
-        .frame(width: 250, alignment: .leading)
     }
 
     private func alarmSubtitle(_ a: ClockTools.Alarm) -> String {
@@ -298,7 +300,7 @@ struct ClockPanel: View {
     private var countdownColumn: some View {
         VStack(alignment: .leading, spacing: 8) {
             SectionLabel(text: L("Hitung mundur", "Countdown"))
-            HStack(spacing: 4) {
+            FlowLayout(spacing: 4, lineSpacing: 4) {
                 ForEach(Self.presets, id: \.self) { minutes in
                     Button { clock.start(minutes: minutes) } label: {
                         Text("\(minutes)m").font(.system(size: 10.5, weight: .semibold).monospacedDigit())
@@ -310,7 +312,7 @@ struct ClockPanel: View {
                     .buttonStyle(PressableStyle())
                 }
             }
-            HStack(spacing: 4) {
+            FlowLayout(spacing: 4, lineSpacing: 4) {
                 Button { custom = max(1, custom - 5) } label: { Image(systemName: "minus").font(.system(size: 9, weight: .bold)).frame(width: 10, height: 14) }
                     .buttonStyle(PillButtonStyle(prominent: false))
                 Text(L("\(custom) menit", "\(custom) min")).font(.system(size: 11, weight: .semibold).monospacedDigit())
@@ -351,6 +353,38 @@ struct ClockPanel: View {
                 .padding(.horizontal, 9).padding(.vertical, 5)
                 .background(RoundedRectangle(cornerRadius: 9).fill(Color.white.opacity(0.06)))
             }
+        }
+    }
+}
+
+
+/// Susunan mengalir: anak-anaknya berjajar ke samping dan turun baris saat lebar tidak cukup.
+struct FlowLayout: Layout {
+    var spacing: CGFloat = 4
+    var lineSpacing: CGFloat = 4
+
+    private func arrange(_ width: CGFloat, _ subviews: Subviews) -> (frames: [CGRect], size: CGSize) {
+        var frames: [CGRect] = []
+        var x: CGFloat = 0, y: CGFloat = 0, rowH: CGFloat = 0, maxX: CGFloat = 0
+        for v in subviews {
+            let size = v.sizeThatFits(.unspecified)
+            if x > 0 && x + size.width > width { x = 0; y += rowH + lineSpacing; rowH = 0 }
+            frames.append(CGRect(x: x, y: y, width: size.width, height: size.height))
+            x += size.width + spacing
+            rowH = max(rowH, size.height)
+            maxX = max(maxX, x - spacing)
+        }
+        return (frames, CGSize(width: maxX, height: y + rowH))
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        arrange(proposal.width ?? .infinity, subviews).size
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let frames = arrange(bounds.width, subviews).frames
+        for (v, f) in zip(subviews, frames) {
+            v.place(at: CGPoint(x: bounds.minX + f.minX, y: bounds.minY + f.minY), proposal: ProposedViewSize(f.size))
         }
     }
 }
