@@ -36,6 +36,9 @@ final class MediaMonitor: ObservableObject {
 
     private var process: Process?
     private var input: FileHandle?
+    /// Sisi baca keluaran helper. Handler-nya wajib dikosongkan saat helper berhenti: tanpa itu, setelah EOF handler dipanggil
+    /// tanpa henti dengan data kosong dan menghabiskan satu inti CPU (terukur sekitar satu juta panggilan per detik).
+    private var output: FileHandle?
     private var buffer = Data()
     private var enabled = false
     private var failures = 0
@@ -74,9 +77,13 @@ final class MediaMonitor: ObservableObject {
         p.standardOutput = stdout
         p.standardInput = stdin
         p.standardError = FileHandle.nullDevice
-        stdout.fileHandleForReading.readabilityHandler = { [weak self] handle in
+        let reading = stdout.fileHandleForReading
+        reading.readabilityHandler = { [weak self] handle in
             let chunk = handle.availableData
-            guard !chunk.isEmpty else { return }
+            guard !chunk.isEmpty else {
+                handle.readabilityHandler = nil // EOF: helper sudah berhenti
+                return
+            }
             Task { @MainActor in self?.consume(chunk) }
         }
         p.terminationHandler = { [weak self] proc in
@@ -85,6 +92,7 @@ final class MediaMonitor: ObservableObject {
         do {
             try p.run()
             process = p
+            output = reading
             input = stdin.fileHandleForWriting
         } catch {
             unavailable = true
@@ -92,6 +100,8 @@ final class MediaMonitor: ObservableObject {
     }
 
     private func ended(status: Int32) {
+        output?.readabilityHandler = nil
+        output = nil
         process = nil
         input = nil
         guard enabled else { return }
@@ -105,6 +115,8 @@ final class MediaMonitor: ObservableObject {
     }
 
     private func stop() {
+        output?.readabilityHandler = nil
+        output = nil
         input = nil // stdin tertutup → helper keluar sendiri
         process?.terminate()
         process = nil
