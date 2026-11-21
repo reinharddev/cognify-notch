@@ -2,7 +2,8 @@ import AppKit
 import SwiftUI
 
 /// Latar panel notch yang bisa diubah: warna, gradien, atau gambar sendiri. Notch yang menempel dan tertutup di Mac
-/// berponi tetap hitam supaya menyatu dengan poni fisik; latar dipakai di panel terbuka dan di notch melayang.
+/// berponi dapat tetap hitam (matikan "Notch diam ikut latar") supaya menyatu dengan poni fisik; secara bawaan latar dipakai juga di
+/// notch diam, di panel terbuka, dan di notch melayang.
 enum BackgroundMode: String, CaseIterable, Identifiable {
     case none, color, gradient, image
     var id: String { rawValue }

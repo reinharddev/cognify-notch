@@ -57,8 +57,8 @@ struct NotchRoot: View {
                 bodyShape.fill(Color.black)
                     .shadow(color: .black.opacity(glass ? 0 : model.expanded ? 0.45 : model.headMode ? 0.35 : 0), radius: model.headMode ? 6 : 16, y: model.headMode ? 2 : 6)
                     .opacity(glass ? 0 : 1)
-                // Latar kustom (warna, gradien, gambar): hanya panel terbuka dan notch melayang; notch tertutup yang menempel tetap hitam.
-                if model.prefs.customBackgroundActive && (model.expanded || model.detached) && !model.headMode {
+                // Latar kustom (warna, gradien, gambar): panel terbuka, notch melayang, dan notch diam (bila "Notch diam ikut tema" menyala).
+                if model.prefs.customBackgroundActive && (model.expanded || model.detached || model.prefs.idleThemed) && !model.headMode {
                     CustomBackground(prefs: model.prefs)
                         .clipShape(bodyShape)
                         .transition(.opacity)
@@ -464,7 +464,10 @@ struct ExpandedView: View {
                         }
                         .help(now.place)
                     }
-                    if let battery = model.battery { BatteryRing(battery: battery, ink: headInk) }
+                    if let battery = model.battery {
+                        BatteryRing(battery: battery, ink: headInk)
+                        LowPowerButton(on: model.lowPower, busy: model.lowPowerBusy, error: model.lowPowerError, ink: headInk) { model.toggleLowPower() }
+                    }
                     Text(Self.dateTime(model.now))
                         .font(.system(size: 11.5, weight: .semibold).monospacedDigit())
                         .foregroundStyle(headInk.opacity(0.8))
@@ -496,6 +499,38 @@ struct ExpandedView: View {
 }
 
 /// Cincin baterai kecil (hijau saat dicas, merah di bawah 20%).
+/// Tombol Mode Daya Rendah di header: lingkaran dengan daun, hijau saat menyala. Daunnya digambar tepat di tengah.
+struct LowPowerButton: View {
+    let on: Bool
+    let busy: Bool
+    let error: String?
+    var ink: Color = .white
+    let action: () -> Void
+
+    var body: some View {
+        let tint: Color = error != nil ? .orange : on ? Color(red: 0.3, green: 0.85, blue: 0.4) : ink.opacity(0.65)
+        Button(action: action) {
+            ZStack {
+                Circle().fill(on ? tint.opacity(0.17) : .clear)
+                Circle().strokeBorder(on ? tint.opacity(0.55) : ink.opacity(0.18), lineWidth: 1)
+                if busy {
+                    ProgressView().controlSize(.mini).scaleEffect(0.6)
+                } else {
+                    Image(systemName: "leaf.fill").font(.system(size: 9, weight: .semibold)).foregroundStyle(tint)
+                }
+            }
+            .frame(width: 19, height: 19)
+            .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .disabled(busy)
+        .accessibilityLabel(L("Mode Daya Rendah", "Low Power Mode"))
+        .accessibilityAddTraits(on ? .isSelected : [])
+        .help(error ?? (on ? L("Mode Daya Rendah menyala · klik untuk mematikan (perlu kata sandi)", "Low Power Mode is on · click to turn off (asks for your password)")
+                          : L("Nyalakan Mode Daya Rendah (perlu kata sandi)", "Turn on Low Power Mode (asks for your password)")))
+    }
+}
+
 struct BatteryRing: View {
     let battery: NotchModel.Battery
     var ink: Color = .white

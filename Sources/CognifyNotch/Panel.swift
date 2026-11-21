@@ -195,6 +195,9 @@ final class NotchController {
             model.hasNotch = false
         }
         model.screenSize = frame.size
+        // Layar ini punya poni fisik, walau notch sedang dipakai melayang (hasNotch mati karena itu). Pengaturan memakainya supaya saklar
+        // "Melayang juga di Mac berponi" tetap terlihat dan bisa dimatikan lagi.
+        model.physicalNotch = target.safeAreaInsets.top > 0
         model.floatMinDY = target.safeAreaInsets.top > 0 ? Double(target.safeAreaInsets.top) + 2 : 0
         applyIdleScale()
         let size = Self.windowSize
@@ -269,12 +272,21 @@ final class NotchController {
         }
     }
 
+    /// Tinggi notch melayang saat tertutup (pt) pada skala 100%, dan batas bawahnya saat diperkecil.
+    static let floatingHeight: CGFloat = 36
+    static let floatingMinHeight: CGFloat = 28
+
     /// Ukuran notch diam = ukuran bawaan layar × pilihan pengguna. Di Mac ber-notch tidak lebih kecil dari notch fisik.
     private func applyIdleScale() {
         let s = CGFloat(model.prefs.idleScale)
         let f = model.hasNotch ? max(1, s) : s
         let base = model.baseNotchSize
-        model.notchSize = CGSize(width: (base.width * f).rounded(), height: model.hasNotch ? base.height : max(20, (base.height * f).rounded()))
+        // Notch melayang (jauh dari tepi atas) tidak berbatasan dengan menu bar, jadi diberi tinggi tersendiri:
+        // setinggi menu bar (24 pt) pil-nya tampak gepeng. Yang menempel di tepi atas tetap setinggi menu bar.
+        let height: CGFloat = model.hasNotch ? base.height
+            : model.detached ? max(Self.floatingMinHeight, (Self.floatingHeight * f).rounded())
+            : max(20, (base.height * f).rounded())
+        model.notchSize = CGSize(width: (base.width * f).rounded(), height: height)
     }
 
     /// Area notch saat ini (koordinat layar), sedikit diperlebar supaya mudah dituju.
@@ -418,6 +430,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var model: NotchModel?
     private var statusMenu: StatusMenu?
     private var link: NotchLink?
+    private var dock: DockController?
     private var widgetExport: WidgetExport?
     private var skinManager: SkinManager?
     private let bridge = Bridge()
@@ -427,6 +440,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let model = NotchModel(bridge: bridge, appMode: bridge.appMode, prefs: Preferences(persist: bridge.appMode))
             self.model = model
             controller = NotchController(model: model)
+            dock = DockController(app: model)
             // Menyalin data ke Cognify hanya setelah pengguna menghubungkannya di Cognify.
             link = NotchLink(model: model)
             link?.start()

@@ -268,6 +268,8 @@ final class NotchModel: ObservableObject {
     @Published var savingNote = false
     @Published var notchSize = CGSize(width: 185, height: 32)
     @Published var hasNotch = true
+    /// Layar punya poni fisik (tetap benar walau notch dipakai melayang, saat hasNotch mati).
+    @Published var physicalNotch = false
     /// Ukuran notch bawaan layar (sebelum pilihan "Ukuran notch diam") dan ukuran layar, untuk membatasi panel di layar kecil.
     var baseNotchSize = CGSize(width: 185, height: 32)
     /// Batas atas posisi melayang: di Mac ber-notch, notch melayang tidak boleh masuk ke area notch fisik.
@@ -292,6 +294,12 @@ final class NotchModel: ObservableObject {
     let face = Face()
     private var online = true
     @Published private(set) var battery: Battery? = PowerMonitor.current()
+    /// Mode Daya Rendah macOS. Dibaca dari sistem; mengubahnya butuh izin administrator (lihat `LowPowerMode`).
+    @Published private(set) var lowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
+    @Published private(set) var lowPowerBusy = false
+    /// Pesan bila perubahan gagal (selain dibatalkan pengguna); dihapus saat dicoba lagi.
+    @Published private(set) var lowPowerError: String?
+    private var lowPowerObserver: NSObjectProtocol?
     /// Arah pindah halaman terakhir (untuk animasi geser).
     @Published private(set) var pageForward = true
     private var lastActivity = Date()
@@ -369,6 +377,10 @@ final class NotchModel: ObservableObject {
         power.onNotice = { [weak self] notice in
             self?.showNotice(notice)
             self?.battery = PowerMonitor.current()
+        }
+        // Mode Daya Rendah bisa diubah dari Pengaturan Sistem juga, jadi ikuti sistemnya.
+        lowPowerObserver = NotificationCenter.default.addObserver(forName: .NSProcessInfoPowerStateDidChange, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.lowPower = ProcessInfo.processInfo.isLowPowerModeEnabled }
         }
         keyboard.onCapsLock = { [weak self] on in self?.showNotice(.capsLock(on)) }
         appNotes.allowed = { [weak self] in Set(self?.prefs.notifyApps ?? []) }
@@ -510,6 +522,22 @@ final class NotchModel: ObservableObject {
     /// jadi tab dibuat ringkas; selain itu sama dengan lebar notch (fisik atau bawaan 190 pt).
     var barGap: CGFloat {
         !hasNotch && live?.eyes == true && prefs.floatingStyle == .attached ? 56 : notchSize.width
+    }
+
+    /// Nyalakan atau matikan Mode Daya Rendah. Sistem meminta kata sandi administrator; dibatalkan = tidak ada perubahan.
+    func toggleLowPower() {
+        guard !lowPowerBusy else { return }
+        let target = !lowPower
+        lowPowerBusy = true
+        lowPowerError = nil
+        Task { @MainActor [weak self] in
+            // Kata sandi administrator diminta di luar thread utama; hasilnya kembali ke thread utama.
+            let result = await Task.detached(priority: .userInitiated) { LowPowerMode.set(target) }.value
+            guard let self else { return }
+            self.lowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
+            self.lowPowerBusy = false
+            if case .failure(let error) = result, error != .cancelled { self.lowPowerError = error.message }
+        }
     }
 
     var headMode: Bool { !hasNotch && !expanded && card == nil && live?.eyes == true && prefs.floatingStyle == .head }

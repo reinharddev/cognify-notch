@@ -18,9 +18,12 @@ let package = Package(
         // Ringkasan Cognify (cognify-hub.json) dan perintah inbox/; terpisah supaya bisa diuji.
         .target(name: "NotchHub", path: "Sources/NotchHub"),
         .testTarget(name: "NotchHubTests", dependencies: ["NotchHub"], path: "Tests/NotchHubTests"),
+        // Aturan dock Mac (lebar, radius, daftar aplikasi); terpisah supaya bisa diuji.
+        .target(name: "NotchDock", path: "Sources/NotchDock"),
+        .testTarget(name: "NotchDockTests", dependencies: ["NotchDock"], path: "Tests/NotchDockTests"),
         .executableTarget(
             name: "cognify-notch",
-            dependencies: ["NotchTime", "NotchHub"],
+            dependencies: ["NotchTime", "NotchHub", "NotchDock"],
             path: "Sources/CognifyNotch",
             resources: [.process("Shaders")],
             linkerSettings: [

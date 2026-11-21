@@ -8,6 +8,15 @@ import SwiftUI
 enum Snapshot {
     static func run(into folder: URL) {
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        // Contoh di bawah mengubah pengaturan (disimpan ke UserDefaults); pulihkan semuanya setelah selesai supaya app asli tidak berubah.
+        let defaults = UserDefaults.standard
+        let backup = defaults.dictionaryRepresentation().filter { $0.key.hasPrefix("prefs.") }
+        let testImage = makeTestImage()
+        defer {
+            for key in defaults.dictionaryRepresentation().keys where key.hasPrefix("prefs.") && backup[key] == nil { defaults.removeObject(forKey: key) }
+            for (key, value) in backup { defaults.set(value, forKey: key) }
+            if let testImage { BackgroundStore.clear(testImage) }
+        }
         let now = Date()
         func iso(_ offset: TimeInterval) -> String {
             let f = ISO8601DateFormatter()
@@ -149,8 +158,14 @@ enum Snapshot {
             ("8-sayap-timer", make { $0.state = NotchState(events: [], overdue: 0, processing: 0); $0.timer.start() }),
             ("n8-menempel-diam", make(app: true) { $0.hasNotch = false; $0.notchSize = CGSize(width: 190, height: 24); $0.prefs.floatingStyle = .attached; $0.state = NotchState(events: [], overdue: 0, processing: 0); $0.preview(emotion: .happy) }),
             ("n9-menempel-lagu", make(app: true) { $0.hasNotch = false; $0.notchSize = CGSize(width: 190, height: 24); $0.prefs.floatingStyle = .attached; $0.state = NotchState(events: [], overdue: 0, processing: 0); $0.media.preview(song) }),
+            ("n10-melayang-lagu", make(app: true) { $0.hasNotch = false; $0.notchSize = CGSize(width: 190, height: NotchController.floatingHeight); $0.prefs.floatingStyle = .attached; $0.state = NotchState(events: [], overdue: 0, processing: 0); $0.media.preview(song) }),
             ("n7-kepala-mengambang", make(app: true) { $0.hasNotch = false; $0.notchSize = CGSize(width: 190, height: 24); $0.state = NotchState(events: [], overdue: 0, processing: 0); $0.preview(emotion: .happy) }),
             ("9-tanpa-notch", make { $0.hasNotch = false; $0.notchSize = CGSize(width: 190, height: 24); $0.expanded = true }),
+            // Notch diam ikut tema. Urutannya terakhir: pengaturan yang diubah di sini ikut terbaca model berikutnya.
+            ("p1-diam-gradien", make(app: true) { $0.hasNotch = false; $0.notchSize = CGSize(width: 190, height: 24); $0.prefs.floatingStyle = .attached; $0.prefs.bgMode = .gradient; $0.prefs.bgColorHex = "#2a1550"; $0.prefs.bgColor2Hex = "#c0392b"; $0.prefs.bgAngle = 0; $0.prefs.idleThemed = true; $0.state = NotchState(events: [], overdue: 0, processing: 0); $0.preview(emotion: .happy) }),
+            ("p2-diam-gambar", make(app: true) { $0.hasNotch = false; $0.notchSize = CGSize(width: 190, height: 24); $0.prefs.floatingStyle = .attached; if let name = testImage { $0.prefs.bgImageName = name }; $0.prefs.bgMode = .image; $0.prefs.bgDim = 0.2; $0.prefs.idleThemed = true; $0.state = NotchState(events: [], overdue: 0, processing: 0); $0.preview(emotion: .happy) }),
+            ("p3-poni-gambar", make(app: true) { $0.hasNotch = true; $0.notchSize = CGSize(width: 220, height: 32); $0.prefs.bgMode = .image; $0.prefs.idleThemed = true; $0.state = NotchState(events: [], overdue: 0, processing: 0); $0.preview(emotion: .happy) }),
+            ("p4-diam-mati", make(app: true) { $0.hasNotch = false; $0.notchSize = CGSize(width: 190, height: 24); $0.prefs.floatingStyle = .attached; $0.prefs.bgMode = .gradient; $0.prefs.idleThemed = false; $0.state = NotchState(events: [], overdue: 0, processing: 0); $0.preview(emotion: .happy) }),
         ]
         // Lembar semua ekspresi: mata di notch (kiri) dan kepala bulat saat mengambang (kanan).
         do {
@@ -228,5 +243,23 @@ enum Snapshot {
         }
         Lang.english = false
         print("snapshot → \(folder.path)")
+    }
+
+    /// Gambar uji (gradien dengan bentuk) disalin lewat penyimpan latar asli; mengembalikan nama berkasnya.
+    private static func makeTestImage() -> String? {
+        let size = NSSize(width: 640, height: 320)
+        let image = NSImage(size: size)
+        image.lockFocus()
+        NSGradient(colors: [NSColor(red: 0.1, green: 0.5, blue: 0.9, alpha: 1), NSColor(red: 0.95, green: 0.45, blue: 0.2, alpha: 1)])?.draw(in: NSRect(origin: .zero, size: size), angle: 20)
+        NSColor.white.withAlphaComponent(0.75).setFill()
+        NSBezierPath(ovalIn: NSRect(x: 120, y: 90, width: 200, height: 200)).fill()
+        NSColor(white: 0.1, alpha: 0.8).setFill()
+        NSBezierPath(roundedRect: NSRect(x: 380, y: 60, width: 200, height: 120), xRadius: 24, yRadius: 24).fill()
+        image.unlockFocus()
+        guard let tiff = image.tiffRepresentation, let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) else { return nil }
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("cn-snapshot-test.png")
+        try? png.write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+        return BackgroundStore.importImage(from: url)
     }
 }

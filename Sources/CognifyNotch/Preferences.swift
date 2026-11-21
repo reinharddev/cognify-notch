@@ -1,5 +1,6 @@
 import AppKit
 import Carbon.HIToolbox
+import NotchDock
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -107,6 +108,26 @@ final class Preferences: ObservableObject {
     @Published var bgImageName: String { didSet { save("prefs.bgImageName", bgImageName) } }
     @Published var bgDim: Double { didSet { save("prefs.bgDim", bgDim) } }
     @Published var bgBlur: Double { didSet { save("prefs.bgBlur", bgBlur) } }
+    /// Notch diam (tertutup) ikut tema: warna, gradien, atau gambar yang dipilih dipakai juga di notch diam, bukan hanya panel terbuka.
+    /// Di Mac berponi poni fisik tetap hitam, jadi latar terlihat di sisi kiri dan kanannya.
+    @Published var idleThemed: Bool { didSet { save("prefs.idleThemed", idleThemed) } }
+    /// Dock melayang (taskbar kustom). Mati sampai pengguna menyalakannya; lihat Dock.swift.
+    @Published var dockEnabled: Bool { didSet { save("prefs.dockEnabled", dockEnabled) } }
+    @Published var dockClock: Bool { didSet { save("prefs.dockClock", dockClock) } }
+    @Published var dockIconSize: Double { didSet { save("prefs.dockIconSize", dockIconSize) } }
+    @Published var dockMargin: Double { didSet { save("prefs.dockMargin", dockMargin) } }
+    /// Kebulatan dock, 0 sampai 100; semua radius di dalamnya turunan dari ini (dockRadii).
+    /// Pembesaran ikon saat kursor lewat, 0 (mati) sampai 100 (2,2 kali); lihat DockMagnify.
+    @Published var dockMagnify: Double { didSet { save("prefs.dockMagnify", dockMagnify) } }
+    @Published var dockRound: Double { didSet { save("prefs.dockRound", dockRound) } }
+    /// Latar dock sendiri: ikut notch, kaca, warna, atau gradien (warna teks menyesuaikan, lihat DockInk).
+    @Published var dockBg: DockBackground { didSet { save("prefs.dockBg", dockBg.rawValue) } }
+    @Published var dockBgColorHex: String { didSet { save("prefs.dockBgColorHex", dockBgColorHex) } }
+    @Published var dockBgColor2Hex: String { didSet { save("prefs.dockBgColor2Hex", dockBgColor2Hex) } }
+    /// Widget di dock, dari kiri ke kanan (lihat DockModule).
+    @Published var dockModules: [DockModule] { didSet { save("prefs.dockModules", dockModules.map(\.rawValue)) } }
+    @Published var dockLinks: [DockLink] { didSet { save("prefs.dockLinks", (try? JSONEncoder().encode(dockLinks)) ?? Data()) } }
+    @Published var dockPins: [DockPin] { didSet { save("prefs.dockPins", (try? JSONEncoder().encode(dockPins)) ?? Data()) } }
     /// Latar kustom dipakai bila dipilih dan tema kaca tidak aktif.
     var customBackgroundActive: Bool { bgMode != .none && theme != .glass }
 
@@ -224,6 +245,19 @@ final class Preferences: ObservableObject {
         clipboardLimit = max(1, min(100_000, d?.object(forKey: "prefs.clipboardLimit") as? Int ?? 40))
         lyricActiveHex = d?.string(forKey: "prefs.lyricActiveHex") ?? ""
         lyricIdleHex = d?.string(forKey: "prefs.lyricIdleHex") ?? ""
+        idleThemed = d?.object(forKey: "prefs.idleThemed") as? Bool ?? true
+        dockEnabled = d?.bool(forKey: "prefs.dockEnabled") ?? false
+        dockClock = d?.object(forKey: "prefs.dockClock") as? Bool ?? true
+        dockIconSize = min(Double(DockMetrics.iconMax), max(Double(DockMetrics.iconMin), d?.object(forKey: "prefs.dockIconSize") as? Double ?? 40))
+        dockMargin = min(48, max(0, d?.object(forKey: "prefs.dockMargin") as? Double ?? 10))
+        dockMagnify = min(100, max(0, d?.object(forKey: "prefs.dockMagnify") as? Double ?? 65))
+        dockRound = min(100, max(0, d?.object(forKey: "prefs.dockRound") as? Double ?? 100))
+        dockBg = (d?.string(forKey: "prefs.dockBg")).flatMap(DockBackground.init) ?? .follow
+        dockBgColorHex = d?.string(forKey: "prefs.dockBgColorHex") ?? "#1c1b29"
+        dockBgColor2Hex = d?.string(forKey: "prefs.dockBgColor2Hex") ?? "#3b2a86"
+        dockModules = DockModule.clean(d?.stringArray(forKey: "prefs.dockModules") ?? [])
+        dockLinks = DockLinks.clean((d?.data(forKey: "prefs.dockLinks")).flatMap { try? JSONDecoder().decode([DockLink].self, from: $0) } ?? [])
+        dockPins = DockApps.cleanPins((d?.data(forKey: "prefs.dockPins")).flatMap { try? JSONDecoder().decode([DockPin].self, from: $0) } ?? [])
         floatOnNotch = d?.bool(forKey: "prefs.floatOnNotch") ?? false
         floatDX = d?.object(forKey: "prefs.floatDX") as? Double ?? 0
         floatDY = d?.object(forKey: "prefs.floatDY") as? Double ?? 0

@@ -1,19 +1,20 @@
 import AppKit
 import ServiceManagement
 import SwiftUI
+import NotchDock
 
 // Jendela Pengaturan app mandiri, bergaya Pengaturan Sistem macOS: sidebar kategori di kiri, di kanan header
 // besar lalu kartu pengaturan. Pilihan fitur dan "Buka saat Mac dinyalakan" ada di sini, bukan di menu bar.
 
 enum SettingsPane: String, CaseIterable, Identifiable {
     // Urutan = urutan di sidebar.
-    case appearance, behavior, companion, features, skins, weather, tabs, general, data
+    case appearance, behavior, companion, features, skins, dock, weather, tabs, general, data
 
     /// Kelompok di sidebar: 0 Notch, 1 Fitur, 2 App.
     var group: Int {
         switch self {
         case .appearance, .behavior, .companion: return 0
-        case .features, .skins, .weather, .tabs: return 1
+        case .features, .skins, .dock, .weather, .tabs: return 1
         case .general, .data: return 2
         }
     }
@@ -28,6 +29,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .companion: return L("wajah ekspresi mata kedip mode reaksi", "face expression eyes blink mode reaction")
         case .features: return L("lagu musik lirik equalizer clipboard tugas minum air kalkulator kamera stopwatch alarm baterai charger download headphone caps lock internet", "music lyrics equalizer clipboard tasks water calculator camera stopwatch alarm battery charger download headphone caps lock internet")
         case .skins: return L("skin desktop widget mimik rainmeter", "desktop skin widget mimik rainmeter")
+        case .dock: return L("dock taskbar bilah aplikasi melayang jam sematkan ikon", "dock taskbar bar apps floating clock pin icon")
         case .weather: return L("cuaca kota kalender ics agenda lokasi", "weather city calendar ics agenda location")
         case .tabs: return L("urutan tab halaman", "order tab page")
         case .data: return L("cadangan ekspor impor pulihkan reset", "backup export import restore reset")
@@ -44,6 +46,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .companion: return L("Teman kecil", "Companion")
         case .features: return L("Fitur", "Features")
         case .skins: return L("Skin", "Skins")
+        case .dock: return L("Dock", "Dock")
         case .weather: return L("Cuaca", "Weather")
         case .tabs: return L("Urutan tab", "Tab order")
         case .data: return L("Data", "Data")
@@ -58,6 +61,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .companion: return L("Wajah di notch: pilihan ekspresi, kedipan, dan reaksi untuk tiap kejadian.", "The face in the notch: expressions, blinking, and how it reacts to each event.")
         case .features: return L("Pilih fitur notch yang ingin dipakai.", "Choose which notch features to use.")
         case .skins: return L("Widget di desktop ala Rainmeter: wajah Mimik, lirik, dan lainnya.", "Rainmeter-style desktop widgets: the Mimik face, lyrics, and more.")
+        case .dock: return L("Beta. Bilah aplikasi melayang di bawah layar. Mati sampai kamu menyalakannya.", "Beta. A floating app bar at the bottom of the screen. Off until you turn it on.")
         case .weather: return L("Cuaca di header dan halaman Langit.", "Weather in the header and on the Sky page.")
         case .tabs: return L("Atur urutan halaman di notch.", "Arrange the pages in the notch.")
         case .data: return L("Cadangkan atau pulihkan catatan, tugas, dan pengaturan.", "Back up or restore notes, tasks, and settings.")
@@ -72,6 +76,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .companion: return "face.smiling.fill"
         case .features: return "switch.2"
         case .skins: return "macwindow.on.rectangle"
+        case .dock: return "dock.rectangle"
         case .weather: return "cloud.sun.fill"
         case .tabs: return "list.number"
         case .data: return "archivebox.fill"
@@ -87,6 +92,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         case .companion: return (Color(red: 1.0, green: 0.62, blue: 0.7), Color(red: 0.96, green: 0.3, blue: 0.48))
         case .features: return (Color(red: 0.38, green: 0.66, blue: 1.0), Color(red: 0.1, green: 0.4, blue: 0.95))
         case .skins: return (Color(red: 0.98, green: 0.55, blue: 0.85), Color(red: 0.72, green: 0.25, blue: 0.78))
+        case .dock: return (Color(red: 0.62, green: 0.6, blue: 0.7), Color(red: 0.32, green: 0.3, blue: 0.42))
         case .weather: return (Color(red: 0.45, green: 0.8, blue: 1.0), Color(red: 0.15, green: 0.55, blue: 0.92))
         case .tabs: return (Color(red: 0.42, green: 0.88, blue: 0.5), Color(red: 0.14, green: 0.68, blue: 0.34))
         case .data: return (Color(red: 0.35, green: 0.85, blue: 0.88), Color(red: 0.08, green: 0.58, blue: 0.66))
@@ -195,6 +201,9 @@ struct SettingsView: View {
     @State private var pane: SettingsPane? = .appearance
     @State private var query = ""
     @State private var bgError = ""
+    @State private var dockLinkLabel = ""
+    @State private var dockLinkURL = ""
+    @State private var dockLinkError = ""
     @State private var loginOn = SMAppService.mainApp.status == .enabled
     @State private var autoUpdate = false
     /// Wajah contoh di bagian Teman kecil: menunjukkan pilihan yang sedang diubah.
@@ -332,9 +341,168 @@ struct SettingsView: View {
         case .companion: companionPane
         case .features: featuresPane
         case .skins: if let skins = model.skinManager { SkinsPane(skins: skins) }
+        case .dock: dockPane
         case .weather: weatherPane
         case .tabs: tabsPane
         case .data: dataPane
+        }
+    }
+
+    /// Tombol "Bawaan" di samping slider: mengembalikan nilai awal; mati bila nilainya sudah bawaan.
+    private func resetButton(isDefault: Bool, _ action: @escaping () -> Void) -> some View {
+        Button(L("Bawaan", "Default"), action: action).disabled(isDefault).controlSize(.small)
+    }
+
+    // MARK: Dock
+
+    private func dockModuleName(_ m: DockModule) -> String {
+        switch m {
+        case .media: return L("Lagu yang diputar", "Now playing")
+        case .weather: return L("Cuaca", "Weather")
+        case .timer: return L("Timer cepat (5, 15, 25 menit)", "Quick timer (5, 15, 25 min)")
+        case .clipboard: return L("3 salinan terakhir", "Last 3 copies")
+        case .lyrics: return L("Lirik", "Lyrics")
+        case .links: return L("Pintasan tautan", "Link shortcuts")
+        case .battery: return L("Baterai", "Battery")
+        case .volume: return L("Volume", "Volume")
+        }
+    }
+
+    /// Fitur lain yang dibutuhkan widget, bila belum menyala; nil bila siap dipakai.
+    private func dockModuleNeeds(_ m: DockModule) -> String? {
+        switch m {
+        case .media where !model.features.media: return L("Nyalakan \"Lagu & video yang diputar\" di Fitur dulu.", "Turn on \"Now playing\" in Features first.")
+        case .weather where !model.features.weather: return L("Nyalakan Cuaca di Fitur dan isi kota di Cuaca dulu.", "Turn on Weather in Features and set a city in Weather first.")
+        case .lyrics where !(model.features.lyrics && model.features.media): return L("Nyalakan Lirik dan \"Lagu & video yang diputar\" di Fitur dulu.", "Turn on Lyrics and \"Now playing\" in Features first.")
+        case .clipboard where !model.features.clipboard: return L("Nyalakan riwayat Clipboard di Fitur dulu.", "Turn on Clipboard history in Features first.")
+        default: return nil
+        }
+    }
+
+    private func addDockLink() {
+        guard let url = DockLinks.normalize(dockLinkURL) else { dockLinkError = L("Itu bukan alamat web yang valid.", "That is not a valid web address."); return }
+        let name = dockLinkLabel.trimmingCharacters(in: .whitespaces)
+        prefs.dockLinks.append(DockLink(label: String((name.isEmpty ? DockLinks.defaultLabel(for: url) : name).prefix(24)), url: url))
+        dockLinkLabel = ""; dockLinkURL = ""; dockLinkError = ""
+    }
+
+    private func moveDockModule(_ m: DockModule, by offset: Int) {
+        guard let from = prefs.dockModules.firstIndex(of: m), prefs.dockModules.indices.contains(from + offset) else { return }
+        prefs.dockModules.swapAt(from, from + offset)
+    }
+
+    @ViewBuilder private var dockPane: some View {
+        Section {
+            Toggle(isOn: $prefs.dockEnabled) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(L("Nyalakan dock (Beta)", "Turn on the dock (Beta)"))
+                    Text(L("Bilah melayang berisi Start, aplikasi yang berjalan, dan jam. Dock macOS tetap ada.", "A floating bar with Start, running apps, and a clock. The macOS Dock stays."))
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+        }
+        Section(L("Isi", "Contents")) {
+            Toggle(L("Tampilkan jam", "Show the clock"), isOn: $prefs.dockClock)
+            if prefs.dockPins.isEmpty {
+                Text(L("Klik kanan ikon di dock untuk menyematkan aplikasi.", "Right-click an icon in the dock to pin an app.")).font(.caption).foregroundStyle(.secondary)
+            } else {
+                ForEach(prefs.dockPins, id: \.id) { pin in
+                    HStack {
+                        Text(pin.name)
+                        Spacer()
+                        Button { prefs.dockPins = DockApps.movePin(prefs.dockPins, id: pin.id, by: -1) } label: { Image(systemName: "chevron.left") }.buttonStyle(.borderless)
+                        Button { prefs.dockPins = DockApps.movePin(prefs.dockPins, id: pin.id, by: 1) } label: { Image(systemName: "chevron.right") }.buttonStyle(.borderless)
+                        Button { prefs.dockPins = DockApps.togglePin(prefs.dockPins, id: pin.id, name: pin.name) } label: { Image(systemName: "xmark") }.buttonStyle(.borderless)
+                    }
+                }
+            }
+        }
+        Section(L("Jendela per aplikasi", "Windows per app")) {
+            HStack {
+                Text(DockWindows.trusted ? L("Izin Aksesibilitas aktif: klik kanan ikon menampilkan semua jendelanya.", "Accessibility is on: right-clicking an icon lists all its windows.")
+                                         : L("Klik kanan ikon bisa menampilkan semua jendela aplikasi, tapi butuh izin Aksesibilitas.", "Right-clicking an icon can list all of an app's windows, but needs Accessibility access."))
+                    .font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                if !DockWindows.trusted { Button(L("Beri izin…", "Allow…")) { DockWindows.requestTrust(); DockWindows.openAccessibilitySettings() } }
+            }
+            Text(L("Judul jendela hanya dibaca di Mac ini untuk menu; tidak dikirim ke mana pun.", "Window titles are read on this Mac for the menu only; nothing is sent anywhere."))
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        Section(L("Latar dock", "Dock background")) {
+            Picker(L("Latar", "Background"), selection: $prefs.dockBg) {
+                Text(L("Ikut notch", "Follow notch")).tag(DockBackground.follow)
+                Text(L("Kaca", "Glass")).tag(DockBackground.glass)
+                Text(L("Warna", "Color")).tag(DockBackground.color)
+                Text(L("Gradien", "Gradient")).tag(DockBackground.gradient)
+            }
+            if prefs.dockBg == .color || prefs.dockBg == .gradient {
+                LabeledContent(prefs.dockBg == .gradient ? L("Warna awal", "Start color") : L("Warna", "Color")) {
+                    ColorPicker("", selection: Binding(get: { Color(hex: prefs.dockBgColorHex) ?? .black }, set: { prefs.dockBgColorHex = $0.hex }), supportsOpacity: false).labelsHidden()
+                }
+            }
+            if prefs.dockBg == .gradient {
+                LabeledContent(L("Warna akhir", "End color")) {
+                    ColorPicker("", selection: Binding(get: { Color(hex: prefs.dockBgColor2Hex) ?? .black }, set: { prefs.dockBgColor2Hex = $0.hex }), supportsOpacity: false).labelsHidden()
+                }
+            }
+            Text(L("Ikut notch memakai tema dan latar notch. Tulisan otomatis gelap atau terang mengikuti kecerahan latar.", "Follow notch uses the notch theme and background. Text turns dark or light automatically to stay readable."))
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        Section(L("Widget", "Widgets")) {
+            let cfg = DockConfig(iconSize: CGFloat(prefs.dockIconSize), showClock: prefs.dockClock, modules: prefs.dockModules, links: prefs.dockLinks.count)
+            let screenW = NSScreen.main?.frame.width ?? 1440
+            ForEach(prefs.dockModules) { m in
+                VStack(alignment: .leading, spacing: 2) {
+                HStack {
+                    Text(dockModuleName(m))
+                    Spacer()
+                    Button { moveDockModule(m, by: -1) } label: { Image(systemName: "chevron.left") }.buttonStyle(.borderless)
+                    Button { moveDockModule(m, by: 1) } label: { Image(systemName: "chevron.right") }.buttonStyle(.borderless)
+                    Button { prefs.dockModules.removeAll { $0 == m } } label: { Image(systemName: "xmark") }.buttonStyle(.borderless)
+                }
+                if let need = dockModuleNeeds(m) { Text(need).font(.caption).foregroundStyle(.orange) }
+                }
+            }
+            ForEach(DockModule.allCases.filter { !prefs.dockModules.contains($0) }) { m in
+                let fits = DockLayout.canAdd(m, cfg, screenW: screenW)
+                let need = dockModuleNeeds(m)
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack {
+                        Text(dockModuleName(m)).foregroundStyle(fits && need == nil ? .primary : .secondary)
+                        Spacer()
+                        if !fits { Text(L("Tidak muat", "No room")).font(.caption).foregroundStyle(.secondary) }
+                        else { Button(L("Tambah", "Add")) { prefs.dockModules.append(m) }.disabled(need != nil) }
+                    }
+                    if fits, let need { Text(need).font(.caption).foregroundStyle(.orange) }
+                }
+            }
+            Text(L("Dock tidak pernah melewati lebar layar: widget tidak bisa ditambah bila penuh, dan yang paling kanan gugur bila layar menyempit.", "The dock never exceeds the screen width: widgets can't be added when it is full, and the right-most ones drop off when the screen gets narrower."))
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        Section(L("Tautan", "Links")) {
+            ForEach(prefs.dockLinks) { link in
+                HStack {
+                    VStack(alignment: .leading, spacing: 0) { Text(link.label); Text(link.url).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
+                    Spacer()
+                    Button { prefs.dockLinks.removeAll { $0.id == link.id } } label: { Image(systemName: "xmark") }.buttonStyle(.borderless)
+                }
+            }
+            HStack {
+                TextField(L("Nama (opsional)", "Name (optional)"), text: $dockLinkLabel).frame(width: 130)
+                TextField(L("Alamat, mis. youtube.com", "Address, e.g. youtube.com"), text: $dockLinkURL).onSubmit(addDockLink)
+                Button(L("Tambah", "Add"), action: addDockLink).disabled(dockLinkURL.isEmpty || prefs.dockLinks.count >= DockLinks.maxCount)
+            }
+            if !dockLinkError.isEmpty { Text(dockLinkError).font(.caption).foregroundStyle(.orange) }
+            Text(L("Dipakai widget Pintasan tautan (maksimal \(DockLinks.maxCount)). Hanya alamat web (http atau https).", "Used by the Link shortcuts widget (up to \(DockLinks.maxCount)). Web addresses only (http or https)."))
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        Section(L("Ukuran", "Size")) {
+            HStack { Text(L("Ukuran ikon", "Icon size")); Slider(value: $prefs.dockIconSize, in: Double(DockMetrics.iconMin)...Double(DockMetrics.iconMax), step: 4); Text("\(Int(prefs.dockIconSize))").monospacedDigit().frame(width: 28); resetButton(isDefault: prefs.dockIconSize == 40) { prefs.dockIconSize = 40 } }
+            HStack { Text(L("Pembesaran", "Magnification")); Slider(value: $prefs.dockMagnify, in: 0...100, step: 5); Text(prefs.dockMagnify < 1 ? L("Mati", "Off") : "\(Int(prefs.dockMagnify))").monospacedDigit().frame(width: 36); resetButton(isDefault: prefs.dockMagnify == 65) { prefs.dockMagnify = 65 } }
+            HStack { Text(L("Jarak dari bawah", "Distance from the bottom")); Slider(value: $prefs.dockMargin, in: 0...48, step: 2); Text("\(Int(prefs.dockMargin))").monospacedDigit().frame(width: 28); resetButton(isDefault: prefs.dockMargin == 10) { prefs.dockMargin = 10 } }
+            HStack { Text(L("Kebulatan", "Roundness")); Slider(value: $prefs.dockRound, in: 0...100, step: 5); Text("\(Int(prefs.dockRound))").monospacedDigit().frame(width: 28); resetButton(isDefault: prefs.dockRound == 100) { prefs.dockRound = 100 } }
+            Text(L("Dock tidak pernah melebihi lebar layar; yang tidak muat masuk ke tombol +N.", "The dock never exceeds the screen width; what does not fit goes into the +N button."))
+                .font(.caption).foregroundStyle(.secondary)
         }
     }
 
@@ -669,24 +837,32 @@ struct SettingsView: View {
                 }
             }
             if prefs.bgMode != .none {
-                Text(model.hasNotch ? L("Di Mac berponi, notch yang menempel dan tertutup tetap hitam agar menyatu dengan poni; latar tampil di panel terbuka dan notch melayang.", "On a Mac with a notch, the attached closed notch stays black to blend with the physical notch; the background shows in the open panel and a floating notch.")
-                                    : L("Latar tampil di panel terbuka dan notch melayang.", "The background shows in the open panel and a floating notch."))
+                Toggle(L("Notch diam ikut latar", "Idle notch follows the background"), isOn: $prefs.idleThemed)
+                Text(prefs.idleThemed
+                     ? (model.hasNotch ? L("Latar tampil di notch diam, panel terbuka, dan notch melayang. Di Mac berponi, poni fisik tetap hitam, jadi latar terlihat di sisi kiri dan kanannya. Mode Gambar memakai gambarnya di notch diam.", "The background shows in the idle notch, the open panel, and a floating notch. On a Mac with a notch, the physical notch stays black, so the background shows on its left and right. Image mode uses the picture in the idle notch.")
+                                        : L("Latar tampil di notch diam, panel terbuka, dan notch melayang. Mode Gambar memakai gambarnya di notch diam.", "The background shows in the idle notch, the open panel, and a floating notch. Image mode uses the picture in the idle notch."))
+                     : (model.hasNotch ? L("Notch diam yang menempel tetap hitam agar menyatu dengan poni; latar tampil di panel terbuka dan notch melayang.", "The idle attached notch stays black to blend with the notch; the background shows in the open panel and a floating notch.")
+                                        : L("Latar tampil di panel terbuka dan notch melayang.", "The background shows in the open panel and a floating notch.")))
                     .font(.caption).foregroundStyle(.secondary)
             }
         }
+        .disabled(prefs.theme == .glass)
         Section(L("Bentuk, ukuran, dan warna aksen", "Shape, size, and accent color")) {
-            Toggle(L("Melayang juga di Mac berponi", "Float on Macs with a notch too"), isOn: $prefs.floatOnNotch)
+            // Tampil di Mac berponi, juga saat sedang melayang (hasNotch mati), atau saklarnya tidak bisa dimatikan lagi.
+            if model.physicalNotch || prefs.floatOnNotch { Toggle(L("Melayang juga di Mac berponi", "Float on Macs with a notch too"), isOn: $prefs.floatOnNotch) }
             if !model.hasNotch { FloatPositionMap(model: model, prefs: prefs) }
             Picker(L("Gaya melayang", "Floating style"), selection: $prefs.floatingStyle) {
                 ForEach(Preferences.FloatingStyle.allCases) { Text($0.label).tag($0) }
             }
             LabeledContent(L("Ukuran panel terbuka", "Open panel size")) {
                 Slider(value: $prefs.scale, in: 0.7...1.5, step: 0.05) { EmptyView() }
-                Text("\(Int((prefs.scale * 100).rounded()))%").monospacedDigit().frame(width: 60, alignment: .trailing)
+                Text("\(Int((prefs.scale * 100).rounded()))%").monospacedDigit().frame(width: 48, alignment: .trailing)
+                resetButton(isDefault: abs(prefs.scale - 1) < 0.001) { prefs.scale = 1 }
             }
             LabeledContent(L("Ukuran notch saat diam", "Idle notch size")) {
                 Slider(value: $prefs.idleScale, in: 0.6...1.5, step: 0.05) { EmptyView() }
-                Text("\(Int(prefs.idleScale * 100))%").monospacedDigit().frame(width: 60, alignment: .trailing)
+                Text("\(Int((prefs.idleScale * 100).rounded()))%").monospacedDigit().frame(width: 48, alignment: .trailing)
+                resetButton(isDefault: abs(prefs.idleScale - 1) < 0.001) { prefs.idleScale = 1 }
             }
             if model.hasNotch {
                 Text(L("Di Mac berponi, bagian hitam tidak bisa lebih kecil dari poni aslinya; hanya mata di kedua sisi yang mengecil. Pakai Sembunyikan otomatis untuk menghilangkannya sepenuhnya.", "On a Mac with a notch, the black shape can't shrink below the physical notch; only the eyes on each side get smaller. Use auto-hide to hide it completely."))
@@ -694,7 +870,8 @@ struct SettingsView: View {
             }
             LabeledContent(L("Kebulatan sudut", "Corner roundness")) {
                 Slider(value: $prefs.roundness, in: 0...40, step: 1) { EmptyView() }
-                Text("\(Int(prefs.roundness)) pt").monospacedDigit().frame(width: 60, alignment: .trailing)
+                Text("\(Int(prefs.roundness)) pt").monospacedDigit().frame(width: 48, alignment: .trailing)
+                resetButton(isDefault: abs(prefs.roundness - 24) < 0.5) { prefs.roundness = 24 }
             }
             LabeledContent(L("Warna aksen", "Accent color")) {
                 HStack(spacing: 8) {
@@ -998,7 +1175,7 @@ struct SettingsStage: View {
             LinearGradient(colors: [Color(red: 0.1, green: 0.09, blue: 0.19), Color(red: 0.24, green: 0.16, blue: 0.39), Color(red: 0.44, green: 0.23, blue: 0.49)], startPoint: .topLeading, endPoint: .bottomTrailing)
             Color.black.opacity(0.28).frame(height: 22).frame(maxHeight: .infinity, alignment: .top)
             ZStack(alignment: .top) {
-                if open && prefs.customBackgroundActive { CustomBackground(prefs: prefs) } else { Color.black }
+                if (open || prefs.idleThemed) && prefs.customBackgroundActive { CustomBackground(prefs: prefs) } else { Color.black }
                 HStack(spacing: 10) {
                     if model.features.companion {
                         Capsule().fill(accent).frame(width: 8, height: 13)
