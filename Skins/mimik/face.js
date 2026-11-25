@@ -7,6 +7,8 @@ let uid = 0
 // m: [half width, curve (+ smile), open], ms: mouth skew, l/r: per-eye overrides
 export const expressions = {
   idle: { m: [8, 2, 0] },
+  // Menikmati lagu dengan tenang: mata terpejam santai (lengkung tipis ke bawah), senyum kecil tertutup.
+  bliss: { top: 0.84, sy: 1.15, ey: 5, gy: 1, m: [7, 4, 0] },
   content: { top: 0.35, m: [9, 5, 0] },
   relieved: { top: 0.5, tilt: -6, ey: 5, m: [9, 4, 0] },
   happy: { bot: 0.45, m: [11, 8, 0] },
@@ -175,7 +177,14 @@ function ensureLoop() {
   if (!raf) { last = performance.now(); raf = requestAnimationFrame(tick) }
 }
 
+// Hemat daya: wajah yang sedang diam (pegas tenang, tanpa reaksi, kedip, atau kursor baru) cukup digambar ~15 kali per detik
+// (napas dan kedip berikutnya tetap mulus); begitu ada gerakan, kembali ke kecepatan layar penuh.
+const IDLE_MS = 1000 / 15
 function tick(now) {
+  let busy = false, groovy = false
+  for (const f of faces) if (f.vis) { if (f.busy) busy = true; if (f.vAmp > 0.02) groovy = true }
+  // Mengangguk mengikuti musik cukup 30 fps; wajah yang benar-benar diam ~15 fps.
+  if (!busy && now - last < (groovy ? 1000 / 30 : IDLE_MS) - 2) { raf = requestAnimationFrame(tick); return }
   const dt = Math.min(0.05, (now - last) / 1000)
   last = now
   for (const f of faces) if (f.vis) f.step(now / 1000, dt)
@@ -183,6 +192,24 @@ function tick(now) {
 }
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v))
+
+// Menoleh ala bbot: mata dan mulut menempel pada permukaan kepala yang berbentuk bola, dan bola itu diputar
+// mengikuti arah pandang. Mata di tepi bergeser jauh dan menyempit (foreshortening), jadi terasa menoleh,
+// bukan sekadar bergeser. HEAD_R = jari-jari kepala bulat; TURN = sudut putar maksimum (radian) pada pandangan penuh.
+const HEAD_R = 46
+const TURN = 0.36
+const PROJ = { x: 0, y: 0, squash: 1, phi: 0 }
+function project(x, y, cosYaw, sinYaw, cosPitch, sinPitch) {
+  const z = Math.sqrt(Math.max(HEAD_R * HEAD_R - x * x - y * y, 1))
+  const rx = x * cosYaw + z * sinYaw, rz = z * cosYaw - x * sinYaw
+  PROJ.x = rx
+  PROJ.y = y * cosPitch - rz * sinPitch
+  const depth = y * sinPitch + rz * cosPitch
+  PROJ.squash = clamp(depth / z, 0.25, 1)
+  PROJ.phi = Math.atan2(PROJ.y, rx) * 180 / Math.PI
+  return PROJ
+}
+const turnOf = (T, sx) => `translate(${T.x.toFixed(2)} ${T.y.toFixed(2)}) rotate(${T.phi.toFixed(2)}) scale(${T.squash.toFixed(3)} 1) rotate(${(-T.phi).toFixed(2)})`
 const STAR = (() => {
   let d = ''
   for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + (i * Math.PI) / 5, r = i % 2 ? 5.5 : 13; d += (i ? 'L' : 'M') + (Math.cos(a) * r).toFixed(2) + ' ' + (Math.sin(a) * r).toFixed(2) }
@@ -206,7 +233,13 @@ class Face {
     this.g = { x: 0, y: 0 }
     this.tw = { x: 0, y: 0 }
     this.nextBlink = 1 + Math.random() * 2
+    this.t0 = performance.now() / 1000
     this.nextWander = 0
+    this.busy = true // sampai wajah pertama selesai menenang
+    // Mengangguk mengikuti musik (lihat vibe()): amplitudo (0 = diam), tempo, ketukan terakhir, dan nada yang sedang melayang.
+    this.vOn = false; this.vAmp = 0; this.vE = 0; this.vPeriod = 0.6; this.vBeats = 0; this.vLast = -100; this.vMouth = 0
+    this.notes = []
+    this.noteEls = []
     this.blinkStart = -9
     this.mop = 0
     this.build()
@@ -307,6 +340,28 @@ class Face {
     this.rx = { name, t0: performance.now() / 1000, d: RX_DUR[name] }
   }
   talk(e) { this.talkE = clamp(e, 0, 1) }
+  /**
+   * Irama lagu dari Notch: `energy` 0..1 (kerasnya musik), `beats` (jumlah ketukan sejak mulai), `period` (detik per ketukan),
+   * `on` (musik terdengar). Kepala mengangguk tepat di ketukan dan miring bergantian, mulut bersenandung, dan nada melayang.
+   */
+  vibe(energy, beats, period, on) {
+    this.vOn = !!on
+    this.vE = clamp(energy, 0, 1)
+    this.vPeriod = clamp(period || 0.6, 0.3, 1.1)
+    if (beats !== this.vBeats) {
+      if (beats > this.vBeats) {
+        this.vLast = performance.now() / 1000
+        // Nada dibuat berdasarkan waktu (lihat step), bukan ketukan, supaya pasti muncul walau deteksi ketukan meleset.
+      }
+      this.vBeats = beats
+    }
+  }
+
+  spawnNote(n) {
+    if (reduceMotion.matches || this.notes.length >= 3) return
+    this.noteSide = -(this.noteSide || 1)
+    this.notes.push({ t0: performance.now() / 1000, glyph: ['♪', '♫', '♬'][n % 3], side: this.noteSide, x0: this.noteSide * (30 + Math.random() * 9) })
+  }
   look(x, y, ms = 900) { this.lk = { x: clamp(x, -1, 1), y: clamp(y, -1, 1), until: performance.now() / 1000 + ms / 1000 } }
 
   step(t, dt) {
@@ -325,6 +380,8 @@ class Face {
       }
     }
 
+    let moving = 0
+    for (const key in tg) moving = Math.max(moving, Math.abs(tg[key] - c[key]) + Math.abs(this.vel[key] || 0))
     let blink = 0, rBlink = 0, wink = 0
     if (o.blink && !still && t >= this.nextBlink) { this.blinkStart = t; this.nextBlink = t + 2 + Math.random() * 3.5 }
     const bp = (t - this.blinkStart) / 0.16
@@ -350,6 +407,24 @@ class Face {
       }
     }
     if (c.trem > 0.01 && !still) { tx += Math.sin(t * 70) * 0.5 * c.trem; ty += Math.cos(t * 83) * 0.4 * c.trem }
+    // Mengangguk mengikuti musik: turun tepat di ketukan, miring ke sisi yang berganti tiap ketukan; amplitudo naik turun mulus.
+    const vTarget = this.vOn && !still ? 1 : 0
+    this.vAmp += (vTarget - this.vAmp) * (dt ? 1 - Math.exp(-dt * 3) : 1)
+    if (this.vAmp > 0.005) {
+      // Santai: satu anggukan meliputi beberapa ketukan (2, atau 4 bila tempo cepat; minimal ~1,3 detik), kecil, dan melengkung halus.
+      const cycle = this.vPeriod * 2 >= 1.3 ? 2 : 4
+      const q = ((t - this.vLast) / this.vPeriod + (this.vBeats % cycle)) / cycle, ph = q - Math.floor(q)
+      const depth = (1 + Math.cos(2 * Math.PI * ph)) / 2, sway = Math.sin(2 * Math.PI * ph)
+      const amp = this.vAmp * (0.5 + 0.35 * Math.min(1, this.vE * 1.4))
+      ty += amp * 2.4 * depth
+      rot += amp * 1.8 * sway
+      tx += amp * 0.5 * sway
+      // Nada musik: satu tiap ~1 sampai 2 detik selama lagu terdengar, melayang pelan.
+      if (this.vOn && this.vAmp > 0.3 && t >= (this.nextNote || 0)) {
+        this.spawnNote(this.noteN = (this.noteN || 0) + 1)
+        this.nextNote = t + 1.0 + Math.random() * 1.0
+      }
+    }
     this.head.setAttribute('transform', `translate(${tx.toFixed(2)} ${ty.toFixed(2)}) rotate(${rot.toFixed(1)}) scale(${hx.toFixed(3)} ${hy.toFixed(3)})`)
 
     // gaze: pointer if it moved recently, otherwise wander
@@ -360,7 +435,7 @@ class Face {
       if (!this.rect || t - this.rectT > 0.4) { this.rect = this.host.getBoundingClientRect(); this.rectT = t }
       const r = this.rect
       const dx = ptr.x - (r.left + r.width / 2), dy = ptr.y - (r.top + r.height / 2)
-      const d = Math.hypot(dx, dy) || 1, g0 = Math.min(1, d / Math.max(r.width, r.height, 1) / 2.2), f = Math.min(1, g0 * (2 - g0) * 4.4)
+      const d = Math.hypot(dx, dy) || 1, g0 = Math.min(1, d / (Math.max(r.width, r.height, 1) * 2.2)), f = g0 * (2 - g0)
       const tk = TRACK[o.expression] ?? 1
       gx = (dx / d) * f * 5 * tk; gy = (dy / d) * f * 5 * tk
     } else if (o.wander && !still) {
@@ -375,6 +450,13 @@ class Face {
       }
     }
 
+    // Arah pandang 0..1 → putaran kepala (yaw ke kiri-kanan, pitch ke atas-bawah).
+    const gn = { x: clamp(this.g.x / 5, -1.15, 1.15), y: clamp(this.g.y / 5, -1.15, 1.15) }
+    const yaw = gn.x * TURN, pitch = -gn.y * TURN
+    const cosYaw = Math.cos(yaw), sinYaw = Math.sin(yaw), cosPit = Math.cos(pitch), sinPit = Math.sin(pitch)
+    const gMoving = Math.abs(gx - this.g.x) + Math.abs(gy - this.g.y) + Math.abs(this.gv.x) + Math.abs(this.gv.y)
+    this.busy = moving > 0.02 || gMoving > 0.05 || !!this.rx || bp >= 0 && bp <= 1 || ptr.t > 0 && t - ptr.t < CURSOR_HOLD + 0.3 ||
+      !!(this.lk && t < this.lk.until) || this.talkE > 0.02 || c.trem > 0.01 || t - this.t0 < 1
     const T = this.T, ry = this.ry
     if (typeof T.shape === 'function') this.setShape(T.shape(t))
     const pos = {}
@@ -382,15 +464,16 @@ class Face {
       const K = e.k, a = K === 'L' ? c.Ltilt : -c.Rtilt
       const top = clamp(Math.max(c[K + 'top'], blink, rBlink, K === 'R' ? wink : 0), 0, 1)
       const bot = clamp(c[K + 'bot'], 0, 1)
-      const x = c[K + 'x'] + c[K + 'gx'] + this.g.x, y = c[K + 'y'] + c[K + 'gy'] + this.g.y
+      const P = project(c[K + 'x'] + c[K + 'gx'], c[K + 'y'] + c[K + 'gy'], cosYaw, sinYaw, cosPit, sinPit)
+      const x = P.x, y = P.y, place = turnOf(P)
       const rt = (K === 'L' ? -T.rot : T.rot), sc = `rotate(${rt}) scale(${c[K + 'sx'].toFixed(3)} ${c[K + 'sy'].toFixed(3)})`
       pos[K] = [x, y]
-      e.g.setAttribute('transform', `translate(${x.toFixed(2)} ${y.toFixed(2)})`)
+      e.g.setAttribute('transform', place)
       e.sc.setAttribute('transform', sc)
       e.ov.setAttribute('transform', sc)
       e.top.setAttribute('transform', `rotate(${a.toFixed(1)}) translate(0 ${(-ry + (2 * ry + 1) * top).toFixed(2)})`)
       e.bot.setAttribute('transform', `rotate(${a.toFixed(1)}) translate(0 ${(ry + 16 - 2 * ry * bot).toFixed(2)})`)
-      e.pupil.setAttribute('transform', `translate(${(this.g.x * 0.6).toFixed(2)} ${(this.g.y * 0.6).toFixed(2)})`)
+      e.pupil.setAttribute('transform', `translate(${(gn.x * 4.2 + c[K + 'gx'] * 0.3).toFixed(2)} ${(gn.y * 4.2 + c[K + 'gy'] * 0.3).toFixed(2)})`)
       e.pupil.style.opacity = o.pupils ? 1 : 0
       const hide = Math.max(c.dH, c.dT)
       e.heart.style.opacity = c.dH
@@ -416,7 +499,7 @@ class Face {
     this.sweat.style.opacity = c.dW
     this.blush.forEach((n) => (n.style.opacity = c.dB * 0.55))
     const tk = this.talkE
-    const want = o.mouth || tk > 0.02 ? 1 : 0
+    const want = o.mouth || tk > 0.02 || this.vAmp > 0.3 ? 1 : 0 // dengan lagu, senyum kecil tampil walau opsi mulut mati
     this.mop += (want - this.mop) * (dt ? 1 - Math.exp(-dt * 12) : 1)
     const mo = Math.max(c.mo, tk * 9), mw = tk > 0.02 ? c.mw + (9 - c.mw) * Math.min(1, tk * 3) : c.mw
     const cy = c.my, mc = c.mc, ms = c.ms
@@ -424,6 +507,8 @@ class Face {
     const d = `M${-mw.toFixed(2)} ${lY.toFixed(2)}Q0 ${ctl.toFixed(2)} ${mw.toFixed(2)} ${rY.toFixed(2)}` +
       (mo > 0.4 ? `Q0 ${(ctl + mo * 2).toFixed(2)} ${-mw.toFixed(2)} ${lY.toFixed(2)}Z` : '')
     this.mouth.setAttribute('d', d)
+    const MP = project(0, cy, cosYaw, sinYaw, cosPit, sinPit)
+    this.mouth.setAttribute('transform', `${turnOf(MP)} translate(0 ${(-cy).toFixed(2)})`)
     this.mouth.style.opacity = this.mop
     this.mouth.style.fillOpacity = clamp(mo / 2, 0, 1)
 
@@ -435,6 +520,26 @@ class Face {
       n.style.opacity = c.dZ * Math.sin(ph * Math.PI)
     })
     this.q.style.opacity = c.dQ
+    this.drawNotes(t)
+  }
+
+  /** Nada musik yang naik dan memudar di samping kepala (dibuat saat ketukan genap). */
+  drawNotes(t) {
+    const now = performance.now() / 1000
+    this.notes = this.notes.filter((n) => now - n.t0 < 2.6)
+    while (this.noteEls.length < this.notes.length) {
+      const e = el('text', { 'font-size': 18, 'font-weight': 800, 'font-family': 'ui-sans-serif,system-ui,sans-serif', style: 'fill:var(--face-ink,#fff)' }, this.svg)
+      this.noteEls.push(e)
+    }
+    this.noteEls.forEach((e, i) => {
+      const n = this.notes[i]
+      if (!n) { e.style.opacity = 0; return }
+      const age = (now - n.t0) / 2.6
+      e.textContent = n.glyph
+      e.setAttribute('x', (n.x0 + Math.sin(age * 5) * 4 + n.side * age * 8).toFixed(1))
+      e.setAttribute('y', (-22 - age * 26).toFixed(1))
+      e.style.opacity = (Math.sin(Math.PI * Math.min(1, age * 1.05)) * 0.95).toFixed(2)
+    })
   }
 
   destroy() {
@@ -459,6 +564,7 @@ export function createFace(host, opts = {}) {
     update: (o) => f.update(o),
     react: (n) => f.react(n),
     talk: (e) => f.talk(e),
+    vibe: (e, b, p, on) => f.vibe(e, b, p, on),
     look: (x, y, ms) => f.look(x, y, ms),
     destroy: () => f.destroy(),
   }

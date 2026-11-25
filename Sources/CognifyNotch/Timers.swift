@@ -1,5 +1,6 @@
 import NotchTime
 import SwiftUI
+import NotchDock
 
 /// Stopwatch (dengan lap) dan hitung mundur cepat ("10 menit" untuk masak), terpisah dari
 /// Pomodoro. Hitung mundur disimpan sebagai jam selesai, jadi tetap benar walau notch dibuka
@@ -41,10 +42,23 @@ final class ClockTools: ObservableObject {
     private static let alarmGrace = 10
     private var ticker: Timer?
     private let key = "clock.countdowns"
+    private let stopwatchKey = "clock.stopwatch"
+    private var wakeObserver: NSObjectProtocol?
 
     init() {
         if let data = UserDefaults.standard.data(forKey: key), let saved = try? JSONDecoder().decode([Countdown].self, from: data) {
             countdowns = saved.filter { $0.end > Date() }
+        }
+        // Stopwatch: dibaca dari jam dinding yang tersimpan, jadi tetap benar setelah tidur atau app dibuka ulang.
+        if let data = UserDefaults.standard.data(forKey: stopwatchKey), let saved = try? JSONDecoder().decode(StopwatchSnapshot.self, from: data) {
+            let s = StopwatchMath.sanitized(saved)
+            started = s.startedAt.map { Date(timeIntervalSince1970: $0) }
+            accumulated = s.accumulated
+            laps = s.laps
+        }
+        // Mac bangun dari tidur: segarkan tampilan segera, tanpa menunggu detak berikutnya.
+        wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.objectWillChange.send() }
         }
         schedule()
         if let data = UserDefaults.standard.data(forKey: alarmKey), let saved = try? JSONDecoder().decode([Alarm].self, from: data) { alarms = saved }
@@ -58,28 +72,37 @@ final class ClockTools: ObservableObject {
 
     var running: Bool { started != nil }
 
+    /// Dibaca dari jam sekarang dikurangi jam mulai (bukan hitungan sendiri), jadi tidur Mac ikut terhitung.
     func elapsed(at date: Date = Date()) -> TimeInterval {
-        accumulated + (started.map { date.timeIntervalSince($0) } ?? 0)
+        StopwatchMath.elapsed(accumulated: accumulated, startedAt: started?.timeIntervalSince1970, now: date.timeIntervalSince1970)
+    }
+
+    private func saveStopwatch() {
+        let snapshot = StopwatchSnapshot(startedAt: started?.timeIntervalSince1970, accumulated: accumulated, laps: laps)
+        if let data = try? JSONEncoder().encode(snapshot) { UserDefaults.standard.set(data, forKey: stopwatchKey) }
     }
 
     func toggleStopwatch() {
-        if let started {
-            accumulated += Date().timeIntervalSince(started)
-            self.started = nil
+        if started != nil {
+            accumulated = elapsed()
+            started = nil
         } else {
             started = Date()
         }
+        saveStopwatch()
     }
 
     func lap() {
         guard running else { return }
         withAnimation(.notch) { laps.insert(elapsed(), at: 0) }
+        saveStopwatch()
     }
 
     func resetStopwatch() {
         started = nil
         accumulated = 0
         withAnimation(.notch) { laps = [] }
+        saveStopwatch()
     }
 
     // MARK: Hitung mundur

@@ -24,9 +24,87 @@
     if (hour >= 22) return 'sleepy'
     return open.length ? 'curious' : 'idle'
   }
+  // Pilihan dari Pengaturan > Skin (warna, bentuk, opsi, suasana, efek): data.config. Tanpa config, tampil seperti bawaan.
+  let fixedMood = null, lastCfg = '', lastReact = 0
+  function applyConfig(c) {
+    if (!c) return
+    const key = JSON.stringify({ ...c, react: 0 })
+    if (key !== lastCfg) {
+      lastCfg = key
+      face.update({
+        type: c.type || 'round', skin: c.skin || '#000000', ink: c.ink || '#e9ebec', ring: c.ring || '#34363a',
+        mouth: !!c.mouth, pupils: !!c.pupils, follow: c.follow !== false, blink: c.blink !== false, wander: c.wander !== false,
+        gloss: !!c.gloss, rim: !!c.rim, glow: !!c.glow, scan: !!c.scan, hue: !!c.hue,
+      })
+      fixedMood = c.mood && c.mood !== 'auto' ? c.mood : null
+      last = ''
+    }
+    if (c.react && c.react.n && c.react.n !== lastReact) {
+      lastReact = c.react.n
+      try { face.react(c.react.name) } catch (e) {}
+    }
+  }
+  // Lagu terdengar: kepala mengangguk mengikuti irama (data.audio dari Notch, lewat cognify.onAudio), nada melayang, mata dan
+  // mulut ikut menikmati. Ekspresi berganti pelan di antara yang nyaman; "suasana" yang dikunci pengguna tidak diganti.
+  const LISTEN = ['bliss', 'bliss', 'relieved', 'bliss', 'content', 'bliss']
+  let listenIdx = 0, listenTimer = 0, listening = false
+  function listen(on) {
+    if (on === listening) return
+    listening = on
+    clearInterval(listenTimer)
+    if (!on) { last = ''; return }
+    listenIdx = 0
+    if (!fixedMood && !holding()) { last = 'listen'; face.set(LISTEN[0]) }
+    listenTimer = setInterval(() => { listenIdx = (listenIdx + 1) % LISTEN.length; if (!fixedMood && !holding()) face.set(LISTEN[listenIdx]) }, 9000)
+  }
+  cognify.onAudio((energy, beats, period, on) => { face.vibe(energy, beats, period, on); listen(!!on) })
+
+  // Kursor di atas notch: kaget, ragu, terkejut, atau bingung (acak, tidak sama dua kali berturut-turut). Ini PRIORITAS: mengganti suasana
+  // apa pun, termasuk menikmati lagu, selama kursor di atas notch (dan sebentar sesudahnya); setelah itu suasana sebelumnya kembali.
+  // Suasana yang dikunci pengguna di playground tidak diganti.
+  const STARTLED = { surprised: 'pop', skeptical: null, mindblown: 'boing', confused: 'shake' }
+  let hovering = false, startled = false, startledEnd = 0, hoverTimer = 0, hoverEnd = 0, lastStartled = '', lastData = {}
+  const holding = () => hovering || startled // reaksi kaget sedang tampil: mengalahkan suasana lain
+  function startle() {
+    if (fixedMood) return
+    const pool = Object.keys(STARTLED).filter((k) => k !== lastStartled)
+    lastStartled = pool[Math.floor(Math.random() * pool.length)]
+    face.set(lastStartled)
+    if (STARTLED[lastStartled]) face.react(STARTLED[lastStartled])
+  }
+  function resume() {
+    last = ''
+    if (fixedMood) return
+    if (listening) face.set(LISTEN[listenIdx])
+    else { const m = mood(lastData); last = m; face.set(m) }
+  }
+  // Notifikasi (kabar perangkat, pengingat, notifikasi app lain): kaget sebentar. Prioritas sama dengan hover.
+  cognify.onNotice(() => {
+    if (fixedMood) return
+    startled = true
+    clearTimeout(startledEnd)
+    face.set('surprised')
+    face.react('pop')
+    startledEnd = setTimeout(() => { startled = false; if (!hovering) resume() }, 2600)
+  })
+  cognify.onNotch((on) => {
+    clearTimeout(hoverEnd)
+    clearInterval(hoverTimer)
+    if (on) {
+      hovering = true
+      startle()
+      hoverTimer = setInterval(startle, 3500) // masih di atas notch: berganti reaksi tiap beberapa detik
+    } else {
+      hoverEnd = setTimeout(() => { hovering = false; if (!startled) resume() }, 700)
+    }
+  })
   let last = ''
   cognify.on((d) => {
-    const m = mood(d)
-    if (m !== last) { last = m; face.set(m); if (m === 'joy' || m === 'happy') face.react('bounce') }
+    lastData = d
+    applyConfig(d.config)
+    if (holding() && !fixedMood) return
+    if (listening && !fixedMood) return
+    const m = fixedMood || mood(d)
+    if (m !== last) { last = m; face.set(m); if (!fixedMood && (m === 'joy' || m === 'happy')) face.react('bounce') }
   })
 </script>

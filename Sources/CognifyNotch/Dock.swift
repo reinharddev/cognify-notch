@@ -151,6 +151,8 @@ final class DockController {
             prefs.$dockModules.map { _ in }.eraseToAnyPublisher(), prefs.$dockMagnify.map { _ in }.eraseToAnyPublisher(), model.$hovering.map { _ in }.eraseToAnyPublisher(), prefs.$dockLinks.map { _ in }.eraseToAnyPublisher(), prefs.$dockMargin.map { _ in }.eraseToAnyPublisher(), prefs.$dockPins.map { _ in }.eraseToAnyPublisher(),
             model.$running.map { _ in }.eraseToAnyPublisher(),
             NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification).map { _ in }.eraseToAnyPublisher(),
+            // Pengaturan Dock macOS berubah (sembunyikan otomatis, ukuran, posisi): atur ulang jarak dari tepi bawah.
+            DistributedNotificationCenter.default().publisher(for: Notification.Name("com.apple.dock.prefchanged")).map { _ in }.eraseToAnyPublisher(),
         ]
         Publishers.MergeMany(changes).dropFirst().debounce(for: .milliseconds(30), scheduler: DispatchQueue.main)
             .sink { [weak self] in self?.place() }.store(in: &bag)
@@ -179,7 +181,11 @@ final class DockController {
         let slots = DockLayout.appSlots(screenW: screen.frame.width, cfg)
         let apps = min(model.entries.count, slots)
         let size = CGSize(width: DockLayout.width(apps: max(apps, 0), cfg), height: DockMetrics.cell(cfg.iconSize) + DockMetrics.pad * 2)
-        let o = DockLayout.origin(screen: screen.frame, visible: screen.visibleFrame, size: size, margin: CGFloat(prefs.dockMargin))
+        let native = UserDefaults(suiteName: "com.apple.dock")
+        let reserve = NativeDock.reserve(autohide: native?.bool(forKey: "autohide") ?? false, orientation: native?.string(forKey: "orientation") ?? "bottom",
+                                         tile: CGFloat(native?.double(forKey: "tilesize") ?? 0), large: CGFloat(native?.double(forKey: "largesize") ?? 0),
+                                         magnification: native?.bool(forKey: "magnification") ?? false)
+        let o = DockLayout.origin(screen: screen.frame, visible: screen.visibleFrame, size: size, margin: CGFloat(prefs.dockMargin), reserve: reserve)
         // Ruang transparan di sekeliling dock: tipis saat diam (supaya dock bisa membal), dan lebih besar saat kursor di atasnya (supaya ikon
         // yang membesar ke atas dan ke samping tidak terpotong). Jendela yang besar hanya ada selama kursor di atas dock.
         let peak = DockMagnify.peak(percent: prefs.dockMagnify)

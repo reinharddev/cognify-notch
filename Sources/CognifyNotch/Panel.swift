@@ -306,6 +306,13 @@ final class NotchController {
 
     private func wake() {
         model.noteActivity()
+        if model.prefs.companionFollow, model.headMode || model.live?.eyes == true {
+            // Kepala melayang atau mata di notch: menoleh ke arah kursor. Mati: kembali lurus.
+            let r = hotRect(margin: 0)
+            model.face.look(at: NSEvent.mouseLocation, from: NSPoint(x: r.midX, y: r.midY))
+        } else if !model.prefs.companionFollow {
+            model.face.lookAhead()
+        }
         model.tickAutoHide()
         // "Layar yang sedang dipakai": notch pindah begitu kursor pindah ke layar lain.
         if model.prefs.display == .active, !model.expanded,

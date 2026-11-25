@@ -18,6 +18,10 @@ struct SkinInfo: Identifiable, Equatable {
     let height: Double
     /// Skin meminta posisi kursor (untuk wajah yang mengikuti kursor).
     let cursor: Bool
+    /// Skin meminta irama lagu (`cognify.onAudio`): kerasnya musik, ketukan, dan tempo, ±15× per detik selama musik diputar.
+    let audio: Bool
+    /// Skin meminta kabar saat kursor di atas notch (`cognify.onNotch`).
+    let notch: Bool
     /// Posisi awal sebelum skin pernah dipindahkan: top|bottom + left|center|right (mis. "bottom-center").
     let anchor: String
     let entry: String
@@ -30,6 +34,8 @@ private struct SkinManifest: Decodable {
     var width: Double?
     var height: Double?
     var cursor: Bool?
+    var audio: Bool?
+    var notch: Bool?
     var anchor: String?
     var entry: String?
 }
@@ -42,6 +48,42 @@ final class SkinManager: ObservableObject {
     @Published var onTop: Bool { didSet { UserDefaults.standard.set(onTop, forKey: "skins.onTop"); windows.values.forEach { $0.setLevel(onTop) } } }
     @Published var scale: Double { didSet { UserDefaults.standard.set(scale, forKey: "skins.scale"); windows.values.forEach { $0.setScale(scale) } } }
 
+    /// Gaya wajah skin Mimik dari playground di Pengaturan (warna, bentuk, opsi, suasana, efek); dikirim ke skin sebagai `config`.
+    @Published var mimik: MimikStyle { didSet { persistMimik(); pushConfig() } }
+    /// Gaya Mimik yang disimpan pengguna dengan nama sendiri (Pengaturan > Skin).
+    @Published private(set) var mimikPresets: [MimikPreset] = []
+
+    func savePreset(named name: String) {
+        let clean = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty else { return }
+        var style = mimik
+        let id = mimikPresets.first(where: { $0.name.caseInsensitiveCompare(clean) == .orderedSame })?.id ?? UUID()
+        style.preset = "saved:" + id.uuidString
+        mimikPresets.removeAll { $0.id == id }
+        mimikPresets.append(MimikPreset(id: id, name: String(clean.prefix(24)), style: style))
+        mimik = style
+        persistPresets()
+    }
+
+    func deletePreset(_ id: UUID) {
+        mimikPresets.removeAll { $0.id == id }
+        persistPresets()
+    }
+
+    func apply(_ preset: MimikPreset) {
+        var style = preset.style
+        style.preset = "saved:" + preset.id.uuidString
+        mimik = style
+    }
+
+    private func persistPresets() {
+        guard persists else { return }
+        if let data = try? JSONEncoder().encode(mimikPresets) { UserDefaults.standard.set(data, forKey: "skins.mimikPresets") }
+    }
+
+    /// Reaksi sesaat yang diminta dari playground (boing, putar, dan seterusnya); `n` naik tiap permintaan.
+    @Published private(set) var reaction = (name: "", n: 0)
+
     /// Mode atur posisi: semua skin naik ke atas, berbingkai, dan bisa diseret bebas.
     @Published var arranging = false { didSet { windows.values.forEach { $0.setArranging(arranging, onTop: onTop) } } }
 
@@ -50,6 +92,7 @@ final class SkinManager: ObservableObject {
     private var bag = Set<AnyCancellable>()
     private var monitors: [Any] = []
     private var lastCursorSend = Date.distantPast
+    private var audioTimer: Timer?
 
     static var folder: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -63,6 +106,34 @@ final class SkinManager: ObservableObject {
         onTop = d.bool(forKey: "skins.onTop")
         let s = d.double(forKey: "skins.scale")
         scale = s == 0 ? 1 : min(max(s, 0.5), 2.5)
+        mimik = d.data(forKey: "skins.mimik").flatMap { try? JSONDecoder().decode(MimikStyle.self, from: $0) } ?? MimikStyle()
+        mimikPresets = d.data(forKey: "skins.mimikPresets").flatMap { try? JSONDecoder().decode([MimikPreset].self, from: $0) } ?? []
+    }
+
+    /// Snapshot (gambar uji) tidak boleh menimpa pengaturan pengguna.
+    var persists = true
+
+    private func persistMimik() {
+        guard persists else { return }
+        if let data = try? JSONEncoder().encode(mimik) { UserDefaults.standard.set(data, forKey: "skins.mimik") }
+    }
+
+    /// JSON `config` untuk skin Mimik (gaya + reaksi terakhir).
+    func configJSON() -> String {
+        guard let data = try? JSONEncoder().encode(mimik), var obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return "{}" }
+        obj["react"] = ["name": reaction.name, "n": reaction.n] as [String: Any]
+        guard let out = try? JSONSerialization.data(withJSONObject: obj), let text = String(data: out, encoding: .utf8) else { return "{}" }
+        return text
+    }
+
+    private func pushConfig() {
+        let json = configJSON()
+        windows["mimik"]?.pushConfig(json: json)
+    }
+
+    func react(_ name: String) {
+        reaction = (name, reaction.n + 1)
+        pushConfig()
     }
 
     func start() {
@@ -82,8 +153,39 @@ final class SkinManager: ObservableObject {
             model.lyrics.$state.map { _ in () }.eraseToAnyPublisher(),
         ])
         .debounce(for: .milliseconds(250), scheduler: DispatchQueue.main)
-        .sink { [weak self] in MainActor.assumeIsolated { self?.pushAll() } }
+        .sink { [weak self] in MainActor.assumeIsolated { self?.pushAll(); self?.updateAudioTimer() } }
         .store(in: &bag)
+        // Kursor di atas notch: skin yang meminta menampilkan reaksi (Mimik: kaget, ragu, terkejut, bingung).
+        model.hoverEvents.removeDuplicates().sink { [weak self] inside in
+            MainActor.assumeIsolated { self?.windows.values.filter { $0.info.notch }.forEach { $0.sendNotchHover(inside) } }
+        }.store(in: &bag)
+        model.noticeEvents.sink { [weak self] in
+            MainActor.assumeIsolated { self?.windows.values.filter { $0.info.notch }.forEach { $0.sendNotice() } }
+        }.store(in: &bag)
+    }
+
+    /// Irama lagu hanya dikirim selama musik diputar dan ada skin berpermintaan audio yang menyala: ±15× per detik, tiga angka kecil.
+    /// Tanpa itu tidak ada pencacah waktu yang jalan.
+    private func updateAudioTimer() {
+        let needed = windows.values.contains { $0.info.audio } && model.media.nowPlaying?.playing == true
+        if needed, audioTimer == nil {
+            let t = Timer.scheduledTimer(withTimeInterval: 1.0 / 15, repeats: true) { [weak self] _ in
+                MainActor.assumeIsolated { self?.sendAudio() }
+            }
+            t.tolerance = 0.02
+            audioTimer = t
+        } else if !needed, audioTimer != nil {
+            audioTimer?.invalidate()
+            audioTimer = nil
+            for w in windows.values where w.info.audio { w.sendAudio(energy: 0, beats: 0, period: 0.6, on: false) }
+        }
+    }
+
+    private func sendAudio() {
+        let v = model.spectrum.vibe(at: Date.timeIntervalSinceReferenceDate)
+        for w in windows.values where w.info.audio {
+            w.sendAudio(energy: v.energy, beats: v.beats, period: v.period, on: v.isAudible)
+        }
     }
 
     /// Pemantau gerakan mouse hanya hidup selama ada skin berpermintaan kursor yang menyala; tanpa skin, tidak ada beban.
@@ -106,13 +208,23 @@ final class SkinManager: ObservableObject {
     private func installBuiltins() {
         let fm = FileManager.default
         try? fm.createDirectory(at: Self.folder, withIntermediateDirectories: true)
-        guard let bundled = Bundle.main.resourceURL?.appendingPathComponent("Skins"),
-              let names = try? fm.contentsOfDirectory(atPath: bundled.path) else { return }
-        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
+        var bundled = Bundle.main.resourceURL?.appendingPathComponent("Skins")
+        var dev = false
+        if bundled.map({ !fm.fileExists(atPath: $0.path) }) ?? true {
+            // Build dev (tanpa paket .app): ambil skin langsung dari folder `notch/Skins` di repo supaya perubahannya ikut.
+            var up = URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath()
+            for _ in 0..<6 {
+                up.deleteLastPathComponent()
+                let repo = up.appendingPathComponent("Skins")
+                if fm.fileExists(atPath: repo.appendingPathComponent("mimik/skin.json").path) { bundled = repo; dev = true; break }
+            }
+        }
+        guard let bundled, let names = try? fm.contentsOfDirectory(atPath: bundled.path) else { return }
+        let version = dev ? "dev" : (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0")
         for name in names where !name.hasPrefix(".") {
             let src = bundled.appendingPathComponent(name), dst = Self.folder.appendingPathComponent(name)
             let marker = dst.appendingPathComponent(".builtin-version")
-            if (try? String(contentsOf: marker, encoding: .utf8)) == version { continue }
+            if !dev, (try? String(contentsOf: marker, encoding: .utf8)) == version { continue }
             if fm.fileExists(atPath: dst.path), !fm.fileExists(atPath: marker.path) { continue } // skin pengguna bernama sama: jangan ditimpa
             try? fm.removeItem(at: dst)
             try? fm.copyItem(at: src, to: dst)
@@ -131,7 +243,7 @@ final class SkinManager: ObservableObject {
             let entry = m.entry ?? "index.html"
             guard fm.fileExists(atPath: dir.appendingPathComponent(entry).path) else { return nil }
             return SkinInfo(id: name, name: m.name ?? name, desc: m.description ?? "", width: min(max(m.width ?? 240, 80), 1200),
-                            height: min(max(m.height ?? 240, 60), 900), cursor: m.cursor ?? false, anchor: m.anchor ?? "top-right", entry: entry, folder: dir)
+                            height: min(max(m.height ?? 240, 60), 900), cursor: m.cursor ?? false, audio: m.audio ?? false, notch: m.notch ?? false, anchor: m.anchor ?? "top-right", entry: entry, folder: dir)
         }
     }
 
@@ -170,12 +282,14 @@ final class SkinManager: ObservableObject {
         w.show()
         if arranging { w.setArranging(true, onTop: onTop) }
         updateMonitors()
+        updateAudioTimer()
     }
 
     private func close(_ id: String) {
         windows[id]?.close()
         windows[id] = nil
         updateMonitors()
+        updateAudioTimer()
     }
 
     // MARK: Data
@@ -184,7 +298,7 @@ final class SkinManager: ObservableObject {
 
     private func push(to id: String) {
         guard let w = windows[id] else { return }
-        w.push(json: payload())
+        w.push(json: payload(config: id == "mimik" ? configJSON() : nil))
     }
 
     private func sendCursor() {
@@ -197,7 +311,7 @@ final class SkinManager: ObservableObject {
 
     /// Satu objek JSON. Posisi lagu dikirim sebagai titik acuan (`position` pada `sentAt`) supaya skin menghitung
     /// sendiri tanpa menunggu pesan tiap detik.
-    private func payload() -> String {
+    private func payload(config: String? = nil) -> String {
         let m = model, now = Date()
         let ms = now.timeIntervalSince1970 * 1000
         var d: [String: Any] = ["now": ms]
@@ -225,6 +339,7 @@ final class SkinManager: ObservableObject {
         d["todos"] = m.todo.items.map { ["title": $0.text, "done": $0.done, "due": $0.due.map { $0.timeIntervalSince1970 * 1000 } ?? NSNull()] as [String: Any] }
         d["timers"] = m.clock.countdowns.map { ["title": $0.label, "end": $0.end.timeIntervalSince1970 * 1000, "total": $0.total * 1000] as [String: Any] }
         d["notes"] = m.notes.items.prefix(8).map { ["text": String($0.text.prefix(240)), "date": $0.date.timeIntervalSince1970 * 1000] as [String: Any] }
+        if let config, let obj = (try? JSONSerialization.jsonObject(with: Data(config.utf8))) { d["config"] = obj }
         guard let data = try? JSONSerialization.data(withJSONObject: d), let s = String(data: data, encoding: .utf8) else { return "{}" }
         return s
     }
@@ -264,7 +379,7 @@ private final class SkinWebView: WKWebView {
 }
 
 /// Melayani skin://app/<jalur> dari folder skin saja. Jalur di luar folder ditolak; semua jawaban membawa CSP tanpa jaringan.
-private final class SkinScheme: NSObject, WKURLSchemeHandler {
+final class SkinScheme: NSObject, WKURLSchemeHandler {
     let root: URL
     let entry: String
     init(root: URL, entry: String) { self.root = root.standardizedFileURL; self.entry = entry }
@@ -295,7 +410,7 @@ private final class SkinScheme: NSObject, WKURLSchemeHandler {
 }
 
 @MainActor
-private final class SkinWindow: NSObject, WKNavigationDelegate {
+final class SkinWindow: NSObject, WKNavigationDelegate {
     let info: SkinInfo
     private let panel: SkinPanel
     private let web: SkinWebView
@@ -304,10 +419,17 @@ private final class SkinWindow: NSObject, WKNavigationDelegate {
     private let onReady: () -> Void
     private var moveObserver: NSObjectProtocol?
 
-    private static let bridge = """
+    static let bridge = """
     window.cognify = { data: {}, _h: [],
       on(fn) { this._h.push(fn); fn(this.data) },
       _push(d) { this.data = d; this._h.forEach(f => { try { f(d) } catch (e) { console.error(e) } }) },
+      _nt: [], onNotice(fn) { this._nt.push(fn) },
+      _notice() { this._nt.forEach(f => { try { f() } catch (x) { console.error(x) } }) },
+      _n: [], onNotch(fn) { this._n.push(fn) },
+      _notch(on) { this._n.forEach(f => { try { f(on) } catch (x) { console.error(x) } }) },
+      _a: [], onAudio(fn) { this._a.push(fn) },
+      _audio(e, b, p, on) { this._a.forEach(f => { try { f(e, b, p, on) } catch (x) { console.error(x) } }) },
+      _cfg(c) { this.data = Object.assign({}, this.data, { config: c }); this._h.forEach(f => { try { f(this.data) } catch (e) { console.error(e) } }) },
       _cursor(x, y) { window.dispatchEvent(new PointerEvent('pointermove', { clientX: x, clientY: y, bubbles: true })) } };
     """
 
@@ -399,6 +521,28 @@ private final class SkinWindow: NSObject, WKNavigationDelegate {
         web.evaluateJavaScript("window.cognify._push(\(json))", completionHandler: nil)
     }
 
+    func sendNotice() {
+        guard loaded else { return }
+        web.evaluateJavaScript("window.cognify._notice()", completionHandler: nil)
+    }
+
+    func sendNotchHover(_ inside: Bool) {
+        guard loaded else { return }
+        web.evaluateJavaScript("window.cognify._notch(\(inside))", completionHandler: nil)
+    }
+
+    /// Irama lagu untuk skin berpermintaan audio (lihat `SkinManager.sendAudio`).
+    func sendAudio(energy: Double, beats: Int, period: Double, on: Bool) {
+        guard loaded else { return }
+        web.evaluateJavaScript("window.cognify._audio(\(String(format: "%.3f", energy)),\(beats),\(String(format: "%.3f", period)),\(on))", completionHandler: nil)
+    }
+
+    /// Hanya `config` yang berubah (playground): tanpa membangun ulang seluruh data.
+    func pushConfig(json: String) {
+        guard loaded else { return }
+        web.evaluateJavaScript("window.cognify._cfg(\(json))", completionHandler: nil)
+    }
+
     /// Titik layar (asal kiri bawah) → piksel CSS di dalam skin (asal kiri atas).
     func sendCursor(_ p: NSPoint) {
         guard loaded else { return }
@@ -423,6 +567,9 @@ struct SkinsPane: View {
     @ObservedObject var skins: SkinManager
 
     var body: some View {
+        if let mimik = skins.skins.first(where: { $0.id == "mimik" }), skins.isOn("mimik") {
+            Section(L("Mimik: atur wajahmu", "Mimik: make a face you like")) { MimikPlayground(skins: skins, info: mimik) }
+        }
         Section {
             if skins.skins.isEmpty {
                 Text(L("Belum ada skin. Letakkan folder skin di folder skin lalu tekan Muat ulang.", "No skins yet. Put a skin folder in the skins folder, then press Reload."))

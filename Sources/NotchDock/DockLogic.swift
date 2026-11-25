@@ -132,11 +132,12 @@ public enum DockLayout {
 
     /// Titik kiri-bawah dock: di tengah layar, di atas Dock bawaan macOS (`visible.minY` sudah memperhitungkannya)
     /// dengan jarak `margin`, dan tidak pernah lebih dekat dari `edge` ke tepi kiri atau kanan.
-    public static func origin(screen: CGRect, visible: CGRect, size: CGSize, margin: CGFloat) -> CGPoint {
+    public static func origin(screen: CGRect, visible: CGRect, size: CGSize, margin: CGFloat, reserve: CGFloat = 0) -> CGPoint {
         let lo = screen.minX + DockMetrics.edge
         let hi = max(lo, screen.maxX - DockMetrics.edge - size.width)
         let x = min(hi, max(lo, screen.midX - size.width / 2))
-        return CGPoint(x: x, y: visible.minY + max(0, margin))
+        // `reserve`: ruang untuk Dock macOS yang disembunyikan otomatis di bawah (tidak masuk `visible`, tapi muncul di sana saat kursor ke tepi).
+        return CGPoint(x: x, y: max(visible.minY, screen.minY + max(0, reserve)) + max(0, margin))
     }
 }
 
@@ -356,5 +357,18 @@ public enum DockMediaTime {
     public static func ratio(position: Double, duration: Double?) -> Double {
         guard let duration, duration > 0, position.isFinite else { return 0 }
         return min(1, max(0, position / duration))
+    }
+}
+
+
+/// Dock macOS bawaan yang disembunyikan otomatis di tepi bawah muncul menimpa dock kita saat kursor ke tepi. `visibleFrame`
+/// tidak menghitungnya (Dock yang tersembunyi tidak memakai ruang), jadi dock kita menyisakan ruang setinggi Dock itu.
+public enum NativeDock {
+    /// Tinggi yang perlu disisakan di tepi bawah. Nol bila Dock tidak otomatis tersembunyi atau tidak di bawah
+    /// (kalau tampil terus, `visibleFrame` sudah memperhitungkannya).
+    public static func reserve(autohide: Bool, orientation: String, tile: CGFloat, large: CGFloat, magnification: Bool) -> CGFloat {
+        guard autohide, orientation == "bottom" else { return 0 }
+        let icon = magnification ? max(tile, large) : tile
+        return (icon > 0 ? icon : 48) + 34 // ikon + bantalan Dock + jarak ke tepi
     }
 }

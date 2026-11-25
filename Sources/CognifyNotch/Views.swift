@@ -130,8 +130,9 @@ struct NotchRoot: View {
                        face: model.features.companion && model.hasNotch ? model.face : nil)
                 .transition(.opacity.combined(with: .scale(scale: 0.94, anchor: .top)))
         } else if let live = model.live {
-            LiveWings(live: live, gap: model.barGap, wings: model.wings, media: model.media, spectrum: model.spectrum,
-                      face: model.face, lyrics: model.lyrics, onBannerDone: { model.endSongBanner($0) })
+            let pair = model.livePair
+            LiveWings(live: pair?.left ?? live, others: pair?.right ?? [], clock: model.clock, gap: model.barGap, wings: model.wings, media: model.media,
+                      spectrum: model.spectrum, face: model.face, lyrics: model.lyrics, onBannerDone: { model.endSongBanner($0) })
                 .frame(height: model.notchSize.height)
                 .transition(.opacity.combined(with: .scale(scale: 0.9)))
         }
@@ -142,6 +143,9 @@ struct NotchRoot: View {
 
 struct LiveWings: View {
     let live: NotchModel.Live
+    /// Aktivitas lain yang berjalan bersamaan: tampil di sayap kanan (bergantian bila lebih dari satu).
+    var others: [NotchModel.Live] = []
+    var clock: ClockTools? = nil
     let gap: CGFloat
     let wings: (left: CGFloat, right: CGFloat)
     @ObservedObject var media: MediaMonitor
@@ -169,6 +173,35 @@ struct LiveWings: View {
         }
     }
 
+    /// Isi sayap kanan untuk satu aktivitas. `withIcon`: saat berdampingan dengan aktivitas lain ikonnya ikut tampil di sini.
+    @ViewBuilder private func rightView(_ item: NotchModel.Live, withIcon: Bool) -> some View {
+        HStack(spacing: 5) {
+            if withIcon, !item.media {
+                Image(systemName: item.icon).font(.system(size: 12, weight: .semibold)).foregroundStyle(item.tint)
+            }
+            if item.media {
+                Equalizer(playing: true, spectrum: spectrum)
+            } else if item.stopwatch, let clock {
+                StopwatchWing(clock: clock, tint: item.tint)
+            } else if let end = item.countdown {
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    Text(ClockTools.clock(end.timeIntervalSince(context.date)))
+                        .font(.system(size: 12.5, weight: .semibold, design: .rounded).monospacedDigit())
+                        .foregroundStyle(.white)
+                }
+            } else if let level = item.level {
+                LevelBar(value: level, tint: item.tint)
+            } else {
+                Text(item.text)
+                    .font(.system(size: 12.5, weight: .semibold, design: .rounded).monospacedDigit())
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                    .contentTransition(.numericText())
+            }
+        }
+    }
+
     private var wingsBody: some View {
         HStack(spacing: 0) {
             Group {
@@ -185,7 +218,11 @@ struct LiveWings: View {
                     }
                     .padding(.leading, 8)
                 } else if live.media {
-                    Artwork(media: media, size: 20)
+                    HStack(spacing: 7) {
+                        Artwork(media: media, size: 20)
+                        if !others.isEmpty { Equalizer(playing: true, spectrum: spectrum).frame(width: 18, height: 14) }
+                    }
+                    .padding(.leading, others.isEmpty ? 0 : 8)
                 } else if let title = live.title {
                     HStack(spacing: 6) {
                         Image(systemName: live.icon)
@@ -198,6 +235,9 @@ struct LiveWings: View {
                             .truncationMode(.tail)
                     }
                     .padding(.horizontal, 8)
+                } else if !others.isEmpty {
+                    // Berdampingan tanpa lagu: sayap kiri juga menampilkan nilainya (waktu hitung mundur, nomor lap, dan seterusnya).
+                    rightView(live, withIcon: true).padding(.leading, 8).frame(maxWidth: .infinity, alignment: .leading)
                 } else {
                     Image(systemName: live.icon)
                         .font(.system(size: 13, weight: .semibold))
@@ -207,23 +247,18 @@ struct LiveWings: View {
             .frame(width: max(0, wings.left - 6))
             Color.clear.frame(width: gap) // area notch fisik
             Group {
-                if live.media {
-                    Equalizer(playing: true, spectrum: spectrum)
-                } else if let end = live.countdown {
-                    TimelineView(.periodic(from: .now, by: 1)) { context in
-                        Text(ClockTools.clock(end.timeIntervalSince(context.date)))
-                            .font(.system(size: 12.5, weight: .semibold, design: .rounded).monospacedDigit())
-                            .foregroundStyle(.white)
+                if !others.isEmpty {
+                    if others.count == 1 {
+                        rightView(others[0], withIcon: true)
+                    } else {
+                        // Tiga aktivitas atau lebih: sayap kanan bergantian tiap 4 detik.
+                        TimelineView(.periodic(from: .now, by: 4)) { context in
+                            let index = Int(context.date.timeIntervalSinceReferenceDate / 4) % others.count
+                            rightView(others[index], withIcon: true).id(index).transition(.opacity)
+                        }
                     }
-                } else if let level = live.level {
-                    LevelBar(value: level, tint: live.tint)
                 } else {
-                    Text(live.text)
-                        .font(.system(size: 12.5, weight: .semibold, design: .rounded).monospacedDigit())
-                        .foregroundStyle(.white)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.7)
-                        .contentTransition(.numericText())
+                    rightView(live, withIcon: false)
                 }
             }
             .frame(width: max(0, wings.right - 6))
@@ -1477,5 +1512,29 @@ enum DropLoader {
             }
         }
         group.notify(queue: .main) { done(files, links, texts) }
+    }
+}
+
+
+/// Stopwatch di sayap kanan: nomor lap (bila ada) dan waktu berjalan, diperbarui tiap detik. Berhenti sementara = redup.
+struct StopwatchWing: View {
+    @ObservedObject var clock: ClockTools
+    let tint: Color
+
+    var body: some View {
+        HStack(spacing: 5) {
+            if !clock.laps.isEmpty {
+                Text("L\(clock.laps.count)")
+                    .font(.system(size: 10, weight: .bold, design: .rounded).monospacedDigit())
+                    .foregroundStyle(.black)
+                    .padding(.horizontal, 5).padding(.vertical, 1)
+                    .background(Capsule().fill(tint))
+            }
+            TimelineView(.periodic(from: .now, by: clock.running ? 1 : 3600)) { context in
+                Text(ClockTools.clock(clock.elapsed(at: context.date)))
+                    .font(.system(size: 12.5, weight: .semibold, design: .rounded).monospacedDigit())
+                    .foregroundStyle(.white.opacity(clock.running ? 1 : 0.55))
+            }
+        }
     }
 }

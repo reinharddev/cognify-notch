@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import NotchTime
+import NotchDock
 import SwiftUI
 
 // MARK: - Timer belajar (Pomodoro)
@@ -35,6 +36,30 @@ final class StudyTimer: ObservableObject {
         if defaults.integer(forKey: "timer.focus") > 0 { focusMinutes = defaults.integer(forKey: "timer.focus") }
         if defaults.integer(forKey: "timer.rest") > 0 { restMinutes = defaults.integer(forKey: "timer.rest") }
         remaining = total
+        restoreRun()
+    }
+
+    // MARK: Tahan tidur dan penutupan app
+
+    /// Pomodoro yang berjalan disimpan sebagai jam selesai (jam dinding), jadi tetap benar setelah Mac tidur atau app dibuka ulang.
+    /// Yang sudah lewat jam selesainya saat app dibuka tidak dilanjutkan.
+    private func saveRun() {
+        defaults.set(mode.rawValue, forKey: "timer.runMode")
+        if running, let endDate { defaults.set(endDate.timeIntervalSince1970, forKey: "timer.runEnd") } else { defaults.removeObject(forKey: "timer.runEnd") }
+    }
+
+    private func restoreRun() {
+        guard let raw = defaults.string(forKey: "timer.runMode"), let saved = Mode(rawValue: raw) else { return }
+        mode = saved
+        remaining = total
+        let end = defaults.double(forKey: "timer.runEnd")
+        guard end > 0, Date(timeIntervalSince1970: end) > Date() else { defaults.removeObject(forKey: "timer.runEnd"); return }
+        endDate = Date(timeIntervalSince1970: end)
+        running = true
+        tick()
+        ticker = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.tick() }
+        }
     }
 
     func minutes(_ mode: Mode) -> Int { mode == .focus ? focusMinutes : restMinutes }
@@ -70,6 +95,7 @@ final class StudyTimer: ObservableObject {
         stop()
         mode = next
         remaining = total
+        saveRun()
     }
 
     func toggle() { running ? pause() : start() }
@@ -81,6 +107,7 @@ final class StudyTimer: ObservableObject {
         ticker = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.tick() }
         }
+        saveRun()
     }
 
     func pause() {
@@ -88,6 +115,7 @@ final class StudyTimer: ObservableObject {
         running = false
         ticker?.invalidate()
         ticker = nil
+        saveRun()
     }
 
     func reset() {
@@ -100,6 +128,7 @@ final class StudyTimer: ObservableObject {
         ticker?.invalidate()
         ticker = nil
         endDate = nil
+        saveRun()
     }
 
     private func tick() {
@@ -118,6 +147,7 @@ final class StudyTimer: ObservableObject {
         }
         mode = finished == .focus ? .rest : .focus
         remaining = total
+        saveRun()
         onFinish?(finished)
     }
 
@@ -256,6 +286,8 @@ final class NotchModel: ObservableObject {
         var eyes = false // mata (notch diam)
         var lyrics = false // baris lirik berjalan di sayap kiri
         var countdown: Date? = nil // hitung mundur: sisa waktu dihitung saat digambar
+        var stopwatch = false // stopwatch berjalan atau berhenti sementara (waktu dan nomor lap dibaca dari ClockTools saat digambar)
+        var laps = 0 // jumlah lap; ikut memicu gambar ulang saat bertambah
     }
 
     @Published var expanded = false
@@ -406,6 +438,7 @@ final class NotchModel: ObservableObject {
             }
         }.store(in: &changes)
         face.config = { [weak self] in self?.prefs.companionConfig ?? CompanionConfig() }
+        face.vibeProvider = { [weak self] in self?.spectrum.vibe(at: Date.timeIntervalSinceReferenceDate) ?? BeatTracker() }
         // Pilihan wajah berubah di Pengaturan: terapkan segera supaya hasilnya langsung terlihat di notch.
         Publishers.MergeMany(
             self.prefs.$companionMode.dropFirst().map { _ in () }.eraseToAnyPublisher(),
@@ -425,7 +458,7 @@ final class NotchModel: ObservableObject {
         }
         companionTask = Task { [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: UInt64(Double.random(in: 5...10) * 1_000_000_000))
+                try? await Task.sleep(nanoseconds: UInt64(Double.random(in: 2.5...5) * 1_000_000_000))
                 self?.companionStep()
             }
         }
@@ -483,10 +516,18 @@ final class NotchModel: ObservableObject {
     static let wing: CGFloat = 76
     static let wideWing: CGFloat = 150
     static let songWing: CGFloat = 210
+    /// Sayap kanan saat dua aktivitas atau lebih berjalan (mis. lagu di kiri, stopwatch dan nomor lap di kanan).
+    static let pairWing: CGFloat = 118
 
     /// Lebar sayap kiri & kanan saat tertutup.
     var wings: (left: CGFloat, right: CGFloat) {
-        guard !expanded, card == nil, let live else { return (0, 0) }
+        guard !expanded, card == nil, !headMode else { return (0, 0) }
+        if let pair = livePair {
+            let left = pair.left
+            let l: CGFloat = left.media ? (left.lyrics || left.title != nil ? Self.songWing : Self.wing) : (left.title != nil || left.stopwatch ? Self.wideWing : Self.wing)
+            return (l, Self.pairWing)
+        }
+        guard let live else { return (0, 0) }
         if live.eyes { let w = max(24, (Self.eyeWing * CGFloat(prefs.idleScale)).rounded()); return headMode ? (0, 0) : (w, w) }
         guard let _ = live.title else { return (Self.wing, Self.wing) }
         return live.wideRight ? (Self.wideWing, Self.wideWing) : (Self.songWing, Self.wing)
@@ -540,7 +581,12 @@ final class NotchModel: ObservableObject {
         }
     }
 
-    var headMode: Bool { !hasNotch && !expanded && card == nil && live?.eyes == true && prefs.floatingStyle == .head }
+    /// Kepala bulat (Kepala Mimik) tampil saat tidak ada aktivitas lain. Lagu yang diputar sendirian tidak menggantikannya: kepala
+    /// justru ikut menikmati (mengangguk, nada melayang). Aktivitas lain (timer, unduhan, dan lainnya) tetap tampil sebagai sayap.
+    var headMode: Bool {
+        guard !hasNotch, !expanded, card == nil, prefs.floatingStyle == .head, let live else { return false }
+        return live.eyes || (live.media && livePair == nil)
+    }
 
     /// Ukuran panel terbuka. Isi digambar tetap pada ukuran ini, jadi tidak ikut menyusut saat notch menutup.
     var expandedBox: CGSize {
@@ -581,31 +627,54 @@ final class NotchModel: ObservableObject {
         case .alert?: return Live(icon: "bell.fill", text: L("Sekarang", "Now"), tint: .accent)
         case nil: break
         }
+        if let first = steadyLives.first { return first }
+        if features.companion { return Live(icon: "", tint: .white, eyes: true) }
+        return nil
+    }
+
+    /// Semua aktivitas yang sedang berjalan, urut prioritas (rekam, unduhan, Pomodoro, hitung mundur, stopwatch, acara
+    /// dekat, lagu). Notch menampilkan yang pertama; bila ada dua atau lebih, tampil berdampingan (lihat `livePair`).
+    var steadyLives: [Live] {
+        let now = self.now
+        var out: [Live] = []
         if voice.recording {
-            return Live(icon: "mic.fill", text: L("Merekam", "Recording"), tint: .red)
+            out.append(Live(icon: "mic.fill", text: L("Merekam", "Recording"), tint: .red))
         }
         if features.downloads, let download = downloads.active {
-            return Live(icon: "arrow.down.circle.fill", text: download.progressText, tint: .accent, title: download.name)
+            out.append(Live(icon: "arrow.down.circle.fill", text: download.progressText, tint: .accent, title: download.name))
         }
         if timer.running {
-            return Live(icon: timer.mode == .focus ? "brain.head.profile" : "cup.and.saucer.fill",
-                        text: StudyTimer.clock(timer.remaining), tint: timer.mode == .focus ? .accent : .green)
+            out.append(Live(icon: timer.mode == .focus ? "brain.head.profile" : "cup.and.saucer.fill",
+                            text: StudyTimer.clock(timer.remaining), tint: timer.mode == .focus ? .accent : .green))
         }
         if features.clockTools, let countdown = clock.nearest {
-            return Live(icon: "hourglass", tint: .orange, countdown: countdown.end)
+            out.append(Live(icon: "hourglass", tint: .orange, countdown: countdown.end))
+        }
+        if features.clockTools, clock.elapsed() > 0 {
+            out.append(Live(icon: "stopwatch", tint: .orange, stopwatch: true, laps: clock.laps.count))
         }
         if let next = state?.events.first(where: { !$0.allDay }),
            next.due.timeIntervalSince(now) <= 60 * 60, next.due > now {
-            return Live(icon: next.kind == "deadline" ? "calendar.badge.clock" : "bell", text: Relative.short(next.due, now: now), tint: .orange)
+            out.append(Live(icon: next.kind == "deadline" ? "calendar.badge.clock" : "bell", text: Relative.short(next.due, now: now), tint: .orange))
         }
         if features.media, media.nowPlaying?.playing == true {
             if songBanner == nil, wingLyrics, case .synced = lyrics.state {
-                return Live(icon: "music.note", tint: .accent, media: true, title: "", wideRight: false, lyrics: true)
+                out.append(Live(icon: "music.note", tint: .accent, media: true, title: "", wideRight: false, lyrics: true))
+            } else {
+                out.append(Live(icon: "music.note", tint: .accent, media: true, title: songBanner, wideRight: false))
             }
-            return Live(icon: "music.note", tint: .accent, media: true, title: songBanner, wideRight: false)
         }
-        if features.companion { return Live(icon: "", tint: .white, eyes: true) }
-        return nil
+        return out
+    }
+
+    /// Dua aktivitas atau lebih berjalan bersamaan (tanpa kabar atau volume yang menimpa): lagu di sayap kiri dan yang lain
+    /// di kanan; bila tanpa lagu, yang pertama di kiri. Sisanya bergantian di sayap kanan tiap beberapa detik.
+    var livePair: (left: Live, right: [Live])? {
+        guard !expanded, card == nil, level == nil, toast == nil else { return nil }
+        let all = steadyLives
+        guard all.count >= 2 else { return nil }
+        if let song = all.first(where: \.media) { return (song, all.filter { !$0.media }) }
+        return (all[0], Array(all.dropFirst()))
     }
 
     private static func card(for notice: DeviceNotice) -> Card {
@@ -693,6 +762,7 @@ final class NotchModel: ObservableObject {
     }
 
     private func updateSpectrum(playing: Bool) {
+        spectrum.playing = playing
         spectrum.setActive(features.media && features.spectrum && playing)
     }
 
@@ -748,7 +818,7 @@ final class NotchModel: ObservableObject {
     /// Tiap 5 sampai 10 detik: wajah memilih suasana dari keadaan (lama Mac menyala, jam, baterai, musik,
     /// timer, internet) lalu berkedip, melirik, atau iseng. Tertidur setelah 2,5 menit tanpa gerakan mouse.
     private func companionStep(flavor: Bool = true) {
-        guard features.companion, !expanded, live?.eyes == true || card != nil else { return }
+        guard features.companion, !expanded, live?.eyes == true || card != nil || headMode else { return }
         let hour = Calendar.current.component(.hour, from: Date())
         face.tick(CompanionContext(
             idle: Date().timeIntervalSince(lastActivity), uptimeDays: Self.uptimeDays, hour: hour, battery: battery,
@@ -801,6 +871,7 @@ final class NotchModel: ObservableObject {
 
     private func showNotice(_ next: DeviceNotice) {
         if features.companion { face.react(to: next) }
+        noticeEvents.send()
         noticeTask?.cancel()
         withAnimation(.notch) { notice = next }
         let seconds: Double
@@ -828,6 +899,7 @@ final class NotchModel: ObservableObject {
     }
 
     private func showLevel(_ next: Level) {
+        if features.companion { face.react(to: next) }
         levelTask?.cancel()
         withAnimation(.notch) { level = next }
         levelTask = Task { [weak self] in
@@ -839,9 +911,15 @@ final class NotchModel: ObservableObject {
 
     // MARK: Hover & buka-tutup
 
+    /// Kursor masuk atau keluar dari notch. Skin yang meminta (`"notch": true`) menampilkan reaksi kaget saat kursor di atas notch.
+    let hoverEvents = PassthroughSubject<Bool, Never>()
+    /// Ada notifikasi atau kabar di notch (kabar perangkat, pengingat, notifikasi app lain). Skin yang meminta menampilkan wajah kaget.
+    let noticeEvents = PassthroughSubject<Void, Never>()
+
     func setHover(_ inside: Bool) {
         guard inside != hovering else { return }
         hovering = inside
+        hoverEvents.send(inside)
         collapseTask?.cancel()
         if inside {
             guard !prefs.openOnClick else { return } // dibuka dengan klik (NotchController)
@@ -929,6 +1007,7 @@ final class NotchModel: ObservableObject {
 
     func show(_ next: Toast) {
         if features.companion { face.react(to: next) }
+        if case .working = next {} else { noticeEvents.send() }
         toastTask?.cancel()
         withAnimation(.notch) { toast = next }
         if case .alert = next { setExpanded(true) }

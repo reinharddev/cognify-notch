@@ -207,6 +207,8 @@ final class Preferences: ObservableObject {
     @Published var companionMode: CompanionMode { didSet { save("prefs.companionMode", companionMode.rawValue) } }
     @Published var companionFixed: Emotion { didSet { save("prefs.companionFixed", companionFixed.rawValue) } }
     @Published var companionBlink: Bool { didSet { save("prefs.companionBlink", companionBlink) } }
+    /// Mata dan kepala menoleh mengikuti kursor (mode notch dan kepala melayang).
+    @Published var companionFollow: Bool { didSet { save("prefs.companionFollow", companionFollow) } }
     @Published var companionMap: [String: String] { didSet { save("prefs.companionMap", companionMap) } }
 
     var companionConfig: CompanionConfig {
@@ -276,6 +278,7 @@ final class Preferences: ObservableObject {
         companionMode = (d?.string(forKey: "prefs.companionMode")).flatMap(CompanionMode.init) ?? .dynamic
         companionFixed = (d?.string(forKey: "prefs.companionFixed")).flatMap(Emotion.init) ?? .happy
         companionBlink = d?.object(forKey: "prefs.companionBlink") as? Bool ?? true
+        companionFollow = d?.object(forKey: "prefs.companionFollow") as? Bool ?? true
         companionMap = d?.dictionary(forKey: "prefs.companionMap") as? [String: String] ?? [:]
         Lang.english = language == .en
         if d != nil { EqualizerStyle.shared.auto = equalizerAuto; EqualizerStyle.shared.color = Color(hex: equalizerHex); AccentStyle.color = Color(hex: accentHex) }

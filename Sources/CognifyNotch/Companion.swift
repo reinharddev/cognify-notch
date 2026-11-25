@@ -1,3 +1,4 @@
+import NotchDock
 import SwiftUI
 
 // Teman kecil di notch: wajah yang ekspresinya menyesuaikan keadaan. Saat notch menempel di layar
@@ -6,7 +7,7 @@ import SwiftUI
 
 // MARK: - Ekspresi
 
-enum Deco { case none, z, question, bang, sweat, heart, spiral }
+enum Deco { case none, z, question, bang, sweat, heart, spiral, note, sparkle, tear, blush }
 
 /// Bentuk wajah untuk satu ekspresi. `top`/`bot`: kelopak atas/bawah menutup 0...1, `tilt`: kemiringan
 /// kelopak (derajat, + = ujung dalam turun), `sx`/`sy`: ukuran mata, `skew`: mata kanan lebih besar dari
@@ -24,6 +25,7 @@ enum Emotion: String, CaseIterable, Identifiable {
     case suspicious, smug, bored, tired, exhausted, yawn
     case worried, sad, annoyed, angry, determined
     case sleepy, sleep
+    case sing, proud, shy, cry, hot, wow, bliss
 
     var id: String { rawValue }
 
@@ -54,15 +56,22 @@ enum Emotion: String, CaseIterable, Identifiable {
         case .determined: return L("Serius", "Determined")
         case .sleepy: return L("Mengantuk", "Sleepy")
         case .sleep: return L("Tidur", "Asleep")
+        case .sing: return L("Bernyanyi", "Singing")
+        case .proud: return L("Bangga", "Proud")
+        case .shy: return L("Malu", "Shy")
+        case .cry: return L("Menangis", "Crying")
+        case .hot: return L("Kepanasan", "Hot")
+        case .wow: return L("Takjub", "Amazed")
+        case .bliss: return L("Menikmati", "Enjoying")
         }
     }
 
     /// Gerakan yang menyertai ekspresi saat muncul karena kejadian.
     var motion: Face.Reaction {
         switch self {
-        case .happy, .joy, .excited, .love: return .bounce
-        case .surprised, .scared, .angry: return .shake
-        case .hello: return .pop
+        case .happy, .joy, .excited, .love, .sing, .proud: return .bounce
+        case .surprised, .scared, .angry, .hot: return .shake
+        case .hello, .wow: return .pop
         default: return .none
         }
     }
@@ -94,6 +103,14 @@ enum Emotion: String, CaseIterable, Identifiable {
         case .determined: return Pose(top: 0.4, tilt: 14, mw: 4.5, mc: -0.5)
         case .sleepy: return Pose(top: 0.75, mw: 2.7, mc: 0, mo: 0.9)
         case .sleep: return Pose(top: 1, mw: 2.2, mc: 0.9, deco: .z)
+        case .sing: return Pose(top: 0.15, bot: 0.5, gy: -0.5, mw: 4.5, mc: 2, mo: 3.5, mr: 0.55, deco: .note)
+        case .proud: return Pose(top: 0.3, bot: 0.35, tilt: -6, gy: -1, mw: 5, mc: 3, deco: .sparkle)
+        case .shy: return Pose(top: 0.3, bot: 0.4, gx: -3, gy: 1.5, mw: 2.5, mc: 0.8, deco: .blush)
+        case .cry: return Pose(top: 0.35, tilt: -18, mw: 4, mc: -2.7, mo: 1.2, mr: 0.4, deco: .tear)
+        case .hot: return Pose(top: 0.5, sy: 0.85, mw: 4, mc: -0.5, mo: 3, mr: 0.8, deco: .sweat)
+        case .wow: return Pose(sx: 1.3, sy: 1.35, mw: 3.6, mc: 0, mo: 3.8, mr: 1, deco: .sparkle)
+        // Menikmati lagu dengan tenang: mata terpejam santai (lengkung tipis ke bawah) dan senyum kecil tertutup.
+        case .bliss: return Pose(top: 0.8, sy: 1.08, gy: 0.4, mw: 3.4, mc: 2, mo: 0)
         }
     }
 }
@@ -193,6 +210,7 @@ enum Situation: String, CaseIterable, Identifiable {
     case charging, chargerFull, unplugged, lowBatteryNotice, audioConnected, audioDisconnected
     case downloadDone, downloadFailed, downloadCanceled, capsLock, inputSource, networkUp, networkDown
     case taskDone, taskFailed, alert
+    case volumeUp, volumeDown, muted, brightUp, brightDown
 
     var id: String { rawValue }
 
@@ -200,7 +218,7 @@ enum Situation: String, CaseIterable, Identifiable {
         switch self {
         case .charging, .chargerFull, .unplugged, .lowBatteryNotice, .audioConnected, .audioDisconnected,
              .downloadDone, .downloadFailed, .downloadCanceled, .capsLock, .inputSource, .networkUp, .networkDown,
-             .taskDone, .taskFailed, .alert: return true
+             .taskDone, .taskFailed, .alert, .volumeUp, .volumeDown, .muted, .brightUp, .brightDown: return true
         default: return false
         }
     }
@@ -239,6 +257,11 @@ enum Situation: String, CaseIterable, Identifiable {
         case .taskDone: return L("Tersimpan atau selesai", "Saved or done")
         case .taskFailed: return L("Gagal menyimpan", "Failed to save")
         case .alert: return L("Pengingat (timer, minum, tugas)", "Reminder (timer, water, task)")
+        case .volumeUp: return L("Volume dinaikkan", "Volume turned up")
+        case .volumeDown: return L("Volume diturunkan", "Volume turned down")
+        case .muted: return L("Suara dibisukan", "Sound muted")
+        case .brightUp: return L("Layar dicerahkan", "Screen brightened")
+        case .brightDown: return L("Layar diredupkan", "Screen dimmed")
         }
     }
 
@@ -274,11 +297,36 @@ enum Situation: String, CaseIterable, Identifiable {
         case .taskDone: return .joy
         case .taskFailed: return .sad
         case .alert: return .excited
+        case .volumeUp: return .wow
+        case .volumeDown: return .shy
+        case .muted: return .sad
+        case .brightUp: return .hot
+        case .brightDown: return .sleepy
         }
     }
 }
 
 /// Cara wajah memilih ekspresi.
+extension Situation {
+    /// Kumpulan ekspresi untuk mode Dinamis: wajah berganti-ganti di dalam satu keadaan. Sama dengan POOLS di Windows.
+    var pool: [Emotion]? {
+        switch self {
+        case .normal: return [.idle, .content, .curious, .smug, .proud, .idle, .bored, .shy]
+        case .music: return [.bliss, .bliss, .content, .bliss, .content, .bliss]
+        case .focus: return [.determined, .suspicious, .determined, .content, .proud]
+        case .rest: return [.content, .happy, .sleepy, .joy, .yawn]
+        case .offline: return [.sad, .cry, .confused, .worried, .bored]
+        case .batteryLow: return [.tired, .worried, .sad, .bored, .sleepy]
+        case .batteryCritical: return [.worried, .scared, .exhausted, .cry, .scared]
+        case .lateNight: return [.sleepy, .yawn, .tired, .sleepy, .bored]
+        case .morning: return [.content, .happy, .yawn, .hello, .proud]
+        case .uptimeLong: return [.tired, .bored, .yawn, .tired, .hot]
+        case .uptimeVeryLong: return [.exhausted, .dizzy, .tired, .hot, .cry]
+        default: return nil
+        }
+    }
+}
+
 enum CompanionMode: String, CaseIterable, Identifiable {
     case dynamic // mengikuti keadaan dan acak (bawaan)
     case custom // ekspresi tiap keadaan dan kejadian diatur sendiri, tanpa acak
@@ -348,6 +396,12 @@ final class Face: ObservableObject {
     @Published private(set) var blink = 0.0
     @Published private(set) var wink = 0.0
     @Published private(set) var glance = CGSize.zero
+    /// Arah kursor relatif terhadap kepala (-1.15...1.15), untuk kepala bulat yang menoleh (FaceHead.swift).
+    @Published private(set) var gaze = CGSize.zero
+    private var gazeReset: Task<Void, Never>?
+    /// Irama lagu saat ini (diisi NotchModel dari Spectrum). Dipakai kepala yang mengangguk dan mata yang bergoyang.
+    var vibeProvider: (() -> BeatTracker)?
+    func vibe() -> BeatTracker? { vibeProvider?() }
     @Published private(set) var rx: Reaction = .none
     @Published private(set) var rxT = 0.0
 
@@ -360,6 +414,12 @@ final class Face: ObservableObject {
     private var sequence: Task<Void, Never>?
     private var neutral: Emotion = .idle
     private var neutralUntil = Date.distantPast
+    private var poolUntil = Date.distantPast
+    private var poolState: Situation = .normal
+    private var lastVolume: Double?
+    private var lastBright: Double?
+    /// Musik diputar dan wajah "bergoyang" (mode Dinamis): mata mengangguk pelan mengikuti irama.
+    @Published private(set) var groove = false
 
     var pose: Pose { emotion.pose }
 
@@ -405,6 +465,31 @@ final class Face: ObservableObject {
         sleeping = false
         base = .idle
         if let hello = config().emotion(for: .waking) { play([(hello, 1.6, hello.motion)]) } else { set(base, .easeInOut(duration: 0.3)) }
+    }
+
+    /// Kursor di `mouse`, kepala berpusat di `center` (koordinat layar). Jarak menentukan seberapa jauh kepala menoleh
+    /// (kurva ease-out bbot): dekat = menoleh sedikit, jauh = penuh. Dua detik setelah kursor diam, kepala kembali lurus.
+    func look(at mouse: NSPoint, from center: NSPoint, reach: CGFloat = 260) {
+        guard !sleeping else { return }
+        let dx = Double(mouse.x - center.x), dy = Double(center.y - mouse.y) // y layar ke atas → y wajah ke bawah
+        let d = max(hypot(dx, dy), 0.001)
+        let g0 = min(1, d / Double(reach)), f = g0 * (2 - g0)
+        let next = CGSize(width: dx / d * f, height: dy / d * f)
+        guard abs(next.width - gaze.width) > 0.015 || abs(next.height - gaze.height) > 0.015 else { return }
+        withAnimation(.interpolatingSpring(mass: 1, stiffness: 150, damping: 19)) { gaze = next }
+        gazeReset?.cancel()
+        gazeReset = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 2_200_000_000)
+            guard !Task.isCancelled else { return }
+            withAnimation(.interpolatingSpring(mass: 1, stiffness: 150, damping: 19)) { self?.gaze = .zero }
+        }
+    }
+
+    /// Menoleh dimatikan: kembali lurus (sekali).
+    func lookAhead() {
+        guard gaze != .zero else { return }
+        gazeReset?.cancel()
+        withAnimation(.interpolatingSpring(mass: 1, stiffness: 150, damping: 19)) { gaze = .zero }
     }
 
     func react(_ kind: Reaction) {
@@ -481,7 +566,7 @@ final class Face: ObservableObject {
         return .normal
     }
 
-    /// Dipanggil tiap 5 sampai 10 detik. `flavor: false` hanya menyegarkan suasana (tanpa iseng).
+    /// Dipanggil tiap 2,5 sampai 5 detik. `flavor: false` hanya menyegarkan suasana (tanpa iseng).
     func tick(_ c: CompanionContext, flavor: Bool = true) {
         let cfg = config()
         if cfg.mode == .fixed {
@@ -492,15 +577,35 @@ final class Face: ObservableObject {
         if c.idle > 150 { sleep(); return }
         if holding { return }
         let s = state(for: c)
+        let grooving = cfg.mode == .dynamic && s == .music
+        if groove != grooving { groove = grooving }
         var next = cfg.emotion(for: s) ?? .idle
         if s == .normal, cfg.mode == .dynamic {
-            // Tidak ada yang istimewa: ganti-ganti santai tiap satu-dua menit.
+            // Tidak ada yang istimewa: ganti-ganti santai tiap beberapa belas detik.
             if Date() > neutralUntil {
-                neutral = [Emotion.idle, .idle, .content, .curious, .smug].randomElement() ?? .idle
+                neutral = (Situation.normal.pool ?? [.idle]).filter { $0 != neutral }.randomElement() ?? .idle
                 if c.idle > 60, Bool.random() { neutral = .bored }
-                neutralUntil = Date().addingTimeInterval(Double.random(in: 45...100))
+                neutralUntil = Date().addingTimeInterval(Double.random(in: 12...30))
             }
             next = neutral
+            poolState = .normal
+        } else if cfg.mode == .dynamic, let pool = s.pool {
+            // Di dalam satu keadaan wajah berganti-ganti ekspresi dari kumpulannya, tidak diam di satu wajah.
+            let now = Date()
+            if s != poolState || now > poolUntil {
+                let fresh = s != poolState
+                poolState = s
+                poolUntil = now.addingTimeInterval(s == .music ? Double.random(in: 3.5...8) : Double.random(in: 7...15))
+                if let picked = pool.filter({ $0 != base }).randomElement() {
+                    base = picked
+                    next = picked
+                    if !fresh { react(picked.motion) }
+                }
+            } else {
+                next = base
+            }
+        } else {
+            poolState = s
         }
         if next != base || emotion != next {
             base = next
@@ -563,6 +668,26 @@ final class Face: ObservableObject {
         play(steps)
     }
 
+    /// Volume atau kecerahan berubah: volume naik takjub, turun malu, bisu sedih, layar terang kepanasan, redup mengantuk.
+    func react(to level: NotchModel.Level) {
+        let cfg = config()
+        guard cfg.mode != .fixed else { return }
+        var s: Situation?
+        switch level {
+        case .volume(let value, let muted):
+            let prev = lastVolume
+            lastVolume = value
+            if muted { s = .muted }
+            else if let prev, abs(value - prev) > 0.01 { s = value > prev ? .volumeUp : .volumeDown }
+        case .brightness(let value):
+            let prev = lastBright
+            lastBright = value
+            if let prev, abs(value - prev) > 0.01 { s = value > prev ? .brightUp : .brightDown }
+        }
+        guard let s, let chosen = cfg.emotion(for: s) else { return }
+        play([(chosen, 2.2, chosen.motion)])
+    }
+
     func react(to toast: NotchModel.Toast) {
         let cfg = config()
         guard cfg.mode != .fixed else { return }
@@ -622,40 +747,70 @@ struct Eye: View {
                 Text("!").font(.system(size: 10, weight: .heavy, design: .rounded)).foregroundStyle(.white).offset(x: 8, y: -8)
             case .sweat where right:
                 Image(systemName: "drop.fill").font(.system(size: 6)).foregroundStyle(Color(red: 0.49, green: 0.83, blue: 0.99)).offset(x: 8, y: -6)
+            case .note where right:
+                FloatingNote().offset(x: 8, y: -6)
+            case .sparkle:
+                Twinkle().offset(x: right ? 9 : -9, y: -8)
+            case .tear where !right:
+                Image(systemName: "drop.fill").font(.system(size: 6)).foregroundStyle(Color(red: 0.49, green: 0.83, blue: 0.99)).offset(x: -2, y: 10)
+            case .blush:
+                Ellipse().fill(Color(red: 1, green: 0.48, blue: 0.64).opacity(0.6)).frame(width: 10 * scale, height: 4.4 * scale).offset(y: 9)
             default: EmptyView()
             }
         }
-        .offset(x: p.gx * 0.5 + face.glance.width, y: p.gy * 0.5 + face.glance.height)
+        .modifier(Groove(on: face.groove, right: right, face: face))
+        // Menoleh ke kursor (rumus kepala bola, disederhanakan untuk mata persegi panjang): mata bergeser searah pandangan;
+        // mata di sisi yang dituju sedikit menyempit karena berputar menjauh dari penonton.
+        .scaleEffect(x: (right ? 1 : -1) * face.gaze.width > 0 ? 1 - 0.28 * min(1, abs(face.gaze.width)) : 1, y: 1)
+        .offset(x: p.gx * 0.5 + face.glance.width + face.gaze.width * 4.5 * scale, y: p.gy * 0.5 + face.glance.height + face.gaze.height * 2.6 * scale)
         .frame(width: 14 * scale, height: 16 * scale)
         .padding(.horizontal, 4)
     }
 }
 
-/// Kepala bulat untuk notch mengambang: dua mata dan mulut.
-struct FaceHead: View {
-    @ObservedObject var face: Face
-    var diameter: CGFloat = 42
-
+/// Not musik yang naik dan memudar berulang di samping mata (ekspresi bernyanyi).
+struct FloatingNote: View {
     var body: some View {
-        let p = face.pose
-        ZStack {
-            HStack(spacing: -2) {
-                Eye(face: face, right: false, scale: 0.85)
-                Eye(face: face, right: true, scale: 0.85)
-            }
-            .offset(y: -4)
-            ZStack {
-                MouthShape(w: p.mw, c: p.mc, o: p.mo)
-                    .stroke(Color.white, style: StrokeStyle(lineWidth: 1.6, lineCap: .round, lineJoin: .round))
-                    .opacity(1 - p.mr)
-                Ellipse().fill(.white)
-                    .frame(width: max(2, p.mw * 1.1), height: max(2, p.mo * 1.15))
-                    .opacity(p.mr)
-            }
-            .frame(width: 20, height: 14)
-            .offset(y: 10)
+        TimelineView(.animation(minimumInterval: 1.0 / 30)) { t in
+            let phase = (t.date.timeIntervalSinceReferenceDate / 1.3).truncatingRemainder(dividingBy: 1)
+            Text("\u{266A}").font(.system(size: 9, weight: .heavy, design: .rounded)).foregroundStyle(.white)
+                .opacity(phase < 0.3 ? phase / 0.3 : 1 - (phase - 0.3) / 0.7)
+                .offset(x: 3 * phase, y: 2 - 7 * phase)
         }
-        .frame(width: diameter, height: diameter)
-        .modifier(Wobble(kind: face.rx, amp: 4, t: face.rxT))
+    }
+}
+
+/// Bintang kecil yang berkilau (ekspresi bangga dan takjub).
+struct Twinkle: View {
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30)) { t in
+            let k = 0.875 + 0.275 * sin(t.date.timeIntervalSinceReferenceDate * 2 * .pi / 1.1)
+            Image(systemName: "sparkle").font(.system(size: 7, weight: .bold)).foregroundStyle(Color(red: 0.99, green: 0.9, blue: 0.54))
+                .scaleEffect(k)
+        }
+    }
+}
+
+/// Mata mengangguk pelan mengikuti irama saat musik diputar (hanya berjalan selama `on`; selain itu tanpa animasi).
+struct Groove: ViewModifier {
+    var on: Bool
+    var right: Bool
+    var face: Face? = nil
+
+    func body(content: Content) -> some View {
+        if on {
+            TimelineView(.animation(minimumInterval: 1.0 / 30)) { t in
+                // Turun tepat di ketukan lagu (BeatTracker); tanpa pelacak, tempo sedang.
+                let now = t.date.timeIntervalSinceReferenceDate
+                let v = face?.vibe()
+                // Santai: anggukan lambat (beberapa ketukan per siklus) dan kecil.
+                let depth = v?.slowDepth(at: now) ?? (1 + cos(now * .pi / 1.2)) / 2
+                let sway = v?.slowSway(at: now) ?? sin(now * .pi / 1.2)
+                let amp = v.map { 0.5 + 0.35 * min(1, $0.energy * 1.4) } ?? 0.6
+                content.offset(y: 1.0 * depth * amp).rotationEffect(.degrees((right ? -1 : 1) * 1.2 * sway * amp))
+            }
+        } else {
+            content
+        }
     }
 }

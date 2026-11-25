@@ -2,6 +2,7 @@ import Accelerate
 import AudioToolbox
 import CoreAudio
 import Foundation
+import NotchDock
 import SwiftUI
 
 /// Equalizer yang mengikuti suara asli: suara yang keluar dari Mac disadap lewat Core Audio tap
@@ -18,6 +19,22 @@ final class Spectrum: ObservableObject {
 
     private var engine: AnyObject?
     private var wanted = false
+    /// Musik sedang diputar (diisi NotchModel). Tanpa data suara asli, wajah tetap mengangguk pada tempo sedang.
+    var playing = false
+    private var vibe = BeatTracker()
+    private var outputListener: AudioObjectPropertyListenerBlock?
+    private var restartWork: DispatchWorkItem?
+
+    /// Irama saat ini untuk wajah Mimik (Skin dan Kepala): dibaca ±30× per detik oleh yang menggambar. Suara asli bila ada
+    /// (lewat `publish`), selain itu ketukan sintetis selama musik diputar; diam bila tidak ada musik.
+    func vibe(at t: TimeInterval) -> BeatTracker {
+        if !playing {
+            if vibe.energy > 0.001 { vibe.feed(level: 0, at: t) }
+        } else if bands == nil {
+            vibe.feedSteady(at: t)
+        }
+        return vibe
+    }
     private var listeners: [ObjectIdentifier: ([Float]?) -> Void] = [:]
 
     /// Dipanggil tiap pita baru (dan sekali saat berlangganan). `owner` dipakai untuk berhenti berlangganan.
@@ -30,6 +47,11 @@ final class Spectrum: ObservableObject {
 
     private func publish(_ values: [Float]?) {
         bands = values
+        if let values, values.count >= 3 {
+            // Bass dan mid paling menentukan ketukan; treble sedikit saja.
+            let level = Double(values[0]) * 0.55 + Double(values[1]) * 0.3 + Double(values[2]) * 0.15
+            vibe.feed(level: level, at: Date.timeIntervalSinceReferenceDate)
+        }
         for listener in listeners.values { listener(values) }
     }
 
@@ -38,6 +60,7 @@ final class Spectrum: ObservableObject {
         guard active != wanted else { return }
         wanted = active
         if active {
+            watchOutput()
             if #available(macOS 14.2, *) {
                 let tap = TapEngine { [weak self] values in
                     DispatchQueue.main.async {
@@ -50,10 +73,51 @@ final class Spectrum: ObservableObject {
                 if tap.start() { engine = tap } else { publish(nil) }
             }
         } else {
+            unwatchOutput()
             if #available(macOS 14.2, *) { (engine as? TapEngine)?.stop() }
             engine = nil
             publish(nil)
         }
+    }
+
+    // MARK: Pindah headphone, AirPods, atau speaker
+
+    /// Tap dikunci pada perangkat keluaran yang aktif saat mulai. Pindah ke headphone atau AirPods (atau perangkat dicabut) di tengah
+    /// lagu membuat tap lama mati, jadi tap dibuat ulang tiap perangkat keluaran bawaan berganti.
+    private func watchOutput() {
+        guard outputListener == nil else { return }
+        var address = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDefaultOutputDevice, mScope: kAudioObjectPropertyScopeGlobal,
+                                                 mElement: kAudioObjectPropertyElementMain)
+        let block: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
+            DispatchQueue.main.async { MainActor.assumeIsolated { self?.outputChanged() } }
+        }
+        outputListener = block
+        AudioObjectAddPropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &address, DispatchQueue.main, block)
+    }
+
+    private func unwatchOutput() {
+        restartWork?.cancel()
+        guard let block = outputListener else { return }
+        var address = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDefaultOutputDevice, mScope: kAudioObjectPropertyScopeGlobal,
+                                                 mElement: kAudioObjectPropertyElementMain)
+        AudioObjectRemovePropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &address, DispatchQueue.main, block)
+        outputListener = nil
+    }
+
+    private func outputChanged() {
+        restartWork?.cancel()
+        // Perangkat baru perlu sebentar untuk siap (Bluetooth terutama); tunggu sebelum menyadap ulang.
+        let work = DispatchWorkItem { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, self.wanted else { return }
+                self.wanted = false
+                self.setActive(true)
+            }
+        }
+        restartWork = work
+        if #available(macOS 14.2, *) { (engine as? TapEngine)?.stop() }
+        engine = nil
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6, execute: work)
     }
 }
 

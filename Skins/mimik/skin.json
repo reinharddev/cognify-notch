@@ -1,1 +1,1 @@
-{ "name": "Mimik", "description": "Wajah kecil yang mengikuti kursor, berkedip, dan berubah ekspresi sesuai harimu. Klik untuk boing.", "width": 180, "height": 180, "cursor": true, "anchor": "bottom-right" }
+{ "name": "Mimik", "description": "Wajah kecil yang mengikuti kursor, berkedip, dan berubah ekspresi sesuai harimu. Saat ada lagu, ia mengangguk mengikuti irama. Kursor di atas notch atau notifikasi membuatnya kaget. Klik untuk boing.", "width": 180, "height": 180, "cursor": true, "audio": true, "notch": true, "anchor": "bottom-right" }

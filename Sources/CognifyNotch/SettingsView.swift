@@ -554,6 +554,7 @@ struct SettingsView: View {
                 .onChange(of: prefs.companionFixed) { preview.set($0) }
             }
             Toggle(L("Berkedip berkala", "Blink now and then"), isOn: $prefs.companionBlink)
+            Toggle(L("Menoleh mengikuti kursor", "Turn to follow the cursor"), isOn: $prefs.companionFollow)
         }
         .disabled(!model.features.companion)
         .onAppear { if prefs.companionMode == .fixed { preview.set(prefs.companionFixed) } }
