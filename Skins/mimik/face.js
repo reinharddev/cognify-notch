@@ -178,24 +178,30 @@ function ensureLoop() {
   if (!raf) { last = performance.now(); raf = requestAnimationFrame(tick) }
 }
 
-// Hemat daya: wajah yang sedang diam (pegas tenang, tanpa reaksi, kedip, atau kursor baru) cukup digambar ~15 kali per detik
-// (napas dan kedip berikutnya tetap mulus); begitu ada gerakan, kembali ke kecepatan layar penuh.
-const IDLE_MS = 1000 / 15
+// Hemat daya: jendela skin transparan mahal digambar ulang, jadi wajah hanya digambar selama ADA YANG BERGERAK (maksimal
+// 30 kali per detik). Selebihnya halaman tidur total sampai kejadian berikutnya (kedip, lirikan, hiasan, atau kursor).
+const FRAME_MS = 1000 / 30
 let sleepTimer = 0
 function tick(now) {
   clearTimeout(sleepTimer)
+  if (now - last < FRAME_MS - 4) { raf = requestAnimationFrame(tick); return }
   const dt = Math.min(0.1, (now - last) / 1000)
   last = now
-  let busy = false, groovy = false
-  for (const f of faces) if (f.vis) { f.step(now / 1000, dt); if (f.busy) busy = true; if (f.vAmp > 0.02) groovy = true }
-  // Hemat daya: bergerak = kecepatan layar; mengangguk mengikuti musik cukup 30 fps; diam ~15 fps. Di antara dua bingkai
-  // halaman benar-benar tidur (pewaktu), bukan dibangunkan 60 kali per detik lalu langsung kembali.
+  let busy = false, nap = 5000
+  for (const f of faces) if (f.vis) { f.step(now / 1000, dt); if (f.busy) busy = true; else nap = Math.min(nap, f.nap) }
   if (!faces.size) raf = 0
   else if (busy) raf = requestAnimationFrame(tick)
   else {
     raf = -1
-    sleepTimer = setTimeout(() => { raf = requestAnimationFrame(tick) }, (groovy ? 1000 / 30 : IDLE_MS) - 16)
+    sleepTimer = setTimeout(() => { raf = requestAnimationFrame(tick) }, Math.max(16, nap - 8))
   }
+}
+// Atribut hanya ditulis bila nilainya berubah (menulis nilai yang sama tetap memicu gambar ulang di sebagian mesin).
+function attr(node, name, value) {
+  const cache = node.__attrs || (node.__attrs = {})
+  if (cache[name] === value) return
+  cache[name] = value
+  node.setAttribute(name, value)
 }
 /** Ada yang berubah (kursor, ekspresi, reaksi, irama): bangunkan segera tanpa menunggu pewaktu. */
 function wake() {
@@ -249,6 +255,7 @@ class Face {
     this.t0 = performance.now() / 1000
     this.nextWander = 0
     this.busy = true // sampai wajah pertama selesai menenang
+    this.nap = 0
     // Mengangguk mengikuti musik (lihat vibe()): amplitudo (0 = diam), tempo, ketukan terakhir, dan nada yang sedang melayang.
     this.vOn = false; this.vAmp = 0; this.vE = 0; this.vPeriod = 0.6; this.vBeats = 0; this.vLast = -100; this.vMouth = 0
     this.notes = []
@@ -332,7 +339,7 @@ class Face {
     this.host.appendChild(svg)
   }
 
-  setShape(d) { for (const n of [this.headP, this.clipH, this.rimP, this.ringP]) n.setAttribute('d', d) }
+  setShape(d) { for (const n of [this.headP, this.clipH, this.rimP, this.ringP]) attr(n, 'd', d) }
 
   update(opts) {
     wake()
@@ -403,7 +410,7 @@ class Face {
     const bp = (t - this.blinkStart) / 0.16
     if (bp >= 0 && bp <= 1) blink = Math.sin(bp * Math.PI) ** 0.55
 
-    let tx = this.g.x * LEAN, ty = Math.sin(t * 1.3) * (still ? 0 : 0.5) + this.g.y * LEAN, rot = 0, hx = 1, hy = 1
+    let tx = this.g.x * LEAN, ty = this.g.y * LEAN, rot = 0, hx = 1, hy = 1
     if (this.rx) {
       const p = (t - this.rx.t0) / this.rx.d
       if (p >= 1) this.rx = null
@@ -441,7 +448,7 @@ class Face {
         this.nextNote = t + 1.0 + Math.random() * 1.0
       }
     }
-    this.head.setAttribute('transform', `translate(${tx.toFixed(2)} ${ty.toFixed(2)}) rotate(${rot.toFixed(1)}) scale(${hx.toFixed(3)} ${hy.toFixed(3)})`)
+    attr(this.head, 'transform', `translate(${tx.toFixed(2)} ${ty.toFixed(2)}) rotate(${rot.toFixed(1)}) scale(${hx.toFixed(3)} ${hy.toFixed(3)})`)
 
     // gaze: pointer if it moved recently, otherwise wander
     let gx = 0, gy = 0
@@ -455,7 +462,7 @@ class Face {
       const tk = TRACK[o.expression] ?? 1
       gx = (dx / d) * f * 5 * tk; gy = (dy / d) * f * 5 * tk
     } else if (o.wander && !still) {
-      if (t >= this.nextWander) { this.tw = { x: (Math.random() - 0.5) * 8, y: (Math.random() - 0.5) * 6 }; this.nextWander = t + 1.2 + Math.random() * 2.5 }
+      if (t >= this.nextWander) { this.tw = { x: (Math.random() - 0.5) * 8, y: (Math.random() - 0.5) * 6 }; this.nextWander = t + 2.5 + Math.random() * 3.5 }
       gx = this.tw.x; gy = this.tw.y
     }
     if (!dt) { this.g.x = gx; this.g.y = gy } else {
@@ -471,8 +478,18 @@ class Face {
     const yaw = gn.x * TURN, pitch = -gn.y * TURN
     const cosYaw = Math.cos(yaw), sinYaw = Math.sin(yaw), cosPit = Math.cos(pitch), sinPit = Math.sin(pitch)
     const gMoving = Math.abs(gx - this.g.x) + Math.abs(gy - this.g.y) + Math.abs(this.gv.x) + Math.abs(this.gv.y)
-    this.busy = moving > 0.02 || gMoving > 0.05 || !!this.rx || bp >= 0 && bp <= 1 || ptr.t > 0 && t - ptr.t < CURSOR_HOLD + 0.3 ||
-      !!(this.lk && t < this.lk.until) || this.talkE > 0.02 || c.trem > 0.01 || t - this.t0 < 1
+    // Sedang bergerak? Kursor yang diam di tempat tidak dihitung: begitu pandangan sampai, tidak ada yang perlu digambar.
+    this.busy = moving > 0.02 || gMoving > 0.05 || !!this.rx || (bp >= 0 && bp <= 1) || this.talkE > 0.02 || c.trem > 0.01 || t - this.t0 < 1
+    // Tidak bergerak: berapa lama boleh tidur sampai ada yang harus digambar lagi.
+    let nap = 5
+    const following = o.follow && ptr.t > 0 && t - ptr.t < CURSOR_HOLD
+    if (o.blink && !still) nap = Math.min(nap, this.nextBlink - t)
+    if (following) nap = Math.min(nap, ptr.t + CURSOR_HOLD - t)
+    else if (o.wander && !still) nap = Math.min(nap, this.nextWander - t)
+    if (this.lk && t < this.lk.until) nap = Math.min(nap, this.lk.until - t)
+    if (!still && (c.dZ > 0.01 || c.dC > 0.01 || c.dS > 0.01 || typeof this.T.shape === 'function')) nap = Math.min(nap, 1 / 12)
+    if (this.vAmp > 0.02 || this.notes.length) nap = Math.min(nap, 1 / 30)
+    this.nap = Math.max(0, nap) * 1000
     const T = this.T, ry = this.ry
     if (typeof T.shape === 'function') this.setShape(T.shape(t))
     const pos = {}
@@ -484,12 +501,12 @@ class Face {
       const x = P.x, y = P.y, place = turnOf(P)
       const rt = (K === 'L' ? -T.rot : T.rot), sc = `rotate(${rt}) scale(${c[K + 'sx'].toFixed(3)} ${c[K + 'sy'].toFixed(3)})`
       pos[K] = [x, y]
-      e.g.setAttribute('transform', place)
-      e.sc.setAttribute('transform', sc)
-      e.ov.setAttribute('transform', sc)
-      e.top.setAttribute('transform', `rotate(${a.toFixed(1)}) translate(0 ${(-ry + (2 * ry + 1) * top).toFixed(2)})`)
-      e.bot.setAttribute('transform', `rotate(${a.toFixed(1)}) translate(0 ${(ry + 16 - 2 * ry * bot).toFixed(2)})`)
-      e.pupil.setAttribute('transform', `translate(${(gn.x * 4.2 + c[K + 'gx'] * 0.3).toFixed(2)} ${(gn.y * 4.2 + c[K + 'gy'] * 0.3).toFixed(2)})`)
+      attr(e.g, 'transform', place)
+      attr(e.sc, 'transform', sc)
+      attr(e.ov, 'transform', sc)
+      attr(e.top, 'transform', `rotate(${a.toFixed(1)}) translate(0 ${(-ry + (2 * ry + 1) * top).toFixed(2)})`)
+      attr(e.bot, 'transform', `rotate(${a.toFixed(1)}) translate(0 ${(ry + 16 - 2 * ry * bot).toFixed(2)})`)
+      attr(e.pupil, 'transform', `translate(${(gn.x * 4.2 + c[K + 'gx'] * 0.3).toFixed(2)} ${(gn.y * 4.2 + c[K + 'gy'] * 0.3).toFixed(2)})`)
       e.pupil.style.opacity = o.pupils ? 1 : 0
       const hide = Math.max(c.dH, c.dT)
       e.heart.style.opacity = c.dH
@@ -497,21 +514,21 @@ class Face {
       e.spin.style.opacity = c.dS
       e.xx.style.opacity = c.dX
       e.spinBg.style.opacity = Math.max(c.dS, c.dX)
-      e.spin.setAttribute('transform', `rotate(${(t * 220) % 360})`)
+      attr(e.spin, 'transform', `rotate(${(t * 220) % 360})`)
       e.sc.style.opacity = 1 - hide
     }
 
     this.lens.forEach((n, i) => {
       const [x, y] = pos[i ? 'R' : 'L']
-      n.setAttribute('transform', `translate(${x.toFixed(2)} ${y.toFixed(2)})`); n.style.opacity = c.dG
+      attr(n, 'transform', `translate(${x.toFixed(2)} ${y.toFixed(2)})`); n.style.opacity = c.dG
     })
     this.tears.forEach((n, i) => {
       const [x, y] = pos[i ? 'R' : 'L'], ph = still ? 0.3 : (t * 0.9 + i * 0.5) % 1
-      n.setAttribute('transform', `translate(${x.toFixed(2)} ${(y + ry + 2 + ph * 22).toFixed(2)})`)
+      attr(n, 'transform', `translate(${x.toFixed(2)} ${(y + ry + 2 + ph * 22).toFixed(2)})`)
       n.style.opacity = c.dC * Math.sin(ph * Math.PI)
     })
     const sp = still ? 0 : Math.sin(t * 3) * 1.2
-    this.sweat.setAttribute('transform', `translate(${(T.sp + 12).toFixed(1)} ${(-24 + sp).toFixed(2)})`)
+    attr(this.sweat, 'transform', `translate(${(T.sp + 12).toFixed(1)} ${(-24 + sp).toFixed(2)})`)
     this.sweat.style.opacity = c.dW
     this.blush.forEach((n) => (n.style.opacity = c.dB * 0.55))
     const tk = this.talkE
@@ -522,17 +539,17 @@ class Face {
     const lY = cy - mc * 0.3 + ms, rY = cy - mc * 0.3 - ms, ctl = cy + mc * 0.7
     const d = `M${-mw.toFixed(2)} ${lY.toFixed(2)}Q0 ${ctl.toFixed(2)} ${mw.toFixed(2)} ${rY.toFixed(2)}` +
       (mo > 0.4 ? `Q0 ${(ctl + mo * 2).toFixed(2)} ${-mw.toFixed(2)} ${lY.toFixed(2)}Z` : '')
-    this.mouth.setAttribute('d', d)
+    attr(this.mouth, 'd', d)
     const MP = project(0, cy, cosYaw, sinYaw, cosPit, sinPit)
-    this.mouth.setAttribute('transform', `${turnOf(MP)} translate(0 ${(-cy).toFixed(2)})`)
+    attr(this.mouth, 'transform', `${turnOf(MP)} translate(0 ${(-cy).toFixed(2)})`)
     this.mouth.style.opacity = this.mop
     this.mouth.style.fillOpacity = clamp(mo / 2, 0, 1)
 
     const z = still ? 0 : t
     this.zs.forEach((n, i) => {
       const ph = ((z * 0.5 + i * 0.33) % 1)
-      n.setAttribute('x', 22 + i * 7 + ph * 4)
-      n.setAttribute('y', -18 - i * 9 - ph * 8)
+      attr(n, 'x', 22 + i * 7 + ph * 4)
+      attr(n, 'y', -18 - i * 9 - ph * 8)
       n.style.opacity = c.dZ * Math.sin(ph * Math.PI)
     })
     this.q.style.opacity = c.dQ
@@ -552,8 +569,8 @@ class Face {
       if (!n) { e.style.opacity = 0; return }
       const age = (now - n.t0) / 2.6
       e.textContent = n.glyph
-      e.setAttribute('x', (n.x0 + Math.sin(age * 5) * 4 + n.side * age * 8).toFixed(1))
-      e.setAttribute('y', (-22 - age * 26).toFixed(1))
+      attr(e, 'x', (n.x0 + Math.sin(age * 5) * 4 + n.side * age * 8).toFixed(1))
+      attr(e, 'y', (-22 - age * 26).toFixed(1))
       e.style.opacity = (Math.sin(Math.PI * Math.min(1, age * 1.05)) * 0.95).toFixed(2)
     })
   }

@@ -69,6 +69,8 @@ plist "Add :SUEnableSystemProfiling bool false"
 
 echo "3/5 Tanda tangan…"
 ID=${COGNIFY_SIGN_IDENTITY:-$(security find-identity -v -p codesigning | grep -o '"Developer ID Application: [^"]*"' | head -1 | tr -d '"')}
+# Server cap waktu Apple kadang tidak menjawab ("A timestamp was expected but was not found"): ulangi sampai lima kali.
+sign_retry() { local n; for n in 1 2 3 4 5; do codesign "$@" && return 0; echo "codesign gagal, coba lagi ($n)" >&2; sleep 8; done; return 1; }
 if [[ -z "$ID" ]]; then
   ID="-"
   NOTARIZE=0
@@ -76,18 +78,18 @@ if [[ -z "$ID" ]]; then
 fi
 TS=(--timestamp)
 [[ "$ID" == "-" ]] && TS=()
-codesign --force "${TS[@]}" --options runtime --sign "$ID" "$APP/Contents/Frameworks/libcognify-media.dylib"
+sign_retry --force "${TS[@]}" --options runtime --sign "$ID" "$APP/Contents/Frameworks/libcognify-media.dylib"
 # Sparkle: isi framework dulu (urutan dari dokumentasi Sparkle), baru frameworknya.
 SP="$APP/Contents/Frameworks/Sparkle.framework/Versions/B"
-codesign --force "${TS[@]}" --options runtime --sign "$ID" "$SP/XPCServices/Installer.xpc"
-codesign --force "${TS[@]}" --options runtime --preserve-metadata=entitlements --sign "$ID" "$SP/XPCServices/Downloader.xpc"
-codesign --force "${TS[@]}" --options runtime --sign "$ID" "$SP/Autoupdate"
-codesign --force "${TS[@]}" --options runtime --sign "$ID" "$SP/Updater.app"
-codesign --force "${TS[@]}" --options runtime --sign "$ID" "$APP/Contents/Frameworks/Sparkle.framework"
+sign_retry --force "${TS[@]}" --options runtime --sign "$ID" "$SP/XPCServices/Installer.xpc"
+sign_retry --force "${TS[@]}" --options runtime --preserve-metadata=entitlements --sign "$ID" "$SP/XPCServices/Downloader.xpc"
+sign_retry --force "${TS[@]}" --options runtime --sign "$ID" "$SP/Autoupdate"
+sign_retry --force "${TS[@]}" --options runtime --sign "$ID" "$SP/Updater.app"
+sign_retry --force "${TS[@]}" --options runtime --sign "$ID" "$APP/Contents/Frameworks/Sparkle.framework"
 # Widget macOS (Agenda, To-do): ekstensi ditandatangani sendiri (sandbox), lalu app ditandatangani terakhir.
 mkdir -p "$APP/Contents/PlugIns"
 zsh scripts/build-widget.sh "$APP/Contents/PlugIns" "$ID" "$VERSION"
-codesign --force "${TS[@]}" --options runtime --entitlements $N/entitlements.plist --sign "$ID" "$APP"
+sign_retry --force "${TS[@]}" --options runtime --entitlements $N/entitlements.plist --sign "$ID" "$APP"
 codesign --verify --deep --strict "$APP"
 
 echo "4/5 DMG…"
@@ -105,7 +107,7 @@ else
   hdiutil create -volname "$NAME" -srcfolder "$STAGE" -ov -format UDZO "$DMG" >/dev/null
   rm -rf "$STAGE"
 fi
-codesign --force "${TS[@]}" --sign "$ID" "$DMG"
+sign_retry --force "${TS[@]}" --sign "$ID" "$DMG"
 
 if (( NOTARIZE )); then
   echo "5/5 Notarisasi Apple (biasanya 2-15 menit)…"

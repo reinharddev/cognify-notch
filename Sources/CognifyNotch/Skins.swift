@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import NotchDock
 import SwiftUI
 import WebKit
 
@@ -178,6 +179,11 @@ final class SkinManager: ObservableObject {
         scan()
         for skin in skins where enabled.contains(skin.id) { open(skin) }
         if CommandLine.arguments.contains("--skins-arrange") { arranging = true } // uji: mulai langsung dalam mode atur posisi
+        // Layar dicabut, ditambah, atau resolusinya berubah: semua skin masuk kembali ke dalam layar.
+        NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)
+            .debounce(for: .milliseconds(400), scheduler: DispatchQueue.main)
+            .sink { [weak self] _ in MainActor.assumeIsolated { self?.windows.values.forEach { $0.refit() } } }
+            .store(in: &bag)
         Publishers.MergeMany([
             model.calendar.$events.map { _ in () }.eraseToAnyPublisher(),
             model.todo.$items.map { _ in () }.eraseToAnyPublisher(),
@@ -430,12 +436,19 @@ private final class SkinWebView: WKWebView {
         guard arranging || event.modifierFlags.contains(.option), let window, let p = screenPoint(event) else { super.mouseDown(with: event); return }
         dragStart = (p, window.frame.origin)
     }
+    /// Dipanggil sesudah skin dilepas (mis. dipindah ke layar yang lebih kecil: ukurannya disesuaikan).
+    var onDragEnd: (() -> Void)?
     override func mouseDragged(with event: NSEvent) {
         guard let start = dragStart, let window, let now = screenPoint(event) else { super.mouseDragged(with: event); return }
-        window.setFrameOrigin(NSPoint(x: start.origin.x + now.x - start.mouse.x, y: start.origin.y + now.y - start.mouse.y))
+        let target = NSRect(x: start.origin.x + now.x - start.mouse.x, y: start.origin.y + now.y - start.mouse.y,
+                            width: window.frame.width, height: window.frame.height)
+        // Tidak pernah keluar layar: dibatasi ke layar tempat kursor berada (jadi masih bisa dipindah ke layar kedua).
+        let screen = NSScreen.screens.first { NSMouseInRect(now, $0.frame, false) } ?? window.screen ?? NSScreen.main
+        guard let area = screen?.visibleFrame else { window.setFrameOrigin(target.origin); return }
+        window.setFrameOrigin(SkinPlacement.clamp(target, into: area).origin)
     }
     override func mouseUp(with event: NSEvent) {
-        if dragStart != nil { dragStart = nil } else { super.mouseUp(with: event) }
+        if dragStart != nil { dragStart = nil; onDragEnd?() } else { super.mouseUp(with: event) }
     }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }
@@ -477,6 +490,8 @@ final class SkinWindow: NSObject, WKNavigationDelegate {
     private let panel: SkinPanel
     private let web: SkinWebView
     private var scale: Double
+    /// Ukuran yang dipilih pengguna; `scale` bisa lebih kecil bila layar tempat skin berada tidak muat.
+    private var wanted: Double
     private var loaded = false
     private let onReady: () -> Void
     private var moveObserver: NSObjectProtocol?
@@ -498,6 +513,7 @@ final class SkinWindow: NSObject, WKNavigationDelegate {
     init(info: SkinInfo, scale: Double, onTop: Bool, onReady: @escaping () -> Void) {
         self.info = info
         self.scale = scale
+        self.wanted = scale
         self.onReady = onReady
         let config = WKWebViewConfiguration()
         config.setURLSchemeHandler(SkinScheme(root: info.folder, entry: info.entry), forURLScheme: "skin")
@@ -508,6 +524,7 @@ final class SkinWindow: NSObject, WKNavigationDelegate {
         let size = NSSize(width: info.width * scale, height: info.height * scale)
         panel = SkinPanel(contentRect: NSRect(origin: .zero, size: size), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         super.init()
+        web.onDragEnd = { [weak self] in MainActor.assumeIsolated { self?.refit() } }
         web.navigationDelegate = self
         panel.contentView = web
         panel.isOpaque = false
@@ -519,19 +536,10 @@ final class SkinWindow: NSObject, WKNavigationDelegate {
         let origin = Self.savedOrigin(info.id) ?? Self.defaultOrigin(size, anchor: info.anchor)
         let target = NSRect(origin: origin, size: size)
         let screen = NSScreen.screens.first { $0.frame.intersects(target) } ?? NSScreen.main
-        panel.setFrameOrigin(Self.clamped(target, to: screen?.visibleFrame).origin)
+        panel.setFrameOrigin(screen.map { SkinPlacement.clamp(target, into: $0.visibleFrame).origin } ?? origin)
         moveObserver = NotificationCenter.default.addObserver(forName: NSWindow.didMoveNotification, object: panel, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { if let self { UserDefaults.standard.set(NSStringFromPoint(self.panel.frame.origin), forKey: "skins.origin.\(self.info.id)") } }
         }
-    }
-
-    /// Jendela tidak pernah keluar dari area layar yang terlihat.
-    private static func clamped(_ frame: NSRect, to area: NSRect?) -> NSRect {
-        guard let area else { return frame }
-        var f = frame
-        f.origin.x = min(max(f.origin.x, area.minX), max(area.minX, area.maxX - f.width))
-        f.origin.y = min(max(f.origin.y, area.minY), max(area.minY, area.maxY - f.height))
-        return f
     }
 
     private static func savedOrigin(_ id: String) -> NSPoint? {
@@ -581,13 +589,21 @@ final class SkinWindow: NSObject, WKNavigationDelegate {
     }
 
     func setScale(_ value: Double) {
+        wanted = value
+        refit()
+    }
+
+    /// Menyesuaikan dengan layar tempat skin berada: ukuran dikecilkan bila tidak muat, dan jendela digeser ke dalam layar.
+    func refit() {
+        let area = (panel.screen ?? NSScreen.main)?.visibleFrame
+        let value = area.map { SkinPlacement.fit(wanted, base: CGSize(width: info.width, height: info.height), area: $0.size) } ?? wanted
         scale = value
         web.pageZoom = value
         var frame = panel.frame
         let newSize = NSSize(width: info.width * value, height: info.height * value)
         frame.origin.y += frame.height - newSize.height // sudut kiri atas tetap
         frame.size = newSize
-        panel.setFrame(Self.clamped(frame, to: (panel.screen ?? NSScreen.main)?.visibleFrame), display: true)
+        panel.setFrame(area.map { SkinPlacement.clamp(frame, into: $0) } ?? frame, display: true)
     }
 
     func push(json: String) {
