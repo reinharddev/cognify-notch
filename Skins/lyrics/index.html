@@ -2,12 +2,12 @@
 <meta charset="utf-8">
 <style>
   html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; user-select: none; -webkit-user-select: none;
-    font: 600 16px/1.3 -apple-system, system-ui, sans-serif; color: #fff; }
+    font: 600 16px/1.3 -apple-system, system-ui, sans-serif; color: var(--lyric, #fff); }
   #wrap { height: 100vh; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; padding: 0 24px; box-sizing: border-box; gap: 6px;
     text-shadow: 0 1px 3px rgba(0,0,0,.65), 0 0 18px rgba(0,0,0,.45); }
-  #meta { font-size: 12px; font-weight: 600; opacity: .7; letter-spacing: .02em; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #meta { color: var(--lyric-sub, var(--lyric, #fff)); font-size: 12px; font-weight: 600; opacity: .7; letter-spacing: .02em; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   #cur { font-size: 28px; font-weight: 800; line-height: 1.2; transition: opacity .25s ease, transform .25s ease; max-width: 100%; }
-  #nxt { font-size: 15px; opacity: .45; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #nxt { color: var(--lyric-sub, var(--lyric, #fff)); font-size: 15px; opacity: .45; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .swap { opacity: 0; transform: translateY(6px); }
 </style>
 <div id="wrap">
@@ -18,9 +18,16 @@
 <script>
   const $ = (id) => document.getElementById(id)
   const L = (id, en) => (navigator.language || '').startsWith('id') ? id : en
-  let media = null, lyr = null, shown = -2
+  let media = null, lyr = null, shown = -2, timer = 0 // dideklarasikan di sini: cognify.on langsung memanggil tick()
 
-  cognify.on((d) => { media = d.media || null; lyr = d.lyrics || null; shown = -2; tick() })
+  // Warna dari Pengaturan > Skin (data.config): baris yang sedang dinyanyikan, dan judul + baris berikutnya.
+  const HEX = /^#[0-9a-fA-F]{6}$/
+  function colors(c) {
+    const root = document.documentElement.style
+    if (c && HEX.test(c.color)) root.setProperty('--lyric', c.color); else root.removeProperty('--lyric')
+    if (c && HEX.test(c.sub)) root.setProperty('--lyric-sub', c.sub); else root.removeProperty('--lyric-sub')
+  }
+  cognify.on((d) => { colors(d.config); media = d.media || null; lyr = d.lyrics || null; shown = -2; tick() })
 
   function position() {
     if (!media || media.position == null) return null
@@ -36,7 +43,20 @@
     $('nxt').textContent = nxt || ''
   }
 
+  // Hemat daya: tidak ada pencacah tetap. Hanya saat lirik tersinkron diputar, satu pewaktu dipasang tepat untuk baris berikutnya
+  // (dijeda, tanpa lagu, atau tanpa lirik tersinkron: tidak ada yang berjalan).
+  function schedule() {
+    clearTimeout(timer)
+    if (!media || !media.playing || !lyr || lyr.state !== 'synced') return
+    const p = position()
+    if (p == null) return
+    const next = lyr.lines.find((l) => l.t > p + 0.15)
+    if (!next) return
+    timer = setTimeout(tick, Math.max(40, ((next.t - 0.15 - p) / (media.rate || 1)) * 1000))
+  }
+
   function tick() {
+    schedule()
     if (!media) { $('meta').textContent = ''; set(L('Putar lagu untuk melihat lirik', 'Play a song to see lyrics'), ''); return }
     $('meta').textContent = [media.title, media.artist].filter(Boolean).join(' · ')
     const s = lyr && lyr.state
@@ -52,5 +72,4 @@
     else if (s === 'plain') set(L('Lirik tanpa waktu, buka di Notch', 'Lyrics are not timed, open them in Notch'), '')
     else set(L('Lirik tidak ditemukan', 'No lyrics found'), '')
   }
-  setInterval(tick, 150)
 </script>

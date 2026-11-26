@@ -27,6 +27,12 @@ struct MimikStyle: Codable, Equatable {
     var hue = false
 }
 
+/// Warna skin Lirik (hex): baris yang dinyanyikan, dan judul + baris berikutnya.
+struct SkinLyricStyle: Codable, Equatable {
+    var color = "#ffffff"
+    var sub = "#ffffff"
+}
+
 struct MimikPreset: Codable, Identifiable, Equatable {
     let id: UUID
     var name: String
@@ -156,7 +162,7 @@ private struct Caption: View {
     var body: some View { Text(text.uppercased()).font(.system(size: 10, weight: .semibold)).tracking(0.8).foregroundStyle(.secondary) }
 }
 
-private func hexColor(_ hex: Binding<String>, _ onChange: @escaping () -> Void) -> Binding<Color> {
+func hexColor(_ hex: Binding<String>, _ onChange: @escaping () -> Void = {}) -> Binding<Color> {
     Binding(
         get: {
             var h = hex.wrappedValue; if h.hasPrefix("#") { h.removeFirst() }

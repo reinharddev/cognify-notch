@@ -46,10 +46,15 @@ final class SkinManager: ObservableObject {
     @Published private(set) var enabled: Set<String>
     /// Level jendela: false = di desktop (di bawah jendela lain), true = selalu di atas.
     @Published var onTop: Bool { didSet { UserDefaults.standard.set(onTop, forKey: "skins.onTop"); windows.values.forEach { $0.setLevel(onTop) } } }
-    @Published var scale: Double { didSet { UserDefaults.standard.set(scale, forKey: "skins.scale"); windows.values.forEach { $0.setScale(scale) } } }
+    /// Ukuran bawaan untuk skin yang belum diatur sendiri (warisan dari satu ukuran untuk semua skin).
+    private(set) var scale: Double
+    /// Ukuran per skin (id → pengali); dibatasi `maxScale` supaya tidak pernah melewati layar.
+    @Published private(set) var scales: [String: Double] = [:]
+    /// Warna lirik skin Lirik.
+    @Published var lyricStyle = SkinLyricStyle() { didSet { persistLyricStyle(); pushConfig("lyrics") } }
 
     /// Gaya wajah skin Mimik dari playground di Pengaturan (warna, bentuk, opsi, suasana, efek); dikirim ke skin sebagai `config`.
-    @Published var mimik: MimikStyle { didSet { persistMimik(); pushConfig() } }
+    @Published var mimik: MimikStyle { didSet { persistMimik(); pushConfig("mimik") } }
     /// Gaya Mimik yang disimpan pengguna dengan nama sendiri (Pengaturan > Skin).
     @Published private(set) var mimikPresets: [MimikPreset] = []
 
@@ -106,6 +111,8 @@ final class SkinManager: ObservableObject {
         onTop = d.bool(forKey: "skins.onTop")
         let s = d.double(forKey: "skins.scale")
         scale = s == 0 ? 1 : min(max(s, 0.5), 2.5)
+        scales = (d.dictionary(forKey: "skins.scales") as? [String: Double]) ?? [:]
+        lyricStyle = d.data(forKey: "skins.lyricStyle").flatMap { try? JSONDecoder().decode(SkinLyricStyle.self, from: $0) } ?? SkinLyricStyle()
         mimik = d.data(forKey: "skins.mimik").flatMap { try? JSONDecoder().decode(MimikStyle.self, from: $0) } ?? MimikStyle()
         mimikPresets = d.data(forKey: "skins.mimikPresets").flatMap { try? JSONDecoder().decode([MimikPreset].self, from: $0) } ?? []
     }
@@ -126,14 +133,44 @@ final class SkinManager: ObservableObject {
         return text
     }
 
-    private func pushConfig() {
-        let json = configJSON()
-        windows["mimik"]?.pushConfig(json: json)
+    private func persistLyricStyle() {
+        guard persists, let data = try? JSONEncoder().encode(lyricStyle) else { return }
+        UserDefaults.standard.set(data, forKey: "skins.lyricStyle")
+    }
+
+    /// `config` untuk satu skin (nil bila skin itu tidak punya pengaturan).
+    private func config(for id: String) -> String? {
+        switch id {
+        case "mimik": return configJSON()
+        case "lyrics": return (try? JSONEncoder().encode(lyricStyle)).flatMap { String(data: $0, encoding: .utf8) }
+        default: return nil
+        }
+    }
+
+    private func pushConfig(_ id: String) {
+        guard let json = config(for: id) else { return }
+        windows[id]?.pushConfig(json: json)
+    }
+
+    // MARK: Ukuran per skin
+
+    /// Sisi terpanjang jendela tidak melewati 96% area layar yang terlihat (tanpa menu bar dan Dock).
+    func maxScale(of skin: SkinInfo) -> Double {
+        let f = NSScreen.main?.visibleFrame.size ?? CGSize(width: 1440, height: 900)
+        return max(0.5, min(2.5, f.width * 0.96 / skin.width, f.height * 0.96 / skin.height))
+    }
+
+    func scale(of skin: SkinInfo) -> Double { min(max(scales[skin.id] ?? scale, 0.5), maxScale(of: skin)) }
+
+    func setScale(_ value: Double, of skin: SkinInfo) {
+        scales[skin.id] = min(max(value, 0.5), maxScale(of: skin))
+        if persists { UserDefaults.standard.set(scales, forKey: "skins.scales") }
+        windows[skin.id]?.setScale(scale(of: skin))
     }
 
     func react(_ name: String) {
         reaction = (name, reaction.n + 1)
-        pushConfig()
+        pushConfig("mimik")
     }
 
     func start() {
@@ -169,10 +206,11 @@ final class SkinManager: ObservableObject {
     private func updateAudioTimer() {
         let needed = windows.values.contains { $0.info.audio } && model.media.nowPlaying?.playing == true
         if needed, audioTimer == nil {
-            let t = Timer.scheduledTimer(withTimeInterval: 1.0 / 15, repeats: true) { [weak self] _ in
+            // 10 kali per detik cukup: wajah menghitung fasenya sendiri di antara kiriman.
+            let t = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
                 MainActor.assumeIsolated { self?.sendAudio() }
             }
-            t.tolerance = 0.02
+            t.tolerance = 0.03
             audioTimer = t
         } else if !needed, audioTimer != nil {
             audioTimer?.invalidate()
@@ -275,8 +313,8 @@ final class SkinManager: ObservableObject {
 
     private func open(_ skin: SkinInfo) {
         guard windows[skin.id] == nil else { return }
-        let w = SkinWindow(info: skin, scale: scale, onTop: onTop) { [weak self] in
-            MainActor.assumeIsolated { self?.push(to: skin.id) }
+        let w = SkinWindow(info: skin, scale: scale(of: skin), onTop: onTop) { [weak self] in
+            MainActor.assumeIsolated { self?.push(to: skin.id, force: true) }
         }
         windows[skin.id] = w
         w.show()
@@ -296,9 +334,33 @@ final class SkinManager: ObservableObject {
 
     private func pushAll() { for id in windows.keys { push(to: id) } }
 
-    private func push(to id: String) {
+    /// Tanda isi data tanpa bagian yang selalu berubah (waktu kirim, posisi lagu yang maju sendiri): bila sama, tidak dikirim
+    /// ulang (hemat daya). Keranjang 10 menit tetap membuat suasana menurut jam menyegar.
+    private var lastSignature: [String: String] = [:]
+
+    private func push(to id: String, force: Bool = false) {
         guard let w = windows[id] else { return }
-        w.push(json: payload(config: id == "mimik" ? configJSON() : nil))
+        let json = payload(config: config(for: id))
+        let signature = Self.signature(of: json)
+        if !force, lastSignature[id] == signature { return }
+        lastSignature[id] = signature
+        w.push(json: json)
+    }
+
+    private static func signature(of json: String) -> String {
+        guard var d = (try? JSONSerialization.jsonObject(with: Data(json.utf8))) as? [String: Any] else { return json }
+        if let now = d.removeValue(forKey: "now") as? Double { d["bucket"] = Int(now / 600_000) }
+        if var media = d["media"] as? [String: Any] {
+            let sent = (media.removeValue(forKey: "sentAt") as? Double ?? 0) / 1000
+            if let position = media["position"] as? Double {
+                let playing = media["playing"] as? Bool ?? false
+                // Saat diputar, posisi maju sendiri: bandingkan titik mulainya (berubah bila digeser atau ganti lagu).
+                media["position"] = ((playing ? position - sent * (media["rate"] as? Double ?? 1) : position) * 1).rounded()
+            }
+            d["media"] = media
+        }
+        let data = (try? JSONSerialization.data(withJSONObject: d, options: [.sortedKeys])) ?? Data()
+        return String(data: data, encoding: .utf8) ?? json
     }
 
     private func sendCursor() {
@@ -454,10 +516,22 @@ final class SkinWindow: NSObject, WKNavigationDelegate {
         panel.isReleasedWhenClosed = false
         panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
         setLevel(onTop)
-        panel.setFrameOrigin(Self.savedOrigin(info.id) ?? Self.defaultOrigin(size, anchor: info.anchor))
+        let origin = Self.savedOrigin(info.id) ?? Self.defaultOrigin(size, anchor: info.anchor)
+        let target = NSRect(origin: origin, size: size)
+        let screen = NSScreen.screens.first { $0.frame.intersects(target) } ?? NSScreen.main
+        panel.setFrameOrigin(Self.clamped(target, to: screen?.visibleFrame).origin)
         moveObserver = NotificationCenter.default.addObserver(forName: NSWindow.didMoveNotification, object: panel, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { if let self { UserDefaults.standard.set(NSStringFromPoint(self.panel.frame.origin), forKey: "skins.origin.\(self.info.id)") } }
         }
+    }
+
+    /// Jendela tidak pernah keluar dari area layar yang terlihat.
+    private static func clamped(_ frame: NSRect, to area: NSRect?) -> NSRect {
+        guard let area else { return frame }
+        var f = frame
+        f.origin.x = min(max(f.origin.x, area.minX), max(area.minX, area.maxX - f.width))
+        f.origin.y = min(max(f.origin.y, area.minY), max(area.minY, area.maxY - f.height))
+        return f
     }
 
     private static func savedOrigin(_ id: String) -> NSPoint? {
@@ -513,7 +587,7 @@ final class SkinWindow: NSObject, WKNavigationDelegate {
         let newSize = NSSize(width: info.width * value, height: info.height * value)
         frame.origin.y += frame.height - newSize.height // sudut kiri atas tetap
         frame.size = newSize
-        panel.setFrame(frame, display: true)
+        panel.setFrame(Self.clamped(frame, to: (panel.screen ?? NSScreen.main)?.visibleFrame), display: true)
     }
 
     func push(json: String) {
@@ -582,10 +656,28 @@ struct SkinsPane: View {
                         if !skin.desc.isEmpty { Text(skin.desc).font(.caption).foregroundStyle(.secondary) }
                     }
                 }
+                if skins.isOn(skin.id) {
+                    HStack {
+                        Text(L("Ukuran", "Size")).foregroundStyle(.secondary)
+                        Slider(value: Binding(get: { skins.scale(of: skin) }, set: { skins.setScale($0, of: skin) }), in: 0.5...max(0.55, skins.maxScale(of: skin))) { EmptyView() }
+                        Text("\(Int((skins.scale(of: skin) * 100).rounded()))%").monospacedDigit().frame(width: 48, alignment: .trailing)
+                        Button { skins.setScale(1, of: skin) } label: { Image(systemName: "arrow.counterclockwise") }
+                            .disabled(abs(skins.scale(of: skin) - 1) < 0.005)
+                            .help(L("Atur ulang", "Reset"))
+                    }
+                }
             }
         } footer: {
             Text(L("Pindahkan skin dengan mode Atur posisi di bawah, atau tahan ⌥ (Option) lalu seret. Skin tidak punya akses internet dan hanya membaca folder skinnya sendiri.",
                    "Move skins with Arrange positions below, or hold ⌥ (Option) and drag. Skins have no internet access and only read their own folder."))
+        }
+        if skins.isOn("lyrics") {
+            Section(L("Warna lirik", "Lyrics colour")) {
+                ColorPicker(L("Baris yang dinyanyikan", "Current line"), selection: hexColor($skins.lyricStyle.color), supportsOpacity: false)
+                ColorPicker(L("Judul dan baris berikutnya", "Title and next line"), selection: hexColor($skins.lyricStyle.sub), supportsOpacity: false)
+                Button(L("Kembalikan ke putih", "Reset to white")) { skins.lyricStyle = SkinLyricStyle() }
+                    .disabled(skins.lyricStyle == SkinLyricStyle())
+            }
         }
         Section {
             Toggle(isOn: $skins.arranging) {
@@ -602,11 +694,6 @@ struct SkinsPane: View {
             Picker(L("Posisi jendela", "Window level"), selection: $skins.onTop) {
                 Text(L("Di desktop (di bawah jendela lain)", "On the desktop (below other windows)")).tag(false)
                 Text(L("Selalu di atas", "Always on top")).tag(true)
-            }
-            HStack {
-                Text(L("Ukuran", "Size"))
-                Slider(value: $skins.scale, in: 0.5...2.5, step: 0.1)
-                Text("\(Int((skins.scale * 100).rounded()))%").monospacedDigit().frame(width: 48, alignment: .trailing)
             }
         }
         Section {

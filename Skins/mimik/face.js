@@ -170,6 +170,7 @@ function ensureLoop() {
   if (!listening) {
     const seen = (e) => { ptr.x = e.clientX; ptr.y = e.clientY; ptr.t = performance.now() / 1000 }
     addEventListener('pointermove', seen, { passive: true })
+    addEventListener('pointermove', wake, { passive: true })
     addEventListener('pointerdown', seen, { passive: true })
     addEventListener('blur', () => { ptr.t = -1e9 })
     listening = true
@@ -180,15 +181,27 @@ function ensureLoop() {
 // Hemat daya: wajah yang sedang diam (pegas tenang, tanpa reaksi, kedip, atau kursor baru) cukup digambar ~15 kali per detik
 // (napas dan kedip berikutnya tetap mulus); begitu ada gerakan, kembali ke kecepatan layar penuh.
 const IDLE_MS = 1000 / 15
+let sleepTimer = 0
 function tick(now) {
-  let busy = false, groovy = false
-  for (const f of faces) if (f.vis) { if (f.busy) busy = true; if (f.vAmp > 0.02) groovy = true }
-  // Mengangguk mengikuti musik cukup 30 fps; wajah yang benar-benar diam ~15 fps.
-  if (!busy && now - last < (groovy ? 1000 / 30 : IDLE_MS) - 2) { raf = requestAnimationFrame(tick); return }
-  const dt = Math.min(0.05, (now - last) / 1000)
+  clearTimeout(sleepTimer)
+  const dt = Math.min(0.1, (now - last) / 1000)
   last = now
-  for (const f of faces) if (f.vis) f.step(now / 1000, dt)
-  raf = faces.size ? requestAnimationFrame(tick) : 0
+  let busy = false, groovy = false
+  for (const f of faces) if (f.vis) { f.step(now / 1000, dt); if (f.busy) busy = true; if (f.vAmp > 0.02) groovy = true }
+  // Hemat daya: bergerak = kecepatan layar; mengangguk mengikuti musik cukup 30 fps; diam ~15 fps. Di antara dua bingkai
+  // halaman benar-benar tidur (pewaktu), bukan dibangunkan 60 kali per detik lalu langsung kembali.
+  if (!faces.size) raf = 0
+  else if (busy) raf = requestAnimationFrame(tick)
+  else {
+    raf = -1
+    sleepTimer = setTimeout(() => { raf = requestAnimationFrame(tick) }, (groovy ? 1000 / 30 : IDLE_MS) - 16)
+  }
+}
+/** Ada yang berubah (kursor, ekspresi, reaksi, irama): bangunkan segera tanpa menunggu pewaktu. */
+function wake() {
+  if (raf !== -1) return
+  clearTimeout(sleepTimer)
+  raf = requestAnimationFrame(tick)
 }
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v))
@@ -322,6 +335,7 @@ class Face {
   setShape(d) { for (const n of [this.headP, this.clipH, this.rimP, this.ringP]) n.setAttribute('d', d) }
 
   update(opts) {
+    wake()
     const typeChanged = opts.type && opts.type !== this.o.type
     Object.assign(this.o, opts)
     const o = this.o
@@ -336,15 +350,17 @@ class Face {
 
   set(name) { this.update({ expression: name }) }
   react(name) {
+    wake()
     if (!(name in RX_DUR)) throw new Error(`Unknown reaction "${name}". Try: ${reactions.join(', ')}`)
     this.rx = { name, t0: performance.now() / 1000, d: RX_DUR[name] }
   }
-  talk(e) { this.talkE = clamp(e, 0, 1) }
+  talk(e) { wake(); this.talkE = clamp(e, 0, 1) }
   /**
    * Irama lagu dari Notch: `energy` 0..1 (kerasnya musik), `beats` (jumlah ketukan sejak mulai), `period` (detik per ketukan),
    * `on` (musik terdengar). Kepala mengangguk tepat di ketukan dan miring bergantian, mulut bersenandung, dan nada melayang.
    */
   vibe(energy, beats, period, on) {
+    wake()
     this.vOn = !!on
     this.vE = clamp(energy, 0, 1)
     this.vPeriod = clamp(period || 0.6, 0.3, 1.1)
@@ -362,7 +378,7 @@ class Face {
     this.noteSide = -(this.noteSide || 1)
     this.notes.push({ t0: performance.now() / 1000, glyph: ['♪', '♫', '♬'][n % 3], side: this.noteSide, x0: this.noteSide * (30 + Math.random() * 9) })
   }
-  look(x, y, ms = 900) { this.lk = { x: clamp(x, -1, 1), y: clamp(y, -1, 1), until: performance.now() / 1000 + ms / 1000 } }
+  look(x, y, ms = 900) { wake(); this.lk = { x: clamp(x, -1, 1), y: clamp(y, -1, 1), until: performance.now() / 1000 + ms / 1000 } }
 
   step(t, dt) {
     const o = this.o, c = this.cur, tg = this.tgt
