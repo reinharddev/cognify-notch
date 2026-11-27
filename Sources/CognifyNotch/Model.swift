@@ -522,7 +522,7 @@ final class NotchModel: ObservableObject {
 
     // MARK: Ukuran
 
-    static let expandedSize = CGSize(width: 680, height: 236)
+    static let expandedSize = CGSize(width: 680, height: 248)
     static let eyeWing: CGFloat = 30
     static let wing: CGFloat = 76
     static let wideWing: CGFloat = 150

@@ -545,7 +545,7 @@ struct ExpandedView: View {
             if !model.dropTargeted, !(model.toast?.isBanner ?? false) {
                 PageDock(tabs: model.tabs, current: model.tab, select: { model.go(to: $0) }, glass: model.prefs.activeTheme == .glass, onSky: model.tab == .sky)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 7)
+                    .padding(.vertical, 2)
                     .zIndex(1) // ikon yang membesar boleh menutupi isi halaman di atasnya
             } else {
                 Spacer().frame(height: 12)
@@ -719,16 +719,17 @@ struct PageDock: View {
     private var hoverWidth: CGFloat { CGFloat(tabs.count) * (Self.side + Self.gap) + 100 }
 
     var body: some View {
-        ZStack(alignment: .bottom) {
+        // Pita setinggi bar: bar dan area kursornya tidak pernah menutupi tombol di halaman.
+        ZStack {
             dots.opacity(open ? 0 : 1)
             if open {
                 bar.transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.92)).combined(with: .offset(y: 6)))
             }
         }
-        .frame(height: 6, alignment: .bottom)
-        .background(alignment: .bottom) {
+        .frame(height: Self.side + 4)
+        .background {
             Color.clear
-                .frame(width: hoverWidth, height: 40)
+                .frame(width: hoverWidth, height: Self.side + 8)
                 .notchPointer { point in
                     // Posisi datang berkali-kali per detik; hanya masuk dan keluar yang mengubah tampilan.
                     guard hovering != (point != nil) else { return }
