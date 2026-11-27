@@ -9,24 +9,24 @@
 	<key>CFBundleName</key>
 	<string>Cognify</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Cognify Notch membaca lokasimu satu kali, hanya saat kamu menekan Deteksi lokasi, untuk menentukan kota bagi cuaca dan waktu matahari. Lokasi disimpan di Mac ini saja.</string>
+	<string>Cognify Notch reads your location once, only when you press Detect location, to find your city for weather and sun times. It stays on this Mac.</string>
 	<key>NSLocationUsageDescription</key>
-	<string>Cognify Notch membaca lokasimu satu kali, hanya saat kamu menekan Deteksi lokasi, untuk menentukan kota bagi cuaca dan waktu matahari. Lokasi disimpan di Mac ini saja.</string>
+	<string>Cognify Notch reads your location once, only when you press Detect location, to find your city for weather and sun times. It stays on this Mac.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>Cognify memakai kamera hanya untuk Cermin di notch. Tidak ada yang direkam atau disimpan.</string>
+	<string>The camera is only used for the Mirror in the notch. Nothing is recorded or saved.</string>
 	<key>NSAudioCaptureUsageDescription</key>
-	<string>Cognify memakai suara yang sedang diputar hanya untuk menggerakkan equalizer di notch (tinggi nada per pita). Suara tidak direkam, disimpan, atau dikirim.</string>
+	<string>Playing audio is only used to move the equalizer in the notch. It is not recorded, saved, or sent.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Cognify memakai mikrofon hanya saat kamu menekan tombol rekam di catatan cepat. Suara diubah jadi teks di Mac ini dan tidak disimpan.</string>
+	<string>The microphone is only used when you press record in quick notes or Test mic on the Camera &amp; Mic page. Nothing is saved or sent.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>Cognify mengubah rekaman suaramu jadi teks catatan. Pengenalan suara berjalan di Mac ini, tidak dikirim ke internet.</string>
+	<string>Your voice recording is turned into note text. It is all processed on this Mac and never sent to the internet.</string>
 	<key>NSRemindersUsageDescription</key>
-	<string>Cognify menampilkan Pengingat terjadwal di Agenda. Jika sinkron Daftar Tugas dinyalakan, tugas Notch juga disimpan di daftar Pengingat bawaanmu. Data tidak dikirim ke mana pun.</string>
+	<string>Scheduled reminders are shown in Agenda. If To-do sync is on, tasks from the notch are also saved to your default Reminders list. Nothing is sent anywhere.</string>
 	<key>NSRemindersFullAccessUsageDescription</key>
-	<string>Cognify menampilkan Pengingat terjadwal di Agenda. Jika sinkron Daftar Tugas dinyalakan, tugas Notch juga disimpan di daftar Pengingat bawaanmu. Data tidak dikirim ke mana pun.</string>
+	<string>Scheduled reminders are shown in Agenda. If To-do sync is on, tasks from the notch are also saved to your default Reminders list. Nothing is sent anywhere.</string>
 	<key>NSCalendarsUsageDescription</key>
-	<string>Cognify menampilkan acara Kalender dan Pengingat terjadwal hari ini dan besok di notch. Data tidak dikirim ke mana pun.</string>
+	<string>Today's and tomorrow's Calendar events and Reminders are shown in the notch. Nothing is sent anywhere.</string>
 	<key>NSCalendarsFullAccessUsageDescription</key>
-	<string>Cognify menampilkan acara Kalender dan Pengingat terjadwal hari ini dan besok di notch. Data tidak dikirim ke mana pun.</string>
+	<string>Today's and tomorrow's Calendar events and Reminders are shown in the notch. Nothing is sent anywhere.</string>
 </dict>
 </plist>

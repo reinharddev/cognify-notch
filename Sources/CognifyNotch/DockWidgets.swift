@@ -163,7 +163,7 @@ struct DockWeatherWidget: View {
             Image(systemName: weather.now?.symbol ?? "cloud.sun.fill").font(.system(size: 16)).symbolRenderingMode(.multicolor)
             Text(weather.now.map { "\($0.temperature)°" } ?? "–").font(.system(size: 15, weight: .semibold).monospacedDigit()).foregroundStyle(Color.primary)
         }
-        .help(weather.now?.place ?? (enabled ? L("Cuaca belum tersedia", "Weather not available yet") : L("Nyalakan Cuaca di Pengaturan > Cuaca", "Turn on Weather in Settings > Weather")))
+        .help(weather.now?.place ?? (enabled ? L("Cuaca belum ada", "No weather yet") : L("Nyalakan dulu Cuaca di Pengaturan > Cuaca", "Turn Weather on in Settings > Weather")))
     }
 }
 
@@ -203,7 +203,7 @@ struct DockClipboardWidget: View {
         let items = Array(history.items.filter { $0.kind != .image && ($0.text ?? "").isEmpty == false }.prefix(3))
         HStack(spacing: 4) {
             if items.isEmpty {
-                Text(L("Belum ada salinan", "Nothing copied yet")).font(.system(size: 11)).foregroundStyle(Color.primary.opacity(0.6)).frame(maxWidth: .infinity)
+                Text(L("Belum ada yang disalin", "Nothing copied yet")).font(.system(size: 11)).foregroundStyle(Color.primary.opacity(0.6)).frame(maxWidth: .infinity)
             }
             ForEach(items) { item in
                 DockPill(width: 72, radius: r.pill, help: item.text ?? "") { history.copy(item) } label: {
@@ -235,7 +235,7 @@ struct DockLyricsWidget: View {
     }
 
     private func line(at date: Date) -> String {
-        guard enabled else { return L("Nyalakan Lirik di Pengaturan > Fitur", "Turn on Lyrics in Settings > Features") }
+        guard enabled else { return L("Nyalakan dulu Lirik di Pengaturan > Fitur", "Turn Lyrics on in Settings > Features") }
         guard media.nowPlaying != nil else { return "♪" }
         if case .synced(let lines) = lyrics.state, let position = media.nowPlaying?.position(at: date) {
             let text = lines.last { $0.time <= position + 0.25 }?.text ?? ""
@@ -274,8 +274,7 @@ struct DockVolumeWidget: View {
         HStack(spacing: 6) {
             DockTool(symbol: volume <= 0.001 ? "speaker.slash.fill" : volume < 0.5 ? "speaker.wave.1.fill" : "speaker.wave.2.fill", radius: r.tool,
                      help: L("Bisukan atau nyalakan", "Mute or unmute")) { toggleMute() }
-            Slider(value: Binding(get: { volume }, set: { volume = $0; AudioOutputs.setVolume(Float($0)) }), in: 0...1) { editing = $0 }
-                .controlSize(.mini)
+            NotchSlider(value: Binding(get: { volume }, set: { volume = $0; AudioOutputs.setVolume(Float($0)) })) { editing = $0 }
                 .frame(width: 52)
         }
         .padding(.horizontal, 2)
@@ -302,7 +301,7 @@ struct DockLinksWidget: View {
     var body: some View {
         HStack(spacing: DockMetrics.cellGap) {
             if prefs.dockLinks.isEmpty {
-                HoverCell(cell: cell, radius: r.cell, help: L("Tambah tautan di Pengaturan > Dock", "Add links in Settings > Dock"), action: openSettings) {
+                HoverCell(cell: cell, radius: r.cell, help: L("Tambahkan tautan di Pengaturan > Dock", "Add links in Settings > Dock"), action: openSettings) {
                     tile(Image(systemName: "plus"), color: .gray.opacity(0.5))
                 }
             }

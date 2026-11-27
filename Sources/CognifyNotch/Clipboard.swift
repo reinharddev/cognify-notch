@@ -185,8 +185,8 @@ struct ClipboardPanel: View {
                         Image(systemName: "magnifyingglass").font(.system(size: 10)).foregroundStyle(.white.opacity(0.45))
                         TextField(L("Cari", "Search"), text: $query).textFieldStyle(.plain).font(.system(size: 11))
                     }
-                    .padding(.horizontal, 8).frame(width: 170, height: 22)
-                    .background(Capsule().fill(Color.white.opacity(0.08)))
+                    .notchFieldBox(height: 22, radius: 11)
+                    .frame(width: 170)
                 }
                 Spacer()
                 if !history.items.isEmpty {
@@ -194,8 +194,8 @@ struct ClipboardPanel: View {
                 }
             }
             if history.items.isEmpty {
-                Placeholder(icon: "doc.on.clipboard", text: L("Yang kamu copy akan muncul di sini. Klik untuk copy lagi.",
-                                                               "Things you copy show up here. Click to copy again."))
+                Placeholder(icon: "doc.on.clipboard", text: L("Semua yang kamu salin muncul di sini. Klik buat salin lagi.",
+                                                               "Whatever you copy lands here. Click one to copy it again."))
             } else if snapshot {
                 grid
             } else {
@@ -209,7 +209,7 @@ struct ClipboardPanel: View {
             ForEach(history.visible(matching: query)) { item in
                 ClipboardTile(item: item) {
                     history.copy(item)
-                    model.show(.done(L("Disalin ke clipboard", "Copied to clipboard")))
+                    model.show(.done(L("Sudah masuk clipboard", "Copied")))
                 } remove: { history.remove(item) } pin: { history.togglePin(item) }
             }
         }
@@ -227,7 +227,7 @@ private struct ClipboardTile: View {
         ZStack(alignment: .bottomTrailing) {
             Button(action: copy) { tile }
                 .buttonStyle(PressableStyle())
-                .help(L("Klik untuk copy lagi", "Click to copy again"))
+                .help(L("Klik buat salin lagi", "Click to copy again"))
             HStack(spacing: 0) {
                 if hover || item.pinned {
                     Button(action: pin) {
@@ -250,12 +250,12 @@ private struct ClipboardTile: View {
             HStack(alignment: .top, spacing: 8) {
                 if let image = item.image {
                     Image(nsImage: image).resizable().aspectRatio(contentMode: .fill)
-                        .frame(width: 34, height: 34).clipShape(RoundedRectangle(cornerRadius: 6))
+                        .frame(width: 34, height: 34).clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 } else {
                     Image(systemName: item.kind == .link ? "link" : "text.alignleft")
                         .font(.system(size: 11, weight: .semibold)).foregroundStyle(Color.accent)
                         .frame(width: 22, height: 22)
-                        .background(RoundedRectangle(cornerRadius: 6).fill(Color.accent.opacity(0.16)))
+                        .background(Circle().fill(Color.accent.opacity(0.18)))
                 }
                 VStack(alignment: .leading, spacing: 2) {
                     Text(item.text ?? L("Gambar", "Image"))
@@ -268,7 +268,8 @@ private struct ClipboardTile: View {
             }
             .padding(8)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 9).fill(Color.white.opacity(hover ? 0.12 : 0.07)))
+            .background(RoundedRectangle(cornerRadius: Theme.Radius.item, style: .continuous).fill(Color.white.opacity(hover ? 0.12 : 0.07)))
+            .overlay(RoundedRectangle(cornerRadius: Theme.Radius.item, style: .continuous).strokeBorder(Theme.edge))
             .contentShape(Rectangle())
     }
 }

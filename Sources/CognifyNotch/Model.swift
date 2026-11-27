@@ -194,14 +194,14 @@ final class NotchModel: ObservableObject {
             case .home: return L("Beranda", "Home")
             case .music: return L("Musik", "Music")
             case .clock: return L("Stopwatch & Timer", "Stopwatch & Timer")
-            case .sky: return L("Langit", "Sky")
+            case .sky: return L("Waktu & Cuaca", "Time & Weather")
             case .water: return L("Pengingat Minum", "Water Reminder")
             case .todo: return L("Daftar Tugas", "To-do")
             case .notes: return L("Catatan", "Notes")
             case .clipboard: return "Clipboard"
-            case .tray: return "Tray"
+            case .tray: return L("Rak file", "File shelf")
             case .timer: return "Pomodoro"
-            case .mirror: return L("Cermin", "Mirror")
+            case .mirror: return "Camera & Mic"
             case .shortcuts: return L("Pintasan", "Shortcuts")
             case .cognify: return "Cognify"
             }
@@ -222,6 +222,7 @@ final class NotchModel: ObservableObject {
         var clipboard = true // tab riwayat clipboard
         var downloads = true // progress download di sayap
         var voice = true // tombol mikrofon di catatan cepat
+        var micTest = true // tes mikrofon di halaman Camera & Mic
         var lyrics = true // lirik tersinkron dari LRCLIB (internet)
         var water = true // halaman & pengingat minum
         var todo = true // halaman tugas + pengingat
@@ -309,8 +310,17 @@ final class NotchModel: ObservableObject {
     /// Notch melayang yang tidak menempel di tepi atas layar: semua sudutnya membulat.
     /// Ruang kosong di atas bentuk saat melayang, supaya rim dan lengkung kaca di sisi atas tidak terpotong tepi jendela.
     var topInset: CGFloat { detached ? 12 : 0 }
-    var detached: Bool { !hasNotch && max(floatMinDY, prefs.floatDY) > 0.5 }
+    var detached: Bool { !hasNotch && prefs.floatingStyle != .attached }
+    /// Jarak dari tepi atas: gaya Notch menempel; kapsul dan wajah selalu sedikit turun.
+    var floatingDY: Double { detached ? max(floatMinDY, prefs.floatDY, 8) : floatMinDY }
     var screenSize = CGSize(width: 1728, height: 1117)
+
+    /// Pindahkan notch melayang: dijaga di dalam layar, dan menempel ke tengah bila sudah dekat.
+    func moveFloating(dx: Double, dy: Double) {
+        let limit = Double(screenSize.width) / 2 - 60
+        prefs.floatDX = abs(dx) < 24 ? 0 : max(-limit, min(limit, dx))
+        prefs.floatDY = max(floatMinDY, min(Double(screenSize.height) - 120, dy))
+    }
     /// Geseran bentuk notch di dalam jendelanya agar panel terbuka tidak keluar dari layar (notch melayang di dekat tepi).
     @Published var edgeShift = CGSize.zero
     /// Notch disembunyikan saat tidak dipakai (Pengaturan > Perilaku); muncul lagi saat kursor menyentuh tepi atas.
@@ -351,6 +361,7 @@ final class NotchModel: ObservableObject {
     /// Mesin skin desktop; dibuat AppDelegate setelah model siap.
     var skinManager: SkinManager?
     let camera = CameraMirror()
+    let mic = MicTest()
     let shortcuts = ShortcutsModel()
     /// Ringkasan dan perintah Cognify; aktif hanya selagi Cognify terhubung.
     let hub = CognifyHub()
@@ -424,12 +435,12 @@ final class NotchModel: ObservableObject {
         clock.onFinish = { [weak self] countdown in
             NSSound(named: "Glass")?.play()
             self?.show(.alert(title: L("Timer \(countdown.label) selesai", "\(countdown.label) timer done"),
-                              detail: L("Waktunya!", "Time's up!"), action: nil))
+                              detail: L("Waktunya habis!", "Time's up!"), action: nil))
         }
         clock.onAlarm = { [weak self] alarm in
             NSSound(named: "Glass")?.play()
             let title = alarm.label.isEmpty ? L("Alarm \(String(format: "%02d:%02d", alarm.hour, alarm.minute))", "Alarm \(String(format: "%02d:%02d", alarm.hour, alarm.minute))") : alarm.label
-            self?.show(.alert(title: title, detail: L("Waktunya!", "Time's up!"), action: nil))
+            self?.show(.alert(title: title, detail: L("Waktunya habis!", "Time's up!"), action: nil))
         }
         Publishers.CombineLatest(self.prefs.$weatherCity, self.prefs.$weatherCoords).dropFirst().removeDuplicates { $0 == $1 }.sink { [weak self] city, coords in
             DispatchQueue.main.async {
@@ -500,9 +511,9 @@ final class NotchModel: ObservableObject {
             NSSound(named: "Glass")?.play()
             self?.tab = .timer
             self?.show(.alert(
-                title: mode == .focus ? L("Waktu fokus selesai", "Focus time is up") : L("Istirahat selesai", "Break is over"),
+                title: mode == .focus ? L("Sesi fokus selesai", "Focus session done") : L("Istirahatnya selesai", "Break's over"),
                 detail: mode == .focus
-                    ? L("Istirahat \(self?.timer.restMinutes ?? 5) menit dulu, lalu lanjut lagi.", "Take a \(self?.timer.restMinutes ?? 5) minute break, then keep going.")
+                    ? L("Rehat \(self?.timer.restMinutes ?? 5) menit dulu, habis itu lanjut.", "Take \(self?.timer.restMinutes ?? 5) minutes off, then get back to it.")
                     : L("Siap fokus lagi?", "Ready to focus again?"),
                 action: .startTimer(mode == .focus ? L("Mulai istirahat", "Start break") : L("Mulai fokus", "Start focus"))
             ))
@@ -522,6 +533,12 @@ final class NotchModel: ObservableObject {
     /// Lebar sayap kiri & kanan saat tertutup.
     var wings: (left: CGFloat, right: CGFloat) {
         guard !expanded, card == nil, !headMode else { return (0, 0) }
+        if lyricRow, !detached {
+            // Sayap dilebarkan sampai baris lirik di bawahnya muat.
+            let right = livePair == nil ? Self.wing : Self.pairWing
+            let extra = max(0, (Self.lyricRowWidth - barGap - Self.wing - right) / 2)
+            return (Self.wing + extra, right + extra)
+        }
         if let pair = livePair {
             let left = pair.left
             let l: CGFloat = left.media ? (left.lyrics || left.title != nil ? Self.songWing : Self.wing) : (left.title != nil || left.stopwatch ? Self.wideWing : Self.wing)
@@ -554,7 +571,27 @@ final class NotchModel: ObservableObject {
         if !autoHidden, Date().timeIntervalSince(idleSince ?? Date()) >= 3 { withAnimation(.notch) { autoHidden = true } }
     }
 
-    var shapeOffset: CGFloat { (wings.right - wings.left) / 2 }
+    var shapeOffset: CGFloat { headMode ? -lyricGroupWidth / 2 : (wings.right - wings.left) / 2 }
+
+    /// Lirik di bawah notch (Pengaturan > Appearance). Wajah melayang tetap memakai gelembung di sampingnya.
+    static let lyricRowHeight: CGFloat = 26
+    static let lyricRowWidth: CGFloat = 300
+    /// Kursor ada di baris lirik: barisnya disembunyikan supaya tidak menghalangi, dan klik diteruskan.
+    @Published var lyricHidden = false
+    var lyricRow: Bool {
+        guard prefs.lyricsBelow, !headMode, !expanded, card == nil, level == nil, toast == nil,
+              features.media, wingLyrics, media.nowPlaying?.playing == true, case .synced = lyrics.state else { return false }
+        return true
+    }
+
+    /// Gelembung lirik di samping wajah melayang.
+    static let lyricBubbleWidth: CGFloat = 216
+    var showsLyricBubble: Bool {
+        guard headMode, features.lyrics, features.lyricsWing, media.nowPlaying?.playing == true, case .synced = lyrics.state else { return false }
+        return true
+    }
+    /// Lebar tambahan di kanan wajah. Wajah dan gelembung diperlakukan sebagai satu grup yang dipusatkan.
+    var lyricGroupWidth: CGFloat { showsLyricBubble ? Theme.Space.m + Self.lyricBubbleWidth : 0 }
 
     /// Notch mengambang (Mac tanpa notch) yang sedang diam: tampil sebagai kepala bulat, bukan pil.
     /// Bila gayanya "Menempel di atas", tetap berupa tab hitam yang menempel di tepi atas.
@@ -562,7 +599,11 @@ final class NotchModel: ObservableObject {
     /// Lebar tengah antara sayap saat tertutup. Di Mac tanpa notch dengan gaya "Menempel di atas", yang tampil hanya mata,
     /// jadi tab dibuat ringkas; selain itu sama dengan lebar notch (fisik atau bawaan 190 pt).
     var barGap: CGFloat {
-        !hasNotch && live?.eyes == true && prefs.floatingStyle == .attached ? 56 : notchSize.width
+        if hasNotch { return notchSize.width }
+        if lyricRow, !detached { return 12 } // kapsul tetap ringkas; liriknya di kapsul terpisah
+        // Tanpa poni tidak ada yang perlu dihindari di tengah: isi dirapatkan.
+        guard live?.eyes == true else { return 12 }
+        return max(8, notchSize.width - wings.left - wings.right)
     }
 
     /// Nyalakan atau matikan Mode Daya Rendah. Sistem meminta kata sandi administrator; dibatalkan = tidak ada perubahan.
@@ -584,8 +625,14 @@ final class NotchModel: ObservableObject {
     /// Kepala bulat (Kepala Mimik) tampil saat tidak ada aktivitas lain. Lagu yang diputar sendirian tidak menggantikannya: kepala
     /// justru ikut menikmati (mengangguk, nada melayang). Aktivitas lain (timer, unduhan, dan lainnya) tetap tampil sebagai sayap.
     var headMode: Bool {
-        guard !hasNotch, !expanded, card == nil, prefs.floatingStyle == .head, let live else { return false }
-        return live.eyes || (live.media && livePair == nil)
+        guard !hasNotch, !expanded, prefs.floatingStyle == .head, live != nil else { return false }
+        return card == nil || chargingPercent != nil
+    }
+
+    /// Persen baterai selama kabar "mengisi daya" tampil.
+    var chargingPercent: Int? {
+        if case .charging(let percent, _)? = notice { return percent }
+        return nil
     }
 
     /// Ukuran panel terbuka. Isi digambar tetap pada ukuran ini, jadi tidak ikut menyusut saat notch menutup.
@@ -601,7 +648,11 @@ final class NotchModel: ObservableObject {
             return CGSize(width: Self.expandedSize.width * scale, height: (Self.expandedSize.height + notchSize.height - 32) * scale + (detached ? 12 : 0))
         }
         if card != nil { return CGSize(width: max(notchSize.width + 220, 380), height: notchSize.height + 48) }
-        if live != nil { return CGSize(width: barGap + wings.left + wings.right, height: notchSize.height) }
+        if live != nil {
+            // Gaya Notch: baris lirik menambah tinggi bentuk. Kapsul memakai kapsul kecil terpisah di bawahnya.
+            let row = lyricRow && !detached && !lyricHidden ? Self.lyricRowHeight : 0
+            return CGSize(width: barGap + wings.left + wings.right, height: notchSize.height + row)
+        }
         return notchSize
     }
 
@@ -658,7 +709,7 @@ final class NotchModel: ObservableObject {
             out.append(Live(icon: next.kind == "deadline" ? "calendar.badge.clock" : "bell", text: Relative.short(next.due, now: now), tint: .orange))
         }
         if features.media, media.nowPlaying?.playing == true {
-            if songBanner == nil, wingLyrics, case .synced = lyrics.state {
+            if songBanner == nil, wingLyrics, !prefs.lyricsBelow, case .synced = lyrics.state {
                 out.append(Live(icon: "music.note", tint: .accent, media: true, title: "", wideRight: false, lyrics: true))
             } else {
                 out.append(Live(icon: "music.note", tint: .accent, media: true, title: songBanner, wideRight: false))
@@ -687,7 +738,7 @@ final class NotchModel: ObservableObject {
                         subtitle: L("Memakai baterai", "On battery"), value: "\(percent)%")
         case .lowBattery(let percent):
             return Card(icon: "battery.25percent", tint: .red, title: L("Baterai lemah", "Low battery"),
-                        subtitle: L("Colok charger sebentar lagi", "Plug in the charger soon"), value: "\(percent)%")
+                        subtitle: L("Segera colok charger", "Time to plug in"), value: "\(percent)%")
         case .audioConnected(let name, let battery):
             return Card(icon: audioIcon(name), tint: .white, title: shortName(name),
                         subtitle: L("Tersambung", "Connected") + (battery.map { " · " + $0 } ?? ""))
@@ -696,19 +747,19 @@ final class NotchModel: ObservableObject {
         case .downloadDone(let name):
             return Card(icon: "checkmark.circle.fill", tint: .green, title: L("Unduhan selesai", "Download complete"), subtitle: name)
         case .downloadFailed(let name):
-            return Card(icon: "exclamationmark.triangle.fill", tint: .orange, title: L("Unduhan gagal", "Download failed"), subtitle: name)
+            return Card(icon: "exclamationmark.triangle.fill", tint: .orange, title: L("Unduhan gagal", "Download fails"), subtitle: name)
         case .downloadCanceled(let name):
-            return Card(icon: "xmark.circle.fill", tint: .gray, title: L("Unduhan dibatalkan", "Download canceled"), subtitle: name)
+            return Card(icon: "xmark.circle.fill", tint: .gray, title: L("Unduhan dibatalkan", "Download is canceled"), subtitle: name)
         case .capsLock(let on):
             return Card(icon: on ? "capslock.fill" : "capslock", tint: on ? .accent : .gray,
                         title: on ? L("Caps Lock nyala", "Caps Lock on") : L("Caps Lock mati", "Caps Lock off"),
-                        subtitle: on ? L("HURUF BESAR SEMUA", "TYPING IN CAPITALS") : L("Huruf biasa lagi", "Back to normal"))
+                        subtitle: on ? L("SEMUA JADI HURUF BESAR", "YOU'RE TYPING IN CAPS") : L("Huruf kecil lagi", "Back to normal"))
         case .inputSource(let name):
             return Card(icon: "keyboard.fill", tint: .accent, title: name, subtitle: L("Bahasa keyboard", "Keyboard language"))
         case .network(let online):
             return Card(icon: online ? "wifi" : "wifi.slash", tint: online ? .green : .orange,
-                        title: online ? L("Internet tersambung", "Back online") : L("Internet terputus", "Offline"),
-                        subtitle: online ? L("Koneksi pulih", "Connection restored") : L("Periksa Wi-Fi atau kabel", "Check Wi-Fi or cable"))
+                        title: online ? L("Internet nyambung lagi", "Back online") : L("Internet putus", "You're offline"),
+                        subtitle: online ? L("Koneksi sudah balik", "Connection is back") : L("Cek Wi-Fi atau kabelnya", "Check your Wi-Fi or cable"))
         }
     }
 
@@ -747,7 +798,7 @@ final class NotchModel: ObservableObject {
     var tabs: [Tab] {
         prefs.ordered(Tab.allCases.filter {
             switch $0 {
-            case .mirror: return features.camera
+            case .mirror: return features.camera || features.micTest
             case .shortcuts: return features.shortcuts
             case .clipboard: return features.clipboard
             case .music: return features.media
@@ -778,6 +829,7 @@ final class NotchModel: ObservableObject {
         clipboard.setEnabled(next.clipboard)
         downloads.setEnabled(next.downloads)
         if !next.voice { voice.stop() }
+        if !next.micTest { mic.stop() }
         if !next.lyrics { lyrics.reset() }
         keyboard.setEnabled(next.keyboard)
         appNotes.setEnabled(next.appNotifications)
@@ -787,6 +839,7 @@ final class NotchModel: ObservableObject {
         loadWingLyrics(media.nowPlaying)
         if !next.companion { face.reset() }
         if !tabs.contains(tab) { tab = .home }
+        if !expanded { showStartTab() }
     }
 
     // MARK: Halaman
@@ -892,7 +945,7 @@ final class NotchModel: ObservableObject {
         if expanded {
             setExpanded(false)
         } else {
-            tab = .home
+            showStartTab()
             setExpanded(true)
             onKeyboardOpen?()
         }
@@ -948,9 +1001,15 @@ final class NotchModel: ObservableObject {
         }
     }
 
+    func showStartTab() {
+        if let start = Tab(rawValue: prefs.startTab), tabs.contains(start) { tab = start }
+    }
+
     func setExpanded(_ value: Bool) {
         guard value != expanded else { return }
         withAnimation(.notch) { expanded = value }
+        // Tab awal dipasang saat menutup, supaya kejadian (timer selesai, file diseret) masih bisa memilih tab sebelum membuka.
+        if !value { showStartTab() }
         if value {
             NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
             refresh()
@@ -993,7 +1052,7 @@ final class NotchModel: ObservableObject {
             if wait <= 0 && wait > -120 {
                 announced.insert(event.id)
                 NSSound(named: "Glass")?.play()
-                show(.alert(title: event.title, detail: event.subtitle ?? "Sekarang", action: .open(path: event.path)))
+                show(.alert(title: event.title, detail: event.subtitle ?? "Now", action: .open(path: event.path)))
             } else if wait > 0 && wait < 35 {
                 Task { [weak self] in
                     try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000))
@@ -1065,7 +1124,7 @@ final class NotchModel: ObservableObject {
             NSSound(named: "Glass")?.play()
             let detail = wait > 30 ? L("Mulai \(Int((wait / 60).rounded(.up))) menit lagi", "Starts in \(Int((wait / 60).rounded(.up))) min")
                 : wait > -60 ? L("Mulai sekarang", "Starting now")
-                : L("Terlewat \(Int((-wait / 60).rounded())) menit lalu", "Missed \(Int((-wait / 60).rounded())) min ago")
+                : L("Lewat \(Int((-wait / 60).rounded())) menit lalu", "\(Int((-wait / 60).rounded())) min overdue")
             show(.alert(title: event.title, detail: detail, action: .open(path: "/calendar")))
         }
     }
@@ -1100,9 +1159,9 @@ final class NotchModel: ObservableObject {
         guard !body.isEmpty else { return }
         if hub.send(.noteToDoc(text: body, title: nil)) {
             if text == nil { note = ""; noteReminderOff = false }
-            show(.done(L("Dikirim ke Cognify sebagai dokumen", "Sent to Cognify as a document")))
+            show(.done(L("Sudah dikirim ke Cognify jadi dokumen", "Sent to Cognify as a doc")))
         } else {
-            show(.failed(L("Cognify belum terhubung", "Cognify is not connected")))
+            show(.failed(L("Cognify belum tersambung", "Cognify isn't connected")))
         }
     }
 
@@ -1117,7 +1176,7 @@ final class NotchModel: ObservableObject {
             note = ""
             noteReminderOff = false
             show(.done(due.map { L("Catatan tersimpan, pengingat \(Relative.long($0, allDay: false, now: now))", "Saved, reminder \(Relative.long($0, allDay: false, now: now))") }
-                      ?? L("Catatan tersimpan di tab Catatan", "Saved to the Notes tab")))
+                      ?? L("Catatan disimpan di tab Catatan", "Saved in the Notes tab")))
             return
         }
         guard !text.isEmpty, let api, !savingNote else { return }
@@ -1128,7 +1187,7 @@ final class NotchModel: ObservableObject {
                 let due = reminderFromNote(raw)
                 note = ""
                 noteReminderOff = false
-                show(.done("Catatan “\(title)” tersimpan" + (due.map { ", pengingat \(Relative.long($0, allDay: false, now: now))" } ?? "")))
+                show(.done("Note “\(title)” saved" + (due.map { ", reminder \(Relative.long($0, allDay: false, now: now))" } ?? "")))
                 await load()
             } catch {
                 show(.failed(error.localizedDescription))
@@ -1140,7 +1199,7 @@ final class NotchModel: ObservableObject {
     /// File, tautan, atau teks yang diseret ke notch.
     func save(files: [URL], links: [URL], texts: [String]) {
         guard let api else {
-            show(.failed("Cognify belum siap. Coba lagi sebentar."))
+            show(.failed("Cognify isn't ready yet. Try again in a moment."))
             return
         }
         let total = files.count + links.count + texts.count
@@ -1149,20 +1208,20 @@ final class NotchModel: ObservableObject {
             var saved: [String] = []
             var failure: String?
             for (i, file) in files.enumerated() {
-                show(.working(total > 1 ? "\(i + 1)/\(total)" : "Menyimpan"))
+                show(.working(total > 1 ? "\(i + 1)/\(total)" : "Saving"))
                 do { saved.append(try await api.upload(file)) } catch { failure = "\(file.lastPathComponent): \(error.localizedDescription)" }
             }
             for link in links {
-                show(.working(total > 1 ? "\(saved.count + 1)/\(total)" : "Menyimpan"))
+                show(.working(total > 1 ? "\(saved.count + 1)/\(total)" : "Saving"))
                 do { saved.append(try await api.saveURL(link)) } catch { failure = error.localizedDescription }
             }
             for text in texts {
                 do { saved.append(try await api.quickNote(text)) } catch { failure = error.localizedDescription }
             }
             if let failure {
-                show(.failed(saved.isEmpty ? failure : "\(saved.count) tersimpan. \(failure)"))
+                show(.failed(saved.isEmpty ? failure : "\(saved.count) saved. \(failure)"))
             } else {
-                show(.done(saved.count == 1 ? "“\(saved[0])” masuk Knowledge" : "\(saved.count) item masuk Knowledge"))
+                show(.done(saved.count == 1 ? "“\(saved[0])” added to Knowledge" : "\(saved.count) items added to Knowledge"))
             }
             await load()
         }

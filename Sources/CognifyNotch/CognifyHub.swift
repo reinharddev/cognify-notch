@@ -119,14 +119,15 @@ struct CognifyPanel: View {
     @State private var query = ""
 
     var body: some View {
-        HStack(alignment: .top, spacing: 14) {
+        HStack(alignment: .top, spacing: Theme.Space.s) {
             VStack(alignment: .leading, spacing: 6) {
                 lessonCard
                 actions
                 toolsGrid
                 Spacer(minLength: 0)
             }
-            .frame(width: 250)
+            .notchScrollCard()
+            .frame(width: 266)
             VStack(alignment: .leading, spacing: 6) {
                 searchField
                 if !query.trimmingCharacters(in: .whitespaces).isEmpty {
@@ -136,6 +137,8 @@ struct CognifyPanel: View {
                 }
                 Spacer(minLength: 0)
             }
+            .frame(maxHeight: .infinity, alignment: .top)
+            .notchCard(padding: Theme.Space.s)
         }
         .onDisappear { query = ""; hub.clearSearch() }
     }
@@ -150,7 +153,7 @@ struct CognifyPanel: View {
                     let target = ongoing ? lesson.end : lesson.start
                     VStack(alignment: .leading, spacing: 2) {
                         Text(lesson.title).font(.system(size: 13, weight: .semibold)).lineLimit(1)
-                        Text((ongoing ? L("Berlangsung, sisa ", "In progress, ") : L("Mulai ", "Starts in "))
+                        Text((ongoing ? L("Lagi jalan, sisa ", "On now, left: ") : L("Mulai ", "Starts in "))
                              + NotchHub.remaining(target.timeIntervalSince(context.date), english: Lang.english)
                              + (ongoing && Lang.english ? " left" : "")
                              + (lesson.room.map { " · \($0)" } ?? ""))
@@ -158,11 +161,11 @@ struct CognifyPanel: View {
                     }
                     .padding(.horizontal, 10).padding(.vertical, 7)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(RoundedRectangle(cornerRadius: 9).fill(Color.white.opacity(0.08)))
+                    .background(RoundedRectangle(cornerRadius: Theme.Radius.item, style: .continuous).fill(Color.white.opacity(0.08)))
                 } else {
                     Placeholder(icon: "checkmark.seal",
                                 text: hub.summary.lessons.isEmpty ? L("Tidak ada pelajaran hari ini", "No lessons today")
-                                                                  : L("Pelajaran hari ini sudah selesai", "Lessons are done for today"))
+                                                                  : L("Pelajaran hari ini sudah beres", "That's it for today's lessons"))
                 }
             }
         }
@@ -180,11 +183,9 @@ struct CognifyPanel: View {
     private var toolsGrid: some View {
         VStack(alignment: .leading, spacing: 4) {
             if !hub.summary.tools.isEmpty { SectionLabel(text: L("Alat", "Tools")).padding(.top, 2) }
-            ScrollView(.vertical, showsIndicators: false) {
-                LazyVGrid(columns: [GridItem(.flexible(), spacing: 5), GridItem(.flexible(), spacing: 5)], spacing: 5) {
-                    ForEach(hub.summary.tools) { tool in
-                        chip("wrench.and.screwdriver", tool.name) { hub.send(.tool(id: tool.id)) }
-                    }
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: 5), GridItem(.flexible(), spacing: 5)], spacing: 5) {
+                ForEach(hub.summary.tools) { tool in
+                    chip("wrench.and.screwdriver", tool.name) { hub.send(.tool(id: tool.id)) }
                 }
             }
         }
@@ -199,7 +200,7 @@ struct CognifyPanel: View {
             }
             .padding(.horizontal, 8).padding(.vertical, 6)
             .frame(maxWidth: .infinity)
-            .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.08)))
+            .background(Capsule().fill(Color.white.opacity(0.08)))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -216,8 +217,7 @@ struct CognifyPanel: View {
             if hub.searching { Spinner() }
         }
         .foregroundStyle(.white.opacity(0.75))
-        .padding(.horizontal, 10).padding(.vertical, 6)
-        .background(RoundedRectangle(cornerRadius: 9).fill(Color.white.opacity(0.08)))
+        .notchFieldBox()
         .onChange(of: query) { if $0.trimmingCharacters(in: .whitespaces).isEmpty { hub.clearSearch() } }
     }
 
@@ -225,9 +225,9 @@ struct CognifyPanel: View {
         if hub.searching {
             Placeholder(icon: "hourglass", text: L("Mencari…", "Searching…"))
         } else if hub.searchFailed {
-            Placeholder(icon: "exclamationmark.triangle", text: L("Cognify tidak menjawab. Pastikan app terbuka.", "Cognify did not answer. Make sure the app is open."))
+            Placeholder(icon: "exclamationmark.triangle", text: L("Cognify belum menjawab. Coba cek app-nya sudah terbuka.", "No reply from Cognify. Is the app open?"))
         } else if hub.hits.isEmpty {
-            Placeholder(icon: "magnifyingglass", text: L("Tekan Enter untuk mencari", "Press Enter to search"))
+            Placeholder(icon: "magnifyingglass", text: L("Tekan Enter buat mencari", "Press Enter to search"))
         } else {
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(spacing: 4) {
@@ -253,7 +253,7 @@ struct CognifyPanel: View {
                     ForEach(hub.summary.docs.recent) { docButton(id: $0.id, title: $0.title, kind: $0.kind, detail: nil) }
                 }
                 if hub.summary.docs.pinned.isEmpty && hub.summary.docs.recent.isEmpty {
-                    Placeholder(icon: "doc", text: L("Belum ada dokumen", "No documents yet"))
+                    Placeholder(icon: "doc", text: L("Belum ada dokumen", "No docs yet"))
                 }
             }
         }
@@ -273,7 +273,7 @@ struct CognifyPanel: View {
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 10).padding(.vertical, 6)
-            .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.07)))
+            .background(RoundedRectangle(cornerRadius: Theme.Radius.item, style: .continuous).fill(Color.white.opacity(0.07)))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

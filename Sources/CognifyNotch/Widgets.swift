@@ -361,66 +361,61 @@ struct CameraPreview: NSViewRepresentable {
     }
 }
 
+/// Halaman "Camera & Mic": pratinjau di kiri, tes mikrofon di kanan. Keduanya mati sampai dinyalakan sendiri.
 struct MirrorPanel: View {
     @ObservedObject var camera: CameraMirror
+    let mic: MicTest
+    var showCamera = true
+    var showMic = true
     @Environment(\.snapshot) private var snapshot
 
     var body: some View {
-        HStack(spacing: 16) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Color.white.opacity(0.06))
-                if camera.state == .running && !snapshot {
-                    CameraPreview(layer: camera.preview)
-                        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-                } else if camera.state == .denied {
-                    VStack(spacing: 6) {
-                        Image(systemName: "video.slash.fill").font(.system(size: 20))
-                        Text(L("Izin kamera ditolak", "Camera access denied")).font(.system(size: 11.5))
-                        Button(L("Buka Pengaturan Sistem", "Open System Settings")) { camera.openPrivacySettings() }.buttonStyle(PillButtonStyle(prominent: true))
-                    }
-                    .foregroundStyle(.white.opacity(0.7))
-                } else if camera.state == .unavailable {
-                    Label(L("Kamera tidak ditemukan", "No camera found"), systemImage: "video.slash").font(.system(size: 11.5)).foregroundStyle(.white.opacity(0.6))
-                } else {
-                    Image(systemName: "person.crop.square").font(.system(size: 36)).foregroundStyle(.white.opacity(0.25))
-                }
-            }
-            .frame(width: 250, height: 146)
-            VStack(alignment: .leading, spacing: 6) {
-                SectionLabel(text: L("Cermin", "Mirror"))
-                Text(L("Cek rambut & latar sebelum kelas online atau video call.", "Check your hair and background before a class or video call."))
-                    .font(.system(size: 11.5)).foregroundStyle(.white.opacity(0.65)).fixedSize(horizontal: false, vertical: true)
-                if !camera.devices.isEmpty {
-                    Menu {
-                        ForEach(camera.devices) { device in
-                            Button {
-                                camera.selectDevice(device.id)
-                            } label: {
-                                if device.id == camera.selectedDeviceID {
-                                    Label(device.name, systemImage: "checkmark")
-                                } else {
-                                    Text(device.name)
-                                }
-                            }
-                        }
-                    } label: {
-                        Label(camera.selectedDeviceName, systemImage: "video")
-                            .lineLimit(1)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    .menuStyle(.borderlessButton)
-                    .help(L("Pilih kamera", "Choose camera"))
-                }
-                HStack(spacing: 5) {
-                    Circle().fill(camera.state == .running ? Color.green : .gray).frame(width: 6, height: 6)
-                    Text(camera.state == .running ? L("Kamera menyala, tidak merekam", "Camera on, not recording") : L("Kamera mati", "Camera off"))
-                        .font(.system(size: 10.5)).foregroundStyle(.white.opacity(0.5))
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
+        HStack(spacing: Theme.Space.s) {
+            if showCamera { cameraCard.frame(width: showMic ? 250 : nil) }
+            if showMic { MicCard(mic: mic) }
         }
-        .onAppear { if !snapshot { camera.start() } }
         .onDisappear { camera.stop() }
+    }
+
+    private var cameraCard: some View {
+        let shape = RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
+        return ZStack {
+            shape.fill(Theme.card)
+            shape.strokeBorder(Theme.edge)
+            if camera.state == .running && !snapshot {
+                CameraPreview(layer: camera.preview).clipShape(shape)
+            } else if camera.state == .denied {
+                VStack(spacing: 6) {
+                    Image(systemName: "video.slash.fill").font(.system(size: 20))
+                    Text("Camera access denied").font(.system(size: 11.5))
+                    Button("Open System Settings") { camera.openPrivacySettings() }.buttonStyle(PillButtonStyle(prominent: true))
+                }
+                .foregroundStyle(.white.opacity(0.7))
+            } else if camera.state == .unavailable {
+                Label("No camera found", systemImage: "video.slash").font(.system(size: 11.5)).foregroundStyle(.white.opacity(0.6))
+            } else {
+                Image(systemName: "person.crop.square").font(.system(size: 36)).foregroundStyle(.white.opacity(0.25)).offset(y: -14)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .overlay(alignment: .top) {
+            if !camera.devices.isEmpty {
+                NotchDropdown("Camera", selection: Binding(get: { camera.selectedDeviceID ?? "" }, set: { camera.selectDevice($0) }),
+                              options: camera.devices.map { DropdownOption($0.id, $0.name) })
+                    .labelsHidden()
+                    .padding(6)
+            }
+        }
+        .overlay(alignment: .bottom) {
+            if camera.state != .denied {
+                Button(camera.state == .running ? "Turn camera off" : "Turn camera on") {
+                    if camera.state == .running { camera.stop() } else { camera.start() }
+                }
+                .buttonStyle(PillButtonStyle(prominent: false))
+                .padding(Theme.Space.s)
+            }
+        }
+        .onAppear { if !snapshot { camera.refreshDevices() } }
     }
 }
 
@@ -449,7 +444,7 @@ final class ShortcutsModel: ObservableObject {
             let ok = Self.run(["run", name]) != nil
             await MainActor.run {
                 self.running = nil
-                model.show(ok ? .done(L("“\(name)” selesai dijalankan", "“\(name)” finished")) : .failed(L("“\(name)” gagal dijalankan", "“\(name)” failed")))
+                model.show(ok ? .done(L("“\(name)” sudah dijalankan", "“\(name)” finished")) : .failed(L("“\(name)” gagal jalan", "“\(name)” didn't run")))
             }
         }
     }
@@ -498,7 +493,7 @@ struct ShortcutsPanel: View {
             if !shortcuts.loaded {
                 Placeholder(icon: "hourglass", text: L("Memuat pintasan…", "Loading shortcuts…"))
             } else if shortcuts.names.isEmpty {
-                Placeholder(icon: "bolt.slash", text: L("Belum ada pintasan. Buat dulu di app Pintasan.", "No shortcuts yet. Create one in the Shortcuts app."))
+                Placeholder(icon: "bolt.slash", text: L("Belum ada pintasan. Bikin dulu di app Pintasan.", "No shortcuts yet. Make one in the Shortcuts app."))
             } else if snapshot {
                 grid
             } else {
@@ -519,7 +514,8 @@ struct ShortcutsPanel: View {
                                     Spacer(minLength: 0)
                                 }
                                 .padding(.horizontal, 10).padding(.vertical, 8)
-                                .background(RoundedRectangle(cornerRadius: 9).fill(Color.white.opacity(0.08)))
+                                .background(RoundedRectangle(cornerRadius: Theme.Radius.item, style: .continuous).fill(Theme.card))
+                                .overlay(RoundedRectangle(cornerRadius: Theme.Radius.item, style: .continuous).strokeBorder(Theme.edge))
                                 .contentShape(Rectangle())
                             }
                             .buttonStyle(PressableStyle())

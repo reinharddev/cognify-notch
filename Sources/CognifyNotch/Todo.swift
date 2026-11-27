@@ -85,8 +85,8 @@ final class TodoStore: ObservableObject {
             granted = await withCheckedContinuation { c in store.requestAccess(to: .reminder) { ok, _ in c.resume(returning: ok) } }
         }
         guard granted, let list = store.defaultCalendarForNewReminders() else {
-            syncProblem = L("Izinkan Pengingat untuk Cognify Notch di Pengaturan Sistem → Privasi.",
-                            "Allow Reminders for Cognify Notch in System Settings → Privacy.")
+            syncProblem = L("Izinkan Pengingat buat Cognify Notch di Pengaturan Sistem → Privasi.",
+                            "Give Cognify Notch access to Reminders in System Settings → Privacy.")
             return
         }
         // Tugas lokal yang belum selesai dipindah ke Pengingat sekali, saat sinkron dinyalakan.
@@ -274,7 +274,7 @@ struct TodoPanel: View {
     @Environment(\.snapshot) private var snapshot
 
     var body: some View {
-        HStack(alignment: .top, spacing: 18) {
+        HStack(alignment: .top, spacing: Theme.Space.s) {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .firstTextBaseline, spacing: 2) {
                     Text("\(todo.doneToday)").font(.system(size: 34, weight: .bold, design: .rounded).monospacedDigit())
@@ -290,8 +290,9 @@ struct TodoPanel: View {
                 field
                 quickTimes
             }
-            .frame(width: 230, alignment: .leading)
-            list
+            .notchScrollCard()
+            .frame(width: 246)
+            list.notchCard(padding: Theme.Space.s)
         }
         .frame(maxHeight: .infinity, alignment: .top)
     }
@@ -299,19 +300,18 @@ struct TodoPanel: View {
     private var field: some View {
         HStack(spacing: 6) {
             ZStack(alignment: .leading) {
-                RoundedRectangle(cornerRadius: 9).fill(Color.white.opacity(focused ? 0.1 : 0.07))
-                    .overlay(RoundedRectangle(cornerRadius: 9).stroke(Color.accent.opacity(focused ? 0.7 : 0), lineWidth: 1))
                 if snapshot {
                     Text(L("Tugas baru, mis. PR jam 7", "New task, e.g. call at 5pm"))
-                        .font(.system(size: 11.5)).foregroundStyle(.white.opacity(0.4)).padding(.horizontal, 8)
+                        .font(.system(size: 11.5)).foregroundStyle(.white.opacity(0.4))
                 } else {
                     TextField(L("Tugas baru, mis. PR jam 7", "New task, e.g. call at 5pm"), text: $text)
-                        .textFieldStyle(.plain).font(.system(size: 11.5)).padding(.horizontal, 8)
+                        .textFieldStyle(.plain).font(.system(size: 11.5))
                         .focused($focused)
                         .onSubmit(add)
                 }
             }
-            .frame(height: 28)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .notchFieldBox(focused: focused)
             Button(action: add) { Image(systemName: "plus").font(.system(size: 11, weight: .bold)).frame(width: 28, height: 28) }
                 .buttonStyle(PressableStyle())
                 .background(Circle().fill(Color.accent))
@@ -357,7 +357,7 @@ struct TodoPanel: View {
     private var list: some View {
         Group {
             if todo.items.isEmpty && todo.moodle.isEmpty {
-                Placeholder(icon: "checklist", text: L("Belum ada tugas. Tulis di kiri, tekan Enter.", "No tasks yet. Type on the left and press Enter."))
+                Placeholder(icon: "checklist", text: L("Belum ada tugas. Tulis di kiri, lalu tekan Enter.", "No tasks yet. Type one on the left and press Enter."))
                     .frame(maxWidth: .infinity, alignment: .leading)
             } else if snapshot {
                 rows
@@ -410,10 +410,12 @@ private struct TodoRow: View {
                 .foregroundStyle(.white.opacity(item.done ? 0.4 : 0.95))
                 .lineLimit(1)
             Spacer(minLength: 4)
-            if let due = item.due {
+            if let due = item.due, due < now, !item.done {
+                NotchChip(text: Relative.long(due, allDay: false, now: now), tint: .orange)
+            } else if let due = item.due {
                 Text(Relative.long(due, allDay: false, now: now))
                     .font(.system(size: 10, weight: .medium).monospacedDigit())
-                    .foregroundStyle(item.done ? .white.opacity(0.3) : due < now ? Color.orange : .white.opacity(0.5))
+                    .foregroundStyle(item.done ? .white.opacity(0.3) : Theme.textSecondary)
                     .lineLimit(1)
             } else if item.done {
                 Text(L("selesai", "done")).font(.system(size: 10, weight: .medium)).foregroundStyle(.white.opacity(0.3))
@@ -424,7 +426,7 @@ private struct TodoRow: View {
             }
         }
         .padding(.horizontal, 9).padding(.vertical, 6)
-        .background(RoundedRectangle(cornerRadius: 9).fill(Color.white.opacity(hover ? 0.1 : 0.06)))
+        .background(RoundedRectangle(cornerRadius: Theme.Radius.item, style: .continuous).fill(Color.white.opacity(hover ? 0.1 : 0.06)))
         .notchHover { hover = $0 }
     }
 }
@@ -452,9 +454,9 @@ private struct CognifyTaskRow: View {
                 .lineLimit(1)
         }
         .padding(.horizontal, 9).padding(.vertical, 6)
-        .background(RoundedRectangle(cornerRadius: 9).fill(Color.white.opacity(hover ? 0.1 : 0.06)))
+        .background(RoundedRectangle(cornerRadius: Theme.Radius.item, style: .continuous).fill(Color.white.opacity(hover ? 0.1 : 0.06)))
         .notchHover { hover = $0 }
-        .help(L("Tugas dari Cognify. Kumpulkan di Moodle; hilang dari sini setelah terkirim.", "Task from Cognify. Submit it in Moodle; it disappears here once submitted."))
+        .help(L("Tugas dari Cognify. Kumpulkan lewat Moodle; hilang dari sini begitu terkirim.", "A task from Cognify. Turn it in on Moodle and it'll disappear from here."))
     }
 
     /// "Terlambat 3 jam" / "Terlambat 2 hari" untuk tugas yang lewat tenggat.

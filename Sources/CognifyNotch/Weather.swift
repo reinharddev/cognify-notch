@@ -57,7 +57,7 @@ final class WeatherFeed: ObservableObject {
         timer = nil
         guard enabled, !clean.isEmpty || Self.parse(coords) != nil else {
             now = nil
-            problem = enabled ? L("Isi nama kota di Pengaturan", "Enter a city in Settings") : nil
+            problem = enabled ? L("Isi dulu nama kota di Pengaturan", "Add a city in Settings") : nil
             return
         }
         refresh()
@@ -76,7 +76,7 @@ final class WeatherFeed: ObservableObject {
                     else { place = try await Self.geocode(city) }
                 }
                 guard let place else {
-                    problem = L("Kota \"\(city)\" tidak ditemukan", "City \"\(city)\" not found")
+                    problem = L("Kota \"\(city)\" tidak ketemu", "Couldn't find \"\(city)\"")
                     now = nil
                     return
                 }
@@ -86,7 +86,7 @@ final class WeatherFeed: ObservableObject {
                 if let before, before != SkyWeather(code: code) { kindShift = (before, Date()) }
                 problem = nil
             } catch {
-                problem = L("Cuaca tidak bisa dimuat", "Couldn't load weather")
+                problem = L("Cuaca gagal dimuat", "Couldn't load the weather")
             }
         }
     }
@@ -182,14 +182,14 @@ final class LocationFinder: NSObject, ObservableObject, CLLocationManagerDelegat
         timeout = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 20_000_000_000)
             guard !Task.isCancelled, let self, self.state == .detecting else { return }
-            self.fail(L("Tidak ada jawaban lokasi. Pastikan Layanan Lokasi menyala dan Cognify Notch diizinkan di Pengaturan Sistem → Privasi → Layanan Lokasi.",
-                        "No location answer. Make sure Location Services is on and Cognify Notch is allowed in System Settings → Privacy → Location Services."))
+            self.fail(L("Lokasinya belum didapat. Cek Layanan Lokasi sudah nyala dan Cognify Notch diizinkan di Pengaturan Sistem → Privasi → Layanan Lokasi.",
+                        "Couldn't get your location. Check that Location Services is on and Cognify Notch is allowed in System Settings → Privacy → Location Services."))
         }
         NSApp.activate(ignoringOtherApps: true) // jendela izin muncul di depan
         manager.delegate = self
         switch manager.authorizationStatus {
         case .notDetermined: manager.requestWhenInUseAuthorization()
-        case .denied, .restricted: fail(L("Izinkan Layanan Lokasi untuk Cognify Notch di Pengaturan Sistem → Privasi.", "Allow Location Services for Cognify Notch in System Settings → Privacy."))
+        case .denied, .restricted: fail(L("Izinkan Layanan Lokasi buat Cognify Notch di Pengaturan Sistem → Privasi.", "Give Cognify Notch access to Location Services in System Settings → Privacy."))
         default: manager.requestLocation()
         }
     }
@@ -202,7 +202,7 @@ final class LocationFinder: NSObject, ObservableObject, CLLocationManagerDelegat
         Task { @MainActor in
             guard self.state == .detecting else { return }
             if status == .denied || status == .restricted {
-                self.fail(L("Izin lokasi ditolak. Ubah di Pengaturan Sistem → Privasi.", "Location permission denied. Change it in System Settings → Privacy."))
+                self.fail(L("Izin lokasi ditolak. Ubah di Pengaturan Sistem → Privasi.", "Location access was denied. You can change it in System Settings → Privacy."))
             } else if status != .notDetermined {
                 manager.requestLocation()
             }
@@ -222,6 +222,6 @@ final class LocationFinder: NSObject, ObservableObject, CLLocationManagerDelegat
     }
 
     nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
-        Task { @MainActor in self.fail(L("Lokasi tidak bisa dibaca. Coba lagi.", "Couldn't read your location. Try again.")) }
+        Task { @MainActor in self.fail(L("Lokasi gagal dibaca. Coba lagi.", "Couldn't read your location. Try again.")) }
     }
 }

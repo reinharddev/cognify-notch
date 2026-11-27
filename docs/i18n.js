@@ -144,7 +144,7 @@ window.I18N = (() => {
     'g.5': '<b>Drag a file onto the notch</b><p>It goes into the Tray.</p>',
     'g.6': '<b>Open with a click</b><p>Prefer clicking to pointing? Turn it on in Settings.</p>',
     'g.7': '<b>Menu bar or tray icon</b><p>Turn each feature on or off, check for updates, and quit the app. On Windows, features are set with the gear icon in the notch.</p>',
-    'g.8': '<b>Settings</b><p>Panel size, delays before the panel opens and closes, page order, screen, weather city, language, and data export and import. Settings are more compact on Windows.</p>',
+    'g.8': '<b>Settings</b><p>Panel size, delays before the panel opens and closes, page order, screen, weather city, and data export and import. Settings are more compact on Windows.</p>',
 
     // Data
     'd2.title': 'Your data stays<br>on your computer.',
@@ -178,7 +178,7 @@ window.I18N = (() => {
     'sp.size': 'download size on Mac, 12 MB on Windows',
     'sp.os': 'macOS Ventura or later, or Windows 11 (Beta)',
     'sp.acc': 'accounts to create',
-    'sp.lang': 'languages: Indonesian and English',
+    'sp.lang': 'interface language: English',
     'sp.cpu': '<b>Processor</b>Apple Silicon and Intel on Mac. 64-bit Windows 11.',
     'sp.nonotch': '<b>Screens without a notch</b>Still works: the notch appears as a small panel at the top center of the screen. Windows has no physical notch, so there it always appears that way, on the main display. On Mac, external displays can be chosen in Settings.',
     'sp.sec': '<b>Security</b>Mac: signed and notarized by Apple, so the app opens without warnings. Windows: not signed yet, so a SmartScreen warning appears.',

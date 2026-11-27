@@ -64,7 +64,7 @@ struct API {
         guard (200..<300).contains(status) else {
             let body = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
             let message = (body?["error"] as? [String: Any])?["message"] as? String
-            throw APIError(message: message ?? "Cognify menolak permintaan ini (\(status))")
+            throw APIError(message: message ?? "Cognify rejected this request (\(status))")
         }
         return data
     }
@@ -83,7 +83,7 @@ struct API {
     /// Catatan cepat → item Knowledge. Mengembalikan judul yang dipakai.
     func quickNote(_ text: String) async throws -> String {
         let data = try await json("api/notch/note", ["text": text])
-        return (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["title"] as? String ?? "Catatan"
+        return (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["title"] as? String ?? "Note"
     }
 
     /// Tautan web → item Knowledge (halaman diambil dan diubah jadi teks oleh sidecar).

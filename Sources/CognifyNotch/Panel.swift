@@ -117,6 +117,9 @@ final class NotchController {
         model.prefs.$idleScale.dropFirst().sink { [weak self] _ in
             DispatchQueue.main.async { self?.applyIdleScale() }
         }.store(in: &cancellables)
+        // Ganti gaya atau lebar: ukur ulang dan pindahkan jendela.
+        model.prefs.$floatingStyle.dropFirst().map { _ in () }.merge(with: model.prefs.$notchWidth.dropFirst().map { _ in () })
+            .sink { [weak self] _ in DispatchQueue.main.async { self?.place() } }.store(in: &cancellables)
         model.prefs.$floatOnNotch.dropFirst().sink { [weak self] _ in
             DispatchQueue.main.async { self?.place() }
         }.store(in: &cancellables)
@@ -205,7 +208,7 @@ final class NotchController {
         var dx = 0.0, dy = 0.0
         if !model.hasNotch {
             dx = max(-(frame.width / 2 - 60), min(frame.width / 2 - 60, model.prefs.floatDX))
-            dy = max(model.floatMinDY, min(frame.height - 120, model.prefs.floatDY))
+            dy = min(frame.height - 120, model.floatingDY)
         }
         let base = NSRect(x: frame.midX - size.width / 2 + dx, y: frame.maxY - size.height - dy + model.topInset, width: size.width, height: size.height)
         baseFrame = base
@@ -259,13 +262,12 @@ final class NotchController {
         case .leftMouseDown:
             dragStart = nil
             guard !model.hasNotch, !model.expanded, hotRect(margin: 4).contains(mouse) else { return }
-            dragStart = (mouse, model.prefs.floatDX, model.prefs.floatDY)
+            dragStart = (mouse, model.prefs.floatDX, model.floatingDY)
         case .leftMouseDragged:
             guard let s = dragStart, !model.expanded else { return }
             let mx = mouse.x - s.mouse.x, my = mouse.y - s.mouse.y
             guard abs(mx) + abs(my) > 4 else { return }
-            model.prefs.floatDX = s.dx + mx
-            model.prefs.floatDY = s.dy - my
+            model.moveFloating(dx: s.dx + mx, dy: s.dy - my)
             place()
         default:
             dragStart = nil
@@ -280,7 +282,8 @@ final class NotchController {
     private func applyIdleScale() {
         let s = CGFloat(model.prefs.idleScale)
         let f = model.hasNotch ? max(1, s) : s
-        let base = model.baseNotchSize
+        var base = model.baseNotchSize
+        if !model.hasNotch { base.width = model.detached ? 84 : CGFloat(model.prefs.notchWidth) }
         // Notch melayang (jauh dari tepi atas) tidak berbatasan dengan menu bar, jadi diberi tinggi tersendiri:
         // setinggi menu bar (24 pt) pil-nya tampak gepeng. Yang menempel di tepi atas tetap setinggi menu bar.
         let height: CGFloat = model.hasNotch ? base.height
@@ -294,8 +297,15 @@ final class NotchController {
         guard screen != nil else { return .zero }
         let frame = panel.frame // ikut bergeser saat notch melayang dipindah
         let size = model.size
-        return NSRect(x: frame.midX - size.width / 2 + model.shapeOffset, y: frame.maxY - model.topInset - size.height, width: size.width, height: size.height)
+        return NSRect(x: frame.midX - size.width / 2 + model.shapeOffset, y: frame.maxY - model.topInset - (model.lyricRow ? model.notchSize.height : size.height), width: size.width + model.lyricGroupWidth, height: model.lyricRow ? model.notchSize.height : size.height)
             .insetBy(dx: -margin, dy: -margin)
+    }
+
+    /// Tempat baris lirik di bawah notch (koordinat layar), tidak tergantung sedang tampil atau disembunyikan.
+    private func lyricRect() -> NSRect {
+        let bar = hotRect(margin: 0)
+        let height = NotchModel.lyricRowHeight + (model.detached ? 8 : 0)
+        return NSRect(x: bar.minX, y: bar.minY - height, width: bar.width, height: height)
     }
 
     /// Kursor dekat notch (atau sedang ada yang perlu diikuti) → pembacaan 20x per detik menyala.
@@ -309,7 +319,7 @@ final class NotchController {
         if model.prefs.companionFollow, model.headMode || model.live?.eyes == true {
             // Kepala melayang atau mata di notch: menoleh ke arah kursor. Mati: kembali lurus.
             let r = hotRect(margin: 0)
-            model.face.look(at: NSEvent.mouseLocation, from: NSPoint(x: r.midX, y: r.midY))
+            model.face.look(at: NSEvent.mouseLocation, from: NSPoint(x: r.midX - model.lyricGroupWidth / 2, y: r.midY))
         } else if !model.prefs.companionFollow {
             model.face.lookAhead()
         }
@@ -357,6 +367,9 @@ final class NotchController {
         }
         updateDrop(draggingContent && inside)
         if !model.dropTargeted { model.setHover(inside) } // tetap terbuka selama file berada di atas notch
+        // Kursor di baris lirik: sembunyikan barisnya. Area itu di luar `hotRect`, jadi klik tetap diteruskan.
+        let overLyric = model.lyricRow && lyricRect().contains(mouse)
+        if overLyric != model.lyricHidden { model.lyricHidden = overLyric }
         HoverRegistry.shared.update(model.expanded ? mouse : nil) // hover di dalam panel (lihat Hover.swift)
         if !needsTracking(mouse) {
             poller?.invalidate()
@@ -463,8 +476,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 if !UserDefaults.standard.bool(forKey: "welcomed") {
                     UserDefaults.standard.set(true, forKey: "welcomed")
                     model.show(.alert(title: L("Cognify Notch sudah aktif", "Cognify Notch is on"),
-                                      detail: L("Arahkan kursor ke notch kapan saja. Pengaturan ada di ikon menu bar.",
-                                                "Point at the notch any time. Settings live in the menu bar icon."), action: nil))
+                                      detail: L("Arahkan kursor ke notch kapan saja. Pengaturannya ada di ikon menu bar.",
+                                                "Hover over the notch any time. Settings are in the menu bar icon."), action: nil))
                 }
                 return
             }

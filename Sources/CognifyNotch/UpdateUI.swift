@@ -210,12 +210,12 @@ struct UpdateView: View {
 
     private var headline: String {
         switch model.phase {
-        case .checking: return L("Memeriksa pembaruan…", "Checking for updates…")
-        case .found: return model.alreadyDownloaded ? L("Pembaruan siap dipasang", "Update ready to install") : L("Ada versi baru!", "A new version is available!")
+        case .checking: return L("Lagi cek pembaruan…", "Checking for updates…")
+        case .found: return model.alreadyDownloaded ? L("Pembaruan siap dipasang", "Update ready to install") : L("Ada versi baru!", "There's a new version!")
         case .downloading: return L("Mengunduh pembaruan…", "Downloading update…")
         case .extracting: return L("Menyiapkan pembaruan…", "Preparing update…")
         case .installing: return L("Memasang…", "Installing…")
-        case .upToDate: return L("Sudah yang terbaru", "You're up to date")
+        case .upToDate: return L("Sudah paling baru", "You're up to date")
         case .installed: return L("Pembaruan terpasang", "Update installed")
         case .failed: return L("Pembaruan gagal", "Update failed")
         }
@@ -250,15 +250,15 @@ struct UpdateView: View {
             versionRow
             ProgressTrack(value: model.progress)
         case .installing:
-            Text(L("Cognify Notch akan mulai ulang sebentar lagi.", "Cognify Notch will relaunch in a moment."))
+            Text(L("Cognify Notch segera dimulai ulang.", "Cognify Notch will restart in a moment."))
                 .font(.system(size: 13)).foregroundStyle(.secondary)
             ProgressTrack(value: nil)
         case .upToDate:
-            Text(L("Kamu memakai versi terbaru \(model.currentVersion).", "You're running the latest version \(model.currentVersion)."))
+            Text(L("Kamu sudah pakai versi terbaru, \(model.currentVersion).", "You're on the latest version, \(model.currentVersion)."))
                 .font(.system(size: 14))
             HStack { Spacer(); PrimaryButton(L("Oke", "OK")) { model.onClose() } }
         case .installed:
-            Text(L("Cognify Notch sudah diperbarui ke versi \(model.currentVersion).", "Cognify Notch was updated to version \(model.currentVersion)."))
+            Text(L("Cognify Notch sekarang versi \(model.currentVersion).", "Cognify Notch is now on version \(model.currentVersion)."))
                 .font(.system(size: 14))
             HStack { Spacer(); PrimaryButton(L("Oke", "OK")) { model.onClose() } }
         case .failed(let message):
@@ -308,7 +308,7 @@ struct UpdateView: View {
 
     private var automaticToggle: some View {
         Toggle(isOn: Binding(get: { model.automatic }, set: { model.automatic = $0; model.onToggleAutomatic($0) })) {
-            Text(L("Pasang pembaruan berikutnya secara otomatis", "Install future updates automatically")).font(.system(size: 12.5))
+            Text(L("Pasang pembaruan berikutnya otomatis", "Install future updates automatically")).font(.system(size: 12.5))
         }
         .toggleStyle(.switch)
         .controlSize(.small)

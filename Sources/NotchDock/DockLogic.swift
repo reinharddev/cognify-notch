@@ -337,9 +337,9 @@ public enum DockWindowTitle {
     /// Judul untuk baris menu: kosong menjadi "Tanpa judul", spasi dirapikan, dipotong 60 karakter, dan jendela yang diminimalkan ditandai.
     public static func display(_ raw: String?, minimized: Bool) -> String {
         let collapsed = (raw ?? "").split(whereSeparator: { $0.isWhitespace || $0.isNewline }).joined(separator: " ")
-        var title = collapsed.isEmpty ? "Tanpa judul" : String(collapsed.prefix(60))
+        var title = collapsed.isEmpty ? "Untitled" : String(collapsed.prefix(60))
         if collapsed.count > 60 { title += "…" }
-        return minimized ? title + " (diminimalkan)" : title
+        return minimized ? title + " (minimized)" : title
     }
 }
 

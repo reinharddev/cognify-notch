@@ -232,17 +232,17 @@ struct LyricsView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         case .loading:
-            message("music.note", L("Mencari lirik…", "Finding lyrics…"))
+            message("music.note", L("Lagi cari lirik…", "Finding lyrics…"))
         case .instrumental:
             message("pianokeys", L("Lagu instrumental", "Instrumental"))
         case .missing:
-            message("text.badge.xmark", L("Lagu ini belum punya lirik di LRCLIB", "This song has no lyrics on LRCLIB yet"))
+            message("text.badge.xmark", L("LRCLIB belum punya lirik lagu ini", "LRCLIB doesn't have lyrics for this one yet"))
         case .offline:
-            message("wifi.slash", L("Tidak ada koneksi. Periksa internet.", "No connection. Check your internet."))
+            message("wifi.slash", L("Tidak ada koneksi. Cek internet kamu.", "You're offline. Check your internet."))
         case .unavailable:
-            message("exclamationmark.icloud", L("LRCLIB sedang bermasalah. Dicoba lagi nanti.", "LRCLIB is having trouble. Will retry shortly."))
+            message("exclamationmark.icloud", L("LRCLIB lagi bermasalah. Nanti dicoba lagi.", "LRCLIB is having trouble. We'll try again soon."))
         case .idle:
-            message("music.note.list", L("Putar lagu untuk melihat liriknya", "Play a song to see its lyrics"))
+            message("music.note.list", L("Putar lagu buat lihat liriknya", "Play a song to see the lyrics"))
         }
     }
 
@@ -311,25 +311,27 @@ struct MusicPanel: View {
         if media.nowPlaying == nil {
             VStack(spacing: 8) {
                 Image(systemName: "music.note").font(.system(size: 22))
-                Text(L("Belum ada lagu yang diputar", "Nothing is playing"))
+                Text(L("Belum ada lagu yang diputar", "Nothing's playing"))
                     .font(.system(size: 12, weight: .medium))
-                Text(L("Spotify, Apple Music, YouTube di browser, dan lainnya muncul di sini.",
+                Text(L("Lagu dari Spotify, Apple Music, YouTube di browser, dan lainnya muncul di sini.",
                        "Spotify, Apple Music, YouTube in your browser and more show up here."))
                     .font(.system(size: 10.5)).foregroundStyle(.white.opacity(0.45))
             }
             .foregroundStyle(.white.opacity(0.6))
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if model.features.lyrics {
-            HStack(alignment: .top, spacing: 18) {
+            HStack(alignment: .top, spacing: Theme.Space.m) {
+                // Kartu menggantikan garis pemisah antara pemutar dan lirik.
                 MediaCard(media: media, spectrum: model.spectrum).frame(width: 200)
-                Divider().overlay(Color.white.opacity(0.08))
+                    .frame(maxHeight: .infinity, alignment: .top)
+                    .notchCard(padding: Theme.Space.s)
                 LyricsView(lyrics: model.lyrics, media: media)
             }
             .background(alignment: .trailing) { ArtworkWash(media: media) }
             .onAppear { if !snapshot { model.lyrics.load(for: media.nowPlaying) } }
             .onChange(of: media.nowPlaying?.title) { _ in model.lyrics.load(for: media.nowPlaying) }
         } else {
-            MediaCard(media: media, spectrum: model.spectrum).frame(width: 300).frame(maxWidth: .infinity)
+            MediaCard(media: media, spectrum: model.spectrum).frame(width: 300).notchCard(padding: Theme.Space.s).frame(maxWidth: .infinity)
         }
     }
 }

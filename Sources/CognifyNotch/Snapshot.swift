@@ -95,7 +95,7 @@ enum Snapshot {
             ("n1-musik-lirik", make(app: true) { $0.expanded = true; $0.tab = .music; $0.preview(level: nil, features: all); $0.media.preview(song, artwork: cover)
                 $0.lyrics.preview(.synced(LyricsService.parse("[00:10.00]Morning folds the city light\n[00:20.00]into paper birds tonight\n[01:15.00]If I could be by your side\n[01:24.00]I'd give you all my seasons\n[01:33.00]every summer, every rain\n[01:41.00]calling out your name"))) }),
             ("n2-air", make(app: true) { $0.expanded = true; $0.tab = .water; $0.water.preview([(hour: 8, ml: 250), (hour: 9, ml: 250), (hour: 11, ml: 500), (hour: 13, ml: 250), (hour: 15, ml: 250)]) }),
-            ("n2-air-en", make(app: true) { $0.prefs.language = .en; $0.expanded = true; $0.tab = .water; $0.water.preview([(hour: 8, ml: 250)]) }),
+            ("n2-air-en", make(app: true) { $0.expanded = true; $0.tab = .water; $0.water.preview([(hour: 8, ml: 250)]) }),
             ("n3-todo", make(app: true) { $0.expanded = true; $0.tab = .todo
                 $0.todo.preview([
                     .init(id: UUID(), text: "Kumpul laporan praktikum", due: now.addingTimeInterval(2 * 3600)),
@@ -116,6 +116,12 @@ enum Snapshot {
                     .init(id: UUID(), label: "10 menit", end: now.addingTimeInterval(372), total: 600),
                     .init(id: UUID(), label: "3 menit", end: now.addingTimeInterval(95), total: 180),
                 ]) }),
+            ("g10-wajah-lirik", make(app: true) { $0.hasNotch = false; $0.prefs.floatingStyle = .head; $0.notchSize = CGSize(width: 84, height: 36); $0.state = nil; $0.preview(level: nil, features: all); $0.media.preview(song, artwork: cover)
+                $0.lyrics.preview(.synced(LyricsService.parse("[00:10.00]Morning folds the city light\n[01:15.00]If I could be by your side\n[01:24.00]I'd give you all my seasons"))) }),
+            ("o6-lirik-bawah", make(app: true) { $0.state = nil; $0.prefs.lyricsBelow = true; $0.preview(level: nil, features: all); $0.media.preview(song, artwork: cover)
+                $0.lyrics.preview(.synced(LyricsService.parse("[00:10.00]Morning folds the city light\n[01:15.00]If I could be by your side\n[01:24.00]I'd give you all my seasons"))) }),
+            ("o7-lirik-bawah-kapsul", make(app: true) { $0.hasNotch = false; $0.prefs.floatingStyle = .pill; $0.prefs.lyricsBelow = true; $0.notchSize = CGSize(width: 84, height: 36); $0.state = nil; $0.preview(level: nil, features: all); $0.media.preview(song, artwork: cover); $0.clock.preview(elapsed: 83.2, laps: [], countdowns: [])
+                $0.lyrics.preview(.synced(LyricsService.parse("[00:10.00]Morning folds the city light\n[01:15.00]If I could be by your side\n[01:24.00]I'd give you all my seasons"))) }),
             ("o2-sayap-lirik", make(app: true) { $0.state = nil; $0.preview(level: nil, features: all); $0.media.preview(song, artwork: cover)
                 $0.lyrics.preview(.synced(LyricsService.parse("[00:10.00]Morning folds the city light\n[01:15.00]If I could be by your side\n[01:24.00]I'd give you all my seasons"))) }),
             ("o4-sayap-lagu-stopwatch", make(app: true) { $0.state = nil; $0.preview(level: nil, features: all); $0.media.preview(song, artwork: cover); $0.clock.preview(elapsed: 83.2, laps: [60.1, 41.7, 12.3], countdowns: []) }),
@@ -140,7 +146,7 @@ enum Snapshot {
             ("u-sayap-download", make { $0.state = NotchState(events: [], overdue: 0, processing: 0); $0.downloads.preview(.init(name: "Modul Biologi Bab 3.pdf", percent: 42)) }),
             ("v-media-lengkap", make(app: true) { $0.expanded = true; $0.preview(level: nil, features: all); $0.media.preview(song) }),
             ("w-rapat-alert", make(app: true) { $0.expanded = true; $0.toast = .alert(title: "Kelas online Fisika", detail: "Mulai 5 menit lagi", action: .join(URL(string: "https://meet.google.com/abc")!)) }),
-            ("x-besar-inggris", make(app: true) { $0.prefs.scale = 1.12; $0.prefs.language = .en; $0.expanded = true; $0.preview(level: nil, features: all); $0.calendar.preview(meetingSample) }),
+            ("x-besar-inggris", make(app: true) { $0.prefs.scale = 1.12; $0.expanded = true; $0.preview(level: nil, features: all); $0.calendar.preview(meetingSample) }),
             ("p-sayap-lagu-baru", make { $0.state = NotchState(events: [], overdue: 0, processing: 0); $0.media.preview(song); $0.preview(songBanner: "Ada Selamanya (Versi Akustik Live di Jakarta)") }),
             ("q-sayap-lagu-pendek", make { $0.state = NotchState(events: [], overdue: 0, processing: 0); $0.media.preview(song); $0.preview(songBanner: "Ada Selamanya") }),
             ("m-sayap-charger", make { $0.state = NotchState(events: [], overdue: 0, processing: 0); $0.preview(notice: .charging(percent: 53, full: false)) }),
@@ -162,6 +168,15 @@ enum Snapshot {
             ("n9-menempel-lagu", make(app: true) { $0.hasNotch = false; $0.notchSize = CGSize(width: 190, height: 24); $0.prefs.floatingStyle = .attached; $0.state = NotchState(events: [], overdue: 0, processing: 0); $0.media.preview(song) }),
             ("n10-melayang-lagu", make(app: true) { $0.hasNotch = false; $0.notchSize = CGSize(width: 190, height: NotchController.floatingHeight); $0.prefs.floatingStyle = .attached; $0.state = NotchState(events: [], overdue: 0, processing: 0); $0.media.preview(song) }),
             ("n7-kepala-mengambang", make(app: true) { $0.hasNotch = false; $0.notchSize = CGSize(width: 190, height: 24); $0.state = NotchState(events: [], overdue: 0, processing: 0); $0.preview(emotion: .happy) }),
+            ("g1-notch-sempit", make(app: true) { $0.hasNotch = false; $0.prefs.floatingStyle = .attached; $0.notchSize = CGSize(width: 84, height: 24); $0.timer.reset(); $0.state = NotchState(events: [], overdue: 0, processing: 0); $0.prefs.notchWidth = 84; $0.preview(emotion: .happy) }),
+            ("g2-pil-diam", make(app: true) { $0.hasNotch = false; $0.prefs.floatingStyle = .pill; $0.notchSize = CGSize(width: 84, height: 36); $0.timer.reset(); $0.state = NotchState(events: [], overdue: 0, processing: 0); $0.preview(emotion: .happy) }),
+            ("g3-pil-timer", make(app: true) { $0.hasNotch = false; $0.prefs.floatingStyle = .pill; $0.notchSize = CGSize(width: 84, height: 36); $0.state = NotchState(events: [], overdue: 0, processing: 0); $0.timer.start() }),
+            ("g4-wajah-diam", make(app: true) { $0.hasNotch = false; $0.prefs.floatingStyle = .head; $0.notchSize = CGSize(width: 84, height: 36); $0.timer.reset(); $0.state = NotchState(events: [], overdue: 0, processing: 0); $0.preview(emotion: .happy) }),
+            ("g5-wajah-lagu-timer", make(app: true) { $0.hasNotch = false; $0.prefs.floatingStyle = .head; $0.notchSize = CGSize(width: 84, height: 36); $0.state = NotchState(events: [], overdue: 0, processing: 0); $0.timer.start(); $0.media.preview(song, artwork: cover) }),
+            ("g6-wajah-charging", make(app: true) { $0.hasNotch = false; $0.prefs.floatingStyle = .head; $0.notchSize = CGSize(width: 84, height: 36); $0.timer.reset(); $0.state = NotchState(events: [], overdue: 0, processing: 0); $0.preview(notice: .charging(percent: 82, full: false)) }),
+            ("g7-wajah-volume", make(app: true) { $0.hasNotch = false; $0.prefs.floatingStyle = .head; $0.notchSize = CGSize(width: 84, height: 36); $0.timer.reset(); $0.state = NotchState(events: [], overdue: 0, processing: 0); $0.preview(level: .volume(0.6, muted: false)) }),
+            ("g8-wajah-musik", make(app: true) { $0.hasNotch = false; $0.prefs.floatingStyle = .head; $0.notchSize = CGSize(width: 84, height: 36); $0.timer.reset(); $0.state = NotchState(events: [], overdue: 0, processing: 0); $0.media.preview(song, artwork: cover) }),
+            ("g9-wajah-timer", make(app: true) { $0.hasNotch = false; $0.prefs.floatingStyle = .head; $0.notchSize = CGSize(width: 84, height: 36); $0.state = NotchState(events: [], overdue: 0, processing: 0); $0.timer.reset(); $0.timer.start() }),
             ("9-tanpa-notch", make { $0.hasNotch = false; $0.notchSize = CGSize(width: 190, height: 24); $0.expanded = true }),
             // Notch diam ikut tema. Urutannya terakhir: pengaturan yang diubah di sini ikut terbaca model berikutnya.
             ("p1-diam-gradien", make(app: true) { $0.hasNotch = false; $0.notchSize = CGSize(width: 190, height: 24); $0.prefs.floatingStyle = .attached; $0.prefs.bgMode = .gradient; $0.prefs.bgColorHex = "#2a1550"; $0.prefs.bgColor2Hex = "#c0392b"; $0.prefs.bgAngle = 0; $0.prefs.idleThemed = true; $0.state = NotchState(events: [], overdue: 0, processing: 0); $0.preview(emotion: .happy) }),
@@ -169,6 +184,14 @@ enum Snapshot {
             ("p3-poni-gambar", make(app: true) { $0.hasNotch = true; $0.notchSize = CGSize(width: 220, height: 32); $0.prefs.bgMode = .image; $0.prefs.idleThemed = true; $0.state = NotchState(events: [], overdue: 0, processing: 0); $0.preview(emotion: .happy) }),
             ("p4-diam-mati", make(app: true) { $0.hasNotch = false; $0.notchSize = CGSize(width: 190, height: 24); $0.prefs.floatingStyle = .attached; $0.prefs.bgMode = .gradient; $0.prefs.idleThemed = false; $0.state = NotchState(events: [], overdue: 0, processing: 0); $0.preview(emotion: .happy) }),
         ]
+        // Kartu pilihan gaya di Pengaturan.
+        let chooser = ImageRenderer(content: NotchStyleChooser(prefs: make { _ in }.prefs, physicalNotch: false)
+            .frame(width: 480).padding(12).background(Color(white: 0.1)).environment(\.colorScheme, .dark).environment(\.snapshot, true))
+        chooser.scale = 2
+        if let image = chooser.nsImage, let tiff = image.tiffRepresentation,
+           let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) {
+            try? png.write(to: folder.appendingPathComponent("z-pilih-gaya.png"))
+        }
         // Lembar semua ekspresi: mata di notch (kiri) dan kepala bulat saat mengambang (kanan).
         do {
             let faces = Emotion.allCases.map { e -> (Emotion, Face) in let f = Face(); f.preview(e); return (e, f) }
@@ -203,7 +226,7 @@ enum Snapshot {
             let skins = SkinManager(model: make(app: true) { _ in })
             skins.persists = false
             skins.savePreset(named: "Malam ungu"); skins.mimik.preset = "acid"; skins.mimik.skin = "#0b0f00"; skins.mimik.ink = "#c6ff00"; skins.mimik.ring = "#4a5a00"; skins.mimik.mood = "excited"; skins.mimik.glow = true
-            let info = SkinInfo(id: "mimik", name: "Mimik", desc: "", width: 180, height: 180, cursor: true, audio: false, notch: false, anchor: "bottom-right", entry: "index.html", folder: URL(fileURLWithPath: "/tmp"))
+            let info = SkinInfo(id: "mimik", name: "CogniFace", desc: "", width: 180, height: 180, cursor: true, audio: false, notch: false, anchor: "bottom-right", entry: "index.html", folder: URL(fileURLWithPath: "/tmp"))
             let sheet = MimikPlayground(skins: skins, info: info).frame(width: 560).padding(20).background(Color(white: 0.16)).environment(\.colorScheme, .dark)
             let renderer = ImageRenderer(content: sheet)
             renderer.scale = 2
@@ -213,22 +236,7 @@ enum Snapshot {
             }
         }
         // Ikon kategori Pengaturan: ukuran sidebar (26) dan header (64).
-        do {
-            let sheet = VStack(spacing: 18) {
-                HStack(spacing: 18) { ForEach(SettingsPane.allCases) { PaneIcon(pane: $0, size: 64) } }
-                HStack(spacing: 18) { ForEach(SettingsPane.allCases) { PaneIcon(pane: $0, size: 26) } }
-            }
-            .padding(24)
-            .background(Color(white: 0.93))
-            let renderer = ImageRenderer(content: sheet)
-            renderer.scale = 2
-            if let image = renderer.nsImage, let tiff = image.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff),
-               let png = rep.representation(using: .png, properties: [:]) {
-                try? png.write(to: folder.appendingPathComponent("z-ikon-pengaturan.png"))
-            }
-        }
         for (name, model) in cases {
-            Lang.english = model.prefs.language == .en
             let view = ZStack(alignment: .top) {
                 // Latar menyerupai menu bar + desktop supaya bentuk notch hitam terlihat.
                 LinearGradient(colors: [Color(white: 0.32), Color(white: 0.22)], startPoint: .top, endPoint: .bottom)
@@ -244,20 +252,20 @@ enum Snapshot {
             }
             model.timer.reset()
         }
-        // Baris halaman saat diarahkan kursor (efek Dock).
+        // Baris halaman saat diarahkan kursor.
         let dock = ZStack(alignment: .bottom) {
             Color.black
-            PageDock(tabs: NotchModel.Tab.allCases, current: .music, select: { _ in }, previewPointer: 70).padding(.bottom, 12)
+            PageDock(tabs: NotchModel.Tab.allCases, current: .music, select: { _ in }, preview: true).padding(.bottom, 12)
         }
-        .frame(width: 420, height: 90)
+        .frame(width: 520, height: 90)
         .environment(\.colorScheme, .dark)
+        .environment(\.snapshot, true)
         let renderer = ImageRenderer(content: dock)
         renderer.scale = 2
         if let image = renderer.nsImage, let tiff = image.tiffRepresentation,
            let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) {
             try? png.write(to: folder.appendingPathComponent("z-dock-hover.png"))
         }
-        Lang.english = false
         print("snapshot → \(folder.path)")
     }
 

@@ -131,7 +131,7 @@ enum Mood {
         let todos = snap.todos
         let open = todos.filter { !$0.done }
         if snap.timers?.contains(where: { $0.end > t }) == true { return ("focus", tr("Lagi fokus", "Focus time")) }
-        if hour < 5 { return ("sleep", tr("Sudah malam, istirahat ya", "It's late, get some rest")) }
+        if hour < 5 { return ("sleep", tr("Sudah malam, istirahat dulu ya", "It's late, go get some rest")) }
         if let soon = snap.events.first(where: { $0.isTask && $0.start > t && $0.start - t < 6 * 3600 }) {
             return ("worried", tr("Segera: ", "Due soon: ") + soon.title)
         }
@@ -144,9 +144,9 @@ enum Mood {
         if let w = snap.water, w.goalMl > 0, w.todayMl >= w.goalMl, hour >= 12 { return ("joy", tr("Target minum tercapai", "Water goal reached")) }
         if !todos.isEmpty, open.isEmpty { return ("joy", tr("Semua tugas selesai", "All tasks done")) }
         if let w = snap.water, w.goalMl > 0, hour >= 15, Double(w.todayMl) < Double(w.goalMl) * 0.3 { return ("pleading", tr("Minum dulu, yuk", "Time for some water")) }
-        if hour >= 22 { return ("sleepy", tr("Mulai ngantuk", "Getting sleepy")) }
+        if hour >= 22 { return ("sleepy", tr("Mulai ngantuk nih", "Getting sleepy")) }
         if let w = snap.weather, (51...67).contains(w.code) || (80...82).contains(w.code) { return ("content", tr("Di luar hujan", "Raining outside")) }
-        if !open.isEmpty { return ("curious", tr("\(open.count) tugas menunggu", "\(open.count) tasks waiting")) }
+        if !open.isEmpty { return ("curious", tr("Masih ada \(open.count) tugas", "\(open.count) tasks to go")) }
         return (hour < 11 ? "happy" : "idle", hour < 11 ? tr("Selamat pagi", "Good morning") : tr("Santai dulu", "All calm"))
     }
 }

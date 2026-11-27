@@ -28,20 +28,20 @@ final class VoiceNote: ObservableObject {
     private func start() async {
         let speech = await withCheckedContinuation { c in SFSpeechRecognizer.requestAuthorization { c.resume(returning: $0) } }
         guard speech == .authorized else {
-            return fail(L("Izinkan Pengenalan Ucapan untuk Cognify Notch di Pengaturan Sistem → Privasi.",
-                          "Allow Speech Recognition for Cognify Notch in System Settings → Privacy."))
+            return fail(L("Izinkan Pengenalan Ucapan buat Cognify Notch di Pengaturan Sistem → Privasi.",
+                          "Give Cognify Notch access to Speech Recognition in System Settings → Privacy."))
         }
         let mic = await AVCaptureDevice.requestAccess(for: .audio)
         guard mic else {
-            return fail(L("Izinkan Mikrofon di Pengaturan Sistem → Privasi.", "Allow Microphone in System Settings → Privacy."))
+            return fail(L("Izinkan Mikrofon di Pengaturan Sistem → Privasi.", "Allow microphone access in System Settings → Privacy."))
         }
         let locale = Locale(identifier: Lang.english ? "en-US" : "id-ID")
         guard let recognizer = SFSpeechRecognizer(locale: locale), recognizer.isAvailable else {
-            return fail(L("Pengenal suara belum tersedia di Mac ini.", "Speech recognition isn't available on this Mac."))
+            return fail(L("Mac ini belum punya pengenal suara.", "Speech recognition isn't available on this Mac."))
         }
         guard recognizer.supportsOnDeviceRecognition else {
-            return fail(L("Pengenal suara offline Bahasa Indonesia belum terpasang. Nyalakan Dikte di Pengaturan Sistem → Keyboard, lalu coba lagi.",
-                          "Offline speech recognition isn't installed. Turn on Dictation in System Settings → Keyboard, then try again."))
+            return fail(L("Pengenal suara offline Bahasa Indonesia belum ada. Nyalakan Dikte di Pengaturan Sistem → Keyboard, lalu coba lagi.",
+                          "Offline speech recognition isn't set up yet. Turn on Dictation in System Settings → Keyboard, then try again."))
         }
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.requiresOnDeviceRecognition = true
@@ -62,7 +62,7 @@ final class VoiceNote: ObservableObject {
             try engine.start()
         } catch {
             input.removeTap(onBus: 0)
-            return fail(L("Mikrofon tidak bisa dipakai: \(error.localizedDescription)", "Microphone unavailable: \(error.localizedDescription)"))
+            return fail(L("Mikrofonnya tidak bisa dipakai: \(error.localizedDescription)", "Can't use the microphone: \(error.localizedDescription)"))
         }
         recording = true
         task = recognizer.recognitionTask(with: request) { [weak self] result, error in
@@ -130,6 +130,6 @@ struct MicButton: View {
                 .contentShape(Capsule())
         }
         .buttonStyle(PressableStyle())
-        .help(voice.recording ? L("Berhenti merekam", "Stop recording") : L("Rekam suara jadi teks", "Dictate a note"))
+        .help(voice.recording ? L("Berhenti merekam", "Stop recording") : L("Ngomong, jadi teks", "Dictate a note"))
     }
 }

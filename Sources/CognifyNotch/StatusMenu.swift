@@ -34,7 +34,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         title.isEnabled = false
         menu.addItem(title)
         let shortcut = model.features.hotkey ? " " + L("atau tekan", "or press") + " " + model.prefs.hotKey.label : ""
-        let hint = NSMenuItem(title: L("Arahkan kursor ke notch", "Point at the notch") + shortcut, action: nil, keyEquivalent: "")
+        let hint = NSMenuItem(title: L("Arahkan kursor ke notch", "Hover over the notch") + shortcut, action: nil, keyEquivalent: "")
         hint.isEnabled = false
         menu.addItem(hint)
         menu.addItem(.separator())
@@ -58,15 +58,15 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         if settings == nil {
             // Muat di layar kecil: tidak melebihi area layar yang terlihat (di bawah menu bar dan notch).
             let area = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1280, height: 720)
-            let w = min(780, area.width - 40), h = min(580, area.height - 70)
+            let w = min(780, area.width - 40), h = min(600, area.height - 70)
             let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: w, height: h),
                                   styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
             window.isReleasedWhenClosed = false
             window.titlebarAppearsTransparent = true
             window.titleVisibility = .hidden
             window.appearance = NSAppearance(named: .darkAqua)
-            window.backgroundColor = NSColor(red: 0.08, green: 0.07, blue: 0.12, alpha: 1)
-            window.minSize = NSSize(width: min(520, w), height: min(360, h))
+            window.backgroundColor = .black
+            window.minSize = NSSize(width: min(720, w), height: min(360, h))
             window.contentView = NSHostingView(rootView: SettingsView(model: model, prefs: model.prefs, updater: updater))
             window.center()
             var f = window.frame
@@ -89,8 +89,8 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         NSApp.orderFrontStandardAboutPanel(options: [
             .applicationName: "Cognify Notch",
             .credits: NSAttributedString(string: L(
-                "Notch ala Dynamic Island dari Cognify: lagu yang diputar, agenda & rapat, catatan cepat dan rekam suara, clipboard, tray file, timer belajar, cermin, pintasan, baterai, AirPods, dan download. Semua berjalan di Mac ini.",
-                "A Dynamic Island style notch from Cognify: now playing, agenda & meetings, quick notes and dictation, clipboard, file tray, study timer, mirror, shortcuts, battery, AirPods, and downloads. Everything runs on this Mac.")),
+                "Notch ala Dynamic Island dari Cognify: lagu yang diputar, agenda & rapat, catatan cepat dan rekam suara, clipboard, rak file, timer belajar, kamera, pintasan, baterai, AirPods, dan unduhan. Semuanya jalan di Mac ini.",
+                "Cognify's take on a Dynamic Island: now playing, agenda & meetings, quick and voice notes, clipboard, a file shelf, study timer, camera, shortcuts, battery, AirPods, and downloads. It all runs on your Mac.")),
         ])
     }
 }

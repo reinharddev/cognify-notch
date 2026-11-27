@@ -228,40 +228,40 @@ enum Situation: String, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .normal: return L("Keadaan biasa", "Nothing special")
+        case .normal: return L("Situasi biasa", "Nothing special")
         case .music: return L("Musik diputar", "Music playing")
         case .focus: return L("Timer fokus berjalan", "Focus timer running")
         case .rest: return L("Timer istirahat berjalan", "Break timer running")
         case .offline: return L("Internet putus", "Offline")
         case .batteryLow: return L("Baterai 20% ke bawah", "Battery 20% or less")
         case .batteryCritical: return L("Baterai 10% ke bawah", "Battery 10% or less")
-        case .lateNight: return L("Larut malam (00.00 sampai 05.00)", "Late night (12 am to 5 am)")
+        case .lateNight: return L("Begadang (00.00 sampai 05.00)", "Up late (12 am to 5 am)")
         case .morning: return L("Pagi (05.00 sampai 09.00)", "Morning (5 am to 9 am)")
-        case .uptimeLong: return L("Mac menyala 5 hari atau lebih", "Mac on for 5 days or more")
-        case .uptimeVeryLong: return L("Mac menyala 10 hari atau lebih", "Mac on for 10 days or more")
-        case .sleeping: return L("Mouse lama tidak digerakkan", "Mouse idle for a while")
-        case .waking: return L("Mouse bergerak lagi", "Mouse moves again")
+        case .uptimeLong: return L("Mac sudah nyala 5 hari lebih", "Mac's been on for 5+ days")
+        case .uptimeVeryLong: return L("Mac sudah nyala 10 hari lebih", "Mac's been on for 10+ days")
+        case .sleeping: return L("Mouse lama diam", "Mouse hasn't moved in a while")
+        case .waking: return L("Mouse gerak lagi", "Mouse moves again")
         case .charging: return L("Charger dicolok", "Charger plugged in")
         case .chargerFull: return L("Baterai penuh", "Fully charged")
         case .unplugged: return L("Charger dicabut", "Charger unplugged")
-        case .lowBatteryNotice: return L("Peringatan baterai lemah", "Low battery warning")
-        case .audioConnected: return L("AirPods atau headphone tersambung", "AirPods or headphones connected")
-        case .audioDisconnected: return L("AirPods atau headphone terputus", "AirPods or headphones disconnected")
-        case .downloadDone: return L("Unduhan selesai", "Download finished")
-        case .downloadFailed: return L("Unduhan gagal", "Download failed")
-        case .downloadCanceled: return L("Unduhan dibatalkan", "Download canceled")
-        case .capsLock: return L("Caps Lock menyala", "Caps Lock turned on")
-        case .inputSource: return L("Bahasa keyboard berganti", "Keyboard language changed")
-        case .networkUp: return L("Internet kembali", "Back online")
-        case .networkDown: return L("Internet terputus (kabar)", "Connection lost (notice)")
+        case .lowBatteryNotice: return L("Baterai mau habis", "Low battery warning")
+        case .audioConnected: return L("AirPods atau headphone nyambung", "AirPods or headphones connect")
+        case .audioDisconnected: return L("AirPods atau headphone terputus", "AirPods or headphones disconnect")
+        case .downloadDone: return L("Unduhan selesai", "Download finishes")
+        case .downloadFailed: return L("Unduhan gagal", "Download fails")
+        case .downloadCanceled: return L("Unduhan dibatalkan", "Download is canceled")
+        case .capsLock: return L("Caps Lock nyala", "Caps Lock turns on")
+        case .inputSource: return L("Ganti bahasa keyboard", "Keyboard language changes")
+        case .networkUp: return L("Internet balik lagi", "Back online")
+        case .networkDown: return L("Internet putus (kabar)", "Connection drops (notice)")
         case .taskDone: return L("Tersimpan atau selesai", "Saved or done")
         case .taskFailed: return L("Gagal menyimpan", "Failed to save")
-        case .alert: return L("Pengingat (timer, minum, tugas)", "Reminder (timer, water, task)")
-        case .volumeUp: return L("Volume dinaikkan", "Volume turned up")
-        case .volumeDown: return L("Volume diturunkan", "Volume turned down")
-        case .muted: return L("Suara dibisukan", "Sound muted")
-        case .brightUp: return L("Layar dicerahkan", "Screen brightened")
-        case .brightDown: return L("Layar diredupkan", "Screen dimmed")
+        case .alert: return L("Pengingat (timer, minum, tugas)", "Reminders (timer, water, tasks)")
+        case .volumeUp: return L("Volume naik", "Volume up")
+        case .volumeDown: return L("Volume turun", "Volume down")
+        case .muted: return L("Suara dimatikan", "Muted")
+        case .brightUp: return L("Layar makin terang", "Screen gets brighter")
+        case .brightDown: return L("Layar makin redup", "Screen gets dimmer")
         }
     }
 
@@ -337,16 +337,16 @@ enum CompanionMode: String, CaseIterable, Identifiable {
     var label: String {
         switch self {
         case .dynamic: return L("Dinamis (acak)", "Dynamic (random)")
-        case .custom: return L("Per kejadian", "Per event")
+        case .custom: return L("Per momen", "Per moment")
         case .fixed: return L("Statis", "Static")
         }
     }
 
     var hint: String {
         switch self {
-        case .dynamic: return L("Mengikuti keadaan, kadang kaget atau iseng sendiri.", "Follows what is going on, sometimes startled or playful on its own.")
-        case .custom: return L("Kamu menentukan ekspresi tiap keadaan dan kejadian. Tidak ada yang acak.", "You choose the expression for each situation and event. Nothing is random.")
-        case .fixed: return L("Satu ekspresi saja, tidak berubah.", "One expression that never changes.")
+        case .dynamic: return L("Ikut suasana sekitar, sesekali kaget atau iseng sendiri.", "Reacts to what's going on, and now and then gets startled or playful by itself.")
+        case .custom: return L("Kamu yang pilih ekspresi buat tiap situasi dan momen. Tidak ada yang acak.", "You pick the face for every situation and moment. Nothing is random.")
+        case .fixed: return L("Satu ekspresi terus, tidak ganti-ganti.", "One face, all the time.")
         }
     }
 }

@@ -1,6 +1,6 @@
 # Cognify Notch
 
-Notch ala Dynamic Island untuk MacBook: arahkan kursor ke notch, lalu notch membuka panel berisi lagu yang sedang diputar, agenda dan rapat, catatan cepat dan rekam suara, riwayat clipboard, tray file, timer belajar, cermin kamera, dan pintasan. Tersedia dalam Bahasa Indonesia dan Inggris. Semua berjalan di Mac kamu; tidak ada akun dan tidak ada data yang dikirim ke pembuatnya.
+Notch ala Dynamic Island untuk MacBook: arahkan kursor ke notch, lalu notch membuka panel berisi lagu yang sedang diputar, agenda dan rapat, catatan cepat dan rekam suara, riwayat clipboard, tray file, timer belajar, cermin kamera, dan pintasan. Antarmuka app berbahasa Inggris. Semua berjalan di Mac kamu; tidak ada akun dan tidak ada data yang dikirim ke pembuatnya.
 
 **[Unduh versi terbaru (DMG)](https://github.com/reinharddev/cognify-notch/releases/latest)** · macOS 13 atau lebih baru · Apple Silicon dan Intel
 
@@ -28,7 +28,7 @@ Cognify Notch adalah bagian dari Cognify, aplikasi catatan dan belajar berbasis 
 | Progress download | File yang sedang diunduh ke folder Downloads tampil di notch beserta persennya. |
 | Shortcut keyboard | ⌃⌥N (bisa diganti) membuka notch dan langsung bisa mengetik. Esc atau klik di luar notch menutupnya. |
 
-Pengaturan ada di ikon notch di menu bar: nyalakan atau matikan tiap fitur, buka saat Mac dinyalakan, dan periksa update. Jendela Pengaturan (⌘,) mengatur ukuran panel, jeda hover, shortcut, urutan tab, dan bahasa. Update dipasang otomatis lewat [Sparkle](https://sparkle-project.org).
+Pengaturan ada di ikon notch di menu bar: nyalakan atau matikan tiap fitur, buka saat Mac dinyalakan, dan periksa update. Jendela Pengaturan (⌘,) mengatur ukuran panel, jeda hover, shortcut, dan urutan tab. Update dipasang otomatis lewat [Sparkle](https://sparkle-project.org).
 
 ## Izin macOS
 

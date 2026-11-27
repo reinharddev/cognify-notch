@@ -57,6 +57,8 @@ struct NotchRoot: View {
                 bodyShape.fill(Color.black)
                     .shadow(color: .black.opacity(glass ? 0 : model.expanded ? 0.45 : model.headMode ? 0.35 : 0), radius: model.headMode ? 6 : 16, y: model.headMode ? 2 : 6)
                     .opacity(glass ? 0 : 1)
+                    // Pendar tipis warna aksen saat tertutup.
+                    .shadow(color: Color.accent.opacity(model.expanded || glass || model.live == nil ? 0 : 0.35), radius: 8, y: 2)
                 // Latar kustom (warna, gradien, gambar): panel terbuka, notch melayang, dan notch diam (bila "Notch diam ikut tema" menyala).
                 if model.prefs.customBackgroundActive && (model.expanded || model.detached || model.prefs.idleThemed) && !model.headMode {
                     CustomBackground(prefs: model.prefs)
@@ -88,9 +90,29 @@ struct NotchRoot: View {
                     .clipShape(bodyShape)
             }
             .frame(width: model.size.width, height: model.size.height)
+            // Di luar bentuk notch supaya cincin dan lencana tidak ikut terpotong.
+            .overlay { if model.headMode { FaceExtras(model: model) } }
+            // Kapsul melayang: lirik di kapsul kecil di bawahnya.
+            .overlay(alignment: .bottom) {
+                if model.lyricRow && model.detached {
+                    WingLyricLine(lyrics: model.lyrics, media: model.media, centered: true)
+                        .frame(width: NotchModel.lyricBubbleWidth)
+                        .padding(.horizontal, Theme.Space.s)
+                        .frame(height: 22)
+                        .background(Capsule().fill(.black.opacity(0.9)))
+                        .fixedSize()
+                        .offset(y: 28)
+                        .opacity(model.lyricHidden ? 0 : 1)
+                        .animation(.easeOut(duration: 0.2), value: model.lyricHidden)
+                        .allowsHitTesting(false)
+                }
+            }
             .offset(x: model.shapeOffset + model.edgeShift.width, y: model.edgeShift.height + (model.autoHidden ? -(model.size.height + 12) : 0))
             .opacity(model.autoHidden ? 0 : 1)
             .animation(.easeInOut(duration: 0.4), value: model.tab == .sky)
+            .animation(.notch, value: model.lyricRow)
+            .animation(.easeOut(duration: 0.2), value: model.lyricHidden)
+            .animation(.notch, value: model.showsLyricBubble) // wajah bergeser halus saat lirik muncul atau hilang
             .animation(.notch, value: model.expanded) // menutup saat pindah tab tetap meluncur, tidak melompat
             Spacer(minLength: 0)
         }
@@ -104,7 +126,7 @@ struct NotchRoot: View {
     private var bodyShape: AnyShape {
         if model.headMode { return AnyShape(Circle()) }
         if model.detached {
-            let r = model.expanded ? max(16, CGFloat(model.prefs.roundness)) : min(14, model.size.height / 2)
+            let r = model.expanded ? max(16, CGFloat(model.prefs.roundness)) : model.size.height / 2
             return AnyShape(RoundedRectangle(cornerRadius: r, style: .continuous))
         }
         return AnyShape(NotchShape(top: model.expanded ? 12 : 6, bottom: model.expanded ? CGFloat(model.prefs.roundness) : 12))
@@ -132,14 +154,97 @@ struct NotchRoot: View {
         } else if let live = model.live {
             let pair = model.livePair
             LiveWings(live: pair?.left ?? live, others: pair?.right ?? [], clock: model.clock, gap: model.barGap, wings: model.wings, media: model.media,
-                      spectrum: model.spectrum, face: model.face, lyrics: model.lyrics, onBannerDone: { model.endSongBanner($0) })
+                      spectrum: model.spectrum, face: model.face, lyrics: model.lyrics, spread: model.lyricRow && !model.detached, onBannerDone: { model.endSongBanner($0) })
                 .frame(height: model.notchSize.height)
+                .padding(.bottom, model.lyricRow && !model.detached && !model.lyricHidden ? NotchModel.lyricRowHeight : 0)
+                .overlay(alignment: .bottom) {
+                    if model.lyricRow && !model.detached && !model.lyricHidden {
+                        WingLyricLine(lyrics: model.lyrics, media: model.media, centered: true)
+                            .padding(.horizontal, Theme.Space.m)
+                            .frame(height: NotchModel.lyricRowHeight)
+                            .transition(.opacity)
+                    }
+                }
                 .transition(.opacity.combined(with: .scale(scale: 0.9)))
         }
     }
 }
 
 // MARK: - Sayap saat tertutup
+
+/// Tambahan gaya wajah melayang: cincin progres di sekeliling, lencana aktivitas, dan penghitung sisanya.
+struct FaceExtras: View {
+    @ObservedObject var model: NotchModel
+
+    private var activities: [NotchModel.Live] { model.steadyLives }
+
+    private var ring: (value: Double, tint: Color)? {
+        if let percent = model.chargingPercent { return (Double(percent) / 100, .green) }
+        if let level = model.live?.level { return (level, .accent) }
+        if model.timer.running { return (model.timer.progress, model.timer.mode == .focus ? .accent : .green) }
+        return nil
+    }
+
+    var body: some View {
+        ZStack {
+            Color.clear // tanpa ini wadah mengempis saat tidak ada cincin, dan lencana pindah ke tengah
+            if let ring {
+                Circle().stroke(Theme.track, lineWidth: 3)
+                Circle().trim(from: 0, to: ring.value)
+                    .stroke(ring.tint, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+            }
+        }
+        .padding(-3)
+        .overlay(alignment: .bottomTrailing) { badge.offset(x: 4, y: 3) }
+        .overlay(alignment: .topTrailing) {
+            if activities.count > 2 {
+                Text("+\(activities.count - 2)").font(.system(size: 9, weight: .bold)).foregroundStyle(.black)
+                    .padding(.horizontal, 4).background(Capsule().fill(.white)).offset(x: 6, y: -4)
+            }
+        }
+        .overlay(alignment: .leading) { lyricBubble.offset(x: NotchModel.headSize + Theme.Space.m) }
+        .allowsHitTesting(false)
+    }
+
+    /// Wajah tidak punya sayap, jadi baris lirik tampil sebagai gelembung di sampingnya.
+    @ViewBuilder private var lyricBubble: some View {
+        if model.showsLyricBubble {
+            WingLyricLine(lyrics: model.lyrics, media: model.media)
+                .frame(width: NotchModel.lyricBubbleWidth - 2 * Theme.Space.s)
+                .padding(.horizontal, Theme.Space.s)
+                .frame(height: 26)
+                .background(Capsule().fill(.black))
+                .fixedSize()
+                .transition(.opacity.combined(with: .scale(scale: 0.6, anchor: .leading)))
+        }
+    }
+
+    @ViewBuilder private var badge: some View {
+        if model.chargingPercent != nil {
+            dot("bolt.fill", .green)
+        } else if let live = model.live, live.level != nil {
+            dot(live.icon, live.tint)
+        } else if activities.contains(where: \.media) {
+            Artwork(media: model.media, size: 16).clipShape(Circle())
+        } else if model.timer.running {
+            // Sisa menit timer; cincinnya sudah menunjukkan kemajuan.
+            Text("\(Int((model.timer.remaining / 60).rounded(.up)))").font(.system(size: 8.5, weight: .bold).monospacedDigit())
+                .frame(width: 16, height: 16)
+                .background(Circle().fill(.black))
+                .overlay(Circle().strokeBorder(Color.white.opacity(0.25)))
+        } else if let first = activities.first {
+            dot(first.icon, first.tint)
+        }
+    }
+
+    private func dot(_ icon: String, _ tint: Color) -> some View {
+        Image(systemName: icon).font(.system(size: 8, weight: .bold)).foregroundStyle(tint)
+            .frame(width: 16, height: 16)
+            .background(Circle().fill(.black))
+            .overlay(Circle().strokeBorder(Color.white.opacity(0.25)))
+    }
+}
 
 struct LiveWings: View {
     let live: NotchModel.Live
@@ -152,6 +257,8 @@ struct LiveWings: View {
     let spectrum: Spectrum
     var face: Face? = nil
     var lyrics: LyricsService? = nil
+    /// Baris lirik di bawah: isi sayap dirapatkan ke tepi.
+    var spread = false
     var onBannerDone: (String) -> Void = { _ in }
 
     /// Mata mengecil bersama sayapnya supaya tidak terpotong.
@@ -244,7 +351,8 @@ struct LiveWings: View {
                         .foregroundStyle(live.tint)
                 }
             }
-            .frame(width: max(0, wings.left - 6))
+            .padding(.leading, spread && others.isEmpty ? 8 : 0)
+            .frame(width: max(0, wings.left - 6), alignment: spread ? .leading : .center)
             Color.clear.frame(width: gap) // area notch fisik
             Group {
                 if !others.isEmpty {
@@ -261,7 +369,8 @@ struct LiveWings: View {
                     rightView(live, withIcon: false)
                 }
             }
-            .frame(width: max(0, wings.right - 6))
+            .padding(.trailing, spread && others.isEmpty ? 8 : 0)
+            .frame(width: max(0, wings.right - 6), alignment: spread ? .trailing : .center)
         }
     }
 }
@@ -320,6 +429,7 @@ struct SongTitle: View {
 struct WingLyricLine: View {
     @ObservedObject var lyrics: LyricsService
     @ObservedObject var media: MediaMonitor
+    var centered = false
     @ObservedObject private var style = LyricStyle.shared
     @Environment(\.snapshot) private var snapshot
 
@@ -341,7 +451,7 @@ struct WingLyricLine: View {
             .foregroundStyle(style.resolved(artwork: media.artwork).active ?? .white)
             .lineLimit(1)
             .truncationMode(.tail)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: centered ? .center : .leading)
             .id(text)
             .transition(.asymmetric(insertion: .opacity.combined(with: .offset(y: 6)), removal: .opacity))
             .animation(.easeOut(duration: 0.25), value: text)
@@ -433,7 +543,7 @@ struct ExpandedView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .padding(.top, 8)
             if !model.dropTargeted, !(model.toast?.isBanner ?? false) {
-                PageDock(tabs: model.tabs, current: model.tab, select: { model.go(to: $0) }, glass: model.prefs.activeTheme == .glass)
+                PageDock(tabs: model.tabs, current: model.tab, select: { model.go(to: $0) }, glass: model.prefs.activeTheme == .glass, onSky: model.tab == .sky)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 7)
                     .zIndex(1) // ikon yang membesar boleh menutupi isi halaman di atasnya
@@ -456,7 +566,7 @@ struct ExpandedView: View {
         case .clipboard: ClipboardPanel(model: model, history: model.clipboard)
         case .tray: TrayPanel(model: model, tray: model.tray)
         case .timer: TimerPanel(timer: model.timer)
-        case .mirror: MirrorPanel(camera: model.camera)
+        case .mirror: MirrorPanel(camera: model.camera, mic: model.mic, showCamera: model.features.camera, showMic: model.features.micTest)
         case .shortcuts: ShortcutsPanel(model: model, shortcuts: model.shortcuts)
         case .cognify: CognifyPanel(model: model, hub: model.hub)
         }
@@ -561,8 +671,8 @@ struct LowPowerButton: View {
         .disabled(busy)
         .accessibilityLabel(L("Mode Daya Rendah", "Low Power Mode"))
         .accessibilityAddTraits(on ? .isSelected : [])
-        .help(error ?? (on ? L("Mode Daya Rendah menyala · klik untuk mematikan (perlu kata sandi)", "Low Power Mode is on · click to turn off (asks for your password)")
-                          : L("Nyalakan Mode Daya Rendah (perlu kata sandi)", "Turn on Low Power Mode (asks for your password)")))
+        .help(error ?? (on ? L("Mode Daya Rendah nyala · klik buat mematikan (perlu kata sandi)", "Low Power Mode is on · click to turn it off (needs your password)")
+                          : L("Nyalakan Mode Daya Rendah (perlu kata sandi)", "Turn on Low Power Mode (needs your password)")))
     }
 }
 
@@ -586,112 +696,104 @@ struct BatteryRing: View {
     }
 }
 
-/// Titik halaman di bawah panel. Saat diarahkan kursor berubah seperti Dock macOS: titik jadi
-/// ikon halaman, yang paling dekat kursor membesar paling besar dan namanya muncul di atasnya.
-/// Klik untuk lompat ke halaman itu.
+/// Titik halaman di bawah panel. Saat diarahkan kursor berubah jadi bar ikon seragam: halaman aktif berupa
+/// pil bernama, ikon yang ditunjuk memunculkan namanya. Klik untuk lompat ke halaman itu.
 struct PageDock: View {
     let tabs: [NotchModel.Tab]
     let current: NotchModel.Tab
     let select: (NotchModel.Tab) -> Void
-    var previewPointer: CGFloat? = nil // untuk snapshot
-    var glass = false // tema kaca: ubin ikon berupa kaca
-    @State private var hoverPointer: CGFloat? // posisi x kursor di baris ikon (nil = tidak diarahkan)
-    private var pointer: CGFloat? { hoverPointer ?? previewPointer }
+    var preview = false // untuk snapshot: bar selalu terbuka
+    var glass = false // tema kaca: bar berupa kaca
+    var onSky = false // halaman Langit: putih, bukan warna aksen
+    @State private var hovering = false
+    @State private var pointed: NotchModel.Tab?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private static let base: CGFloat = 20   // ukuran ikon tanpa pembesaran
-    private static let peak: CGFloat = 34   // ukuran ikon tepat di bawah kursor
-    private static let reach: CGFloat = 64  // jarak (pt) pengaruh pembesaran
-    private static let gap: CGFloat = 4
+    private static let side: CGFloat = 24
+    private static let gap: CGFloat = 2
+
+    private var open: Bool { hovering || preview }
+    private var motion: Animation? { reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.85) }
+    private var tint: Color { onSky ? .white.opacity(0.28) : .accent }
+    /// Perkiraan lebar bar: area kursor harus menutupnya supaya tidak "jatuh" ke luar saat dipakai.
+    private var hoverWidth: CGFloat { CGFloat(tabs.count) * (Self.side + Self.gap) + 100 }
 
     var body: some View {
         ZStack(alignment: .bottom) {
-            if let pointer {
-                icons(pointer)
-                    .transition(.opacity.combined(with: .scale(scale: 0.6, anchor: .bottom)))
-            } else {
-                dots.transition(.opacity)
+            dots.opacity(open ? 0 : 1)
+            if open {
+                bar.transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.92)).combined(with: .offset(y: 6)))
             }
         }
         .frame(height: 6, alignment: .bottom)
-        // Area hover setinggi ikon terbesar supaya kursor tidak "jatuh" saat ikon membesar.
         .background(alignment: .bottom) {
             Color.clear
-                .frame(width: hoverWidth, height: Self.peak + 14)
+                .frame(width: hoverWidth, height: 40)
                 .notchPointer { point in
-                    guard let point else {
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { hoverPointer = nil }
-                        return
-                    }
-                    let x = point.x - (hoverWidth - restWidth) / 2
-                    if hoverPointer == nil {
-                        withAnimation(.spring(response: 0.28, dampingFraction: 0.8)) { hoverPointer = x }
-                    } else {
-                        // Posisi kursor datang 20x per detik: animasi pendek menghaluskan pembesaran.
-                        withAnimation(.easeOut(duration: 0.09)) { hoverPointer = x }
-                    }
+                    // Posisi datang berkali-kali per detik; hanya masuk dan keluar yang mengubah tampilan.
+                    guard hovering != (point != nil) else { return }
+                    withAnimation(motion) { hovering = point != nil; if point == nil { pointed = nil } }
                 }
         }
     }
-
-    private var restWidth: CGFloat { CGFloat(tabs.count) * (Self.base + Self.gap) - Self.gap }
-    private var hoverWidth: CGFloat { restWidth + 2 * (Self.peak - Self.base) }
 
     private var dots: some View {
         HStack(spacing: 5) {
             ForEach(tabs, id: \.self) { tab in
                 Capsule()
-                    .fill(Color.white.opacity(tab == current ? 0.9 : 0.25))
+                    .fill(tab == current ? (onSky ? Color.white : Color.accent) : Color.white.opacity(onSky ? 0.5 : 0.25))
                     .frame(width: tab == current ? 14 : 5, height: 5)
             }
         }
-        .animation(.tabSwitch, value: current)
+        .animation(motion, value: current)
     }
 
-    /// Ukuran ikon ke-i menurut jaraknya dari kursor (kurva kosinus, seperti Dock).
-    private func size(_ index: Int, _ pointer: CGFloat) -> CGFloat {
-        let center = CGFloat(index) * (Self.base + Self.gap) + Self.base / 2
-        let distance = min(1, abs(pointer - center) / Self.reach)
-        return Self.base + (Self.peak - Self.base) * (cos(distance * .pi) + 1) / 2
-    }
-
-    private func icons(_ pointer: CGFloat) -> some View {
-        let nearest = tabs.indices.min { abs(pointer - centerX($0)) < abs(pointer - centerX($1)) }
-        return HStack(alignment: .bottom, spacing: Self.gap) {
-            ForEach(Array(tabs.enumerated()), id: \.element) { index, tab in
-                let side = size(index, pointer)
-                Button { select(tab) } label: {
-                    Image(systemName: tab.icon)
-                        // Ikon digambar pada satu ukuran tetap lalu diskalakan. Ukuran font yang berubah tiap
-                        // gerakan kursor membuat SwiftUI menyimpan ribuan salinan glyph (memori naik berjam-jam).
-                        .font(.system(size: Self.peak * 0.46, weight: .semibold))
-                        .scaleEffect(side / Self.peak)
-                        .frame(width: side, height: side)
-                        .background {
-                            if glass { GlassTile(radius: side * 0.28, tint: tab == current ? Color.accent : nil) }
-                            else { RoundedRectangle(cornerRadius: side * 0.28, style: .continuous).fill(tab == current ? Color.accent : Color(white: 0.2)) }
-                        }
-                        .foregroundStyle(.white)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .overlay(alignment: .top) {
-                    if index == nearest {
-                        Text(tab.label)
-                            .font(.system(size: 10.5, weight: .semibold))
-                            .lineLimit(1)
-                            .fixedSize()
-                            .padding(.horizontal, 7).padding(.vertical, 3)
-                            .background(Capsule().fill(Color(white: 0.16)))
-                            .foregroundStyle(.white)
-                            .offset(y: -22)
-                    }
-                }
-            }
+    private var bar: some View {
+        HStack(spacing: Self.gap) {
+            ForEach(tabs, id: \.self) { item($0) }
+        }
+        .padding(2)
+        .background {
+            if glass { GlassTile(radius: (Self.side + 4) / 2, tint: nil) }
+            else { Capsule().fill(Color(white: 0.12)) }
         }
         .fixedSize()
+        .animation(motion, value: current)
     }
 
-    private func centerX(_ index: Int) -> CGFloat { CGFloat(index) * (Self.base + Self.gap) + Self.base / 2 }
+    private func item(_ tab: NotchModel.Tab) -> some View {
+        let selected = tab == current
+        return Button { select(tab) } label: {
+            HStack(spacing: 5) {
+                Image(systemName: tab.icon).font(.system(size: 11, weight: .semibold))
+                if selected { Text(tab.label).font(.system(size: 10.5, weight: .semibold)).lineLimit(1) }
+            }
+            .padding(.horizontal, selected ? 10 : 0)
+            .frame(minWidth: Self.side)
+            .frame(height: Self.side)
+            .background(Capsule().fill(selected ? tint : Color.white.opacity(pointed == tab ? 0.14 : 0)))
+            .foregroundStyle(.white.opacity(selected || pointed == tab ? 1 : 0.65))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(PressableStyle())
+        .accessibilityLabel(tab.label)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+        .notchHover { inside in
+            if inside { pointed = tab } else if pointed == tab { pointed = nil }
+        }
+        .overlay(alignment: .top) {
+            if pointed == tab && !selected {
+                Text(tab.label)
+                    .font(.system(size: 10.5, weight: .semibold))
+                    .lineLimit(1)
+                    .fixedSize()
+                    .padding(.horizontal, 8).padding(.vertical, 2)
+                    .background(Capsule().fill(Color(white: 0.17)))
+                    .foregroundStyle(.white)
+                    .offset(y: -22)
+            }
+        }
+    }
 }
 
 // MARK: - Beranda: deadline + catatan cepat
@@ -701,9 +803,12 @@ struct HomePanel: View {
     @ObservedObject var calendar: CalendarFeed
 
     var body: some View {
-        HStack(alignment: .top, spacing: 14) {
-            AgendaList(model: model, calendar: calendar, rows: 3).frame(width: 318)
+        HStack(alignment: .top, spacing: Theme.Space.s) {
+            AgendaList(model: model, calendar: calendar, rows: 3)
+                .notchScrollCard()
+                .frame(width: 334)
             QuickNote(model: model, compact: false)
+                .notchScrollCard()
         }
     }
 }
@@ -740,6 +845,12 @@ struct AgendaList: View {
         return (cognify + cal).sorted { $0.date < $1.date }
     }
 
+    /// Tiap tombol izin memakan tempat satu baris agenda.
+    var visibleRows: Int {
+        let buttons = model.features.calendar ? [calendar.access, calendar.reminderAccess].filter { $0 == .denied }.count : 0
+        return max(1, rows - buttons)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             SectionLabel(text: model.features.calendar ? L("Agenda", "Agenda") : L("Berikutnya", "Up next")).padding(.bottom, 2)
@@ -747,25 +858,25 @@ struct AgendaList: View {
                 Placeholder(icon: "calendar", text: L("Nyalakan Kalender lewat ikon notch di menu bar", "Turn on Calendar from the notch icon in the menu bar"))
             } else if model.appMode && entries.isEmpty {
                 if calendar.access != .denied && calendar.reminderAccess != .denied {
-                    Placeholder(icon: "checkmark.seal", text: L("Tidak ada acara hari ini & besok", "Nothing today or tomorrow"))
+                    Placeholder(icon: "checkmark.seal", text: L("Hari ini & besok kosong", "Nothing today or tomorrow"))
                 }
             } else if model.appMode {
                 agendaRows
             } else if !model.connected {
-                Placeholder(icon: "hourglass", text: L("Menghubungkan ke Cognify…", "Connecting to Cognify…"))
+                Placeholder(icon: "hourglass", text: L("Menyambung ke Cognify…", "Connecting to Cognify…"))
             } else if !entries.isEmpty {
                 agendaRows
             } else if model.state != nil {
-                Placeholder(icon: "checkmark.seal", text: L("Tidak ada deadline 7 hari ke depan", "No deadlines in the next 7 days"))
+                Placeholder(icon: "checkmark.seal", text: L("Tidak ada tenggat 7 hari ke depan", "No deadlines in the next 7 days"))
             }
             if model.features.calendar && calendar.access == .denied {
                 PermissionButton(
-                    text: L("Izinkan Kalender untuk melihat acara", "Allow Calendar to see events"),
+                    text: L("Izinkan Kalender biar acaramu muncul", "Allow Calendar access to see your events"),
                     pane: "Privacy_Calendars")
             }
             if model.features.calendar && calendar.reminderAccess == .denied {
                 PermissionButton(
-                    text: L("Izinkan Pengingat untuk melihat pengingat terjadwal", "Allow Reminders to see scheduled reminders"),
+                    text: L("Izinkan Pengingat biar pengingat berjadwal muncul", "Allow Reminders access to see scheduled reminders"),
                     pane: "Privacy_Reminders")
             }
             Spacer(minLength: 0)
@@ -774,7 +885,8 @@ struct AgendaList: View {
                     Spinner()
                     Text(L("Memproses \(processing) item…", "Processing \(processing) items…")).font(.system(size: 10.5))
                 }
-                .foregroundStyle(.white.opacity(0.55))
+                .foregroundStyle(Theme.textSecondary)
+                .padding(.leading, 6)
             }
         }
     }
@@ -836,7 +948,7 @@ struct EventRow: View {
                 }
             }
             .padding(.horizontal, 6).padding(.vertical, 2)
-            .background(RoundedRectangle(cornerRadius: 9).fill(Color.white.opacity(hover ? 0.08 : 0)))
+            .background(RoundedRectangle(cornerRadius: Theme.Radius.item, style: .continuous).fill(Color.white.opacity(hover ? 0.08 : 0)))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -848,7 +960,7 @@ struct EventRow: View {
 
 extension AgendaList {
     var agendaRows: some View {
-        ForEach(entries.prefix(rows)) { entry in
+        ForEach(entries.prefix(visibleRows)) { entry in
             switch entry {
             case .cognify(let event):
                 EventRow(event: event, now: model.now, compact: compact) { model.open(event.path) }
@@ -873,17 +985,20 @@ struct CalendarRow: View {
         HStack(spacing: 6) {
             Button(action: action) {
                 HStack(spacing: 9) {
-                    RoundedRectangle(cornerRadius: 2).fill(event.color).frame(width: 4, height: 24).frame(width: 24)
+                    Capsule().fill(event.color).frame(width: 4, height: 24).frame(width: 24)
                     VStack(alignment: .leading, spacing: 1) {
                         Text(event.title).font(.system(size: 12, weight: .medium)).lineLimit(1)
-                        Text("\(Relative.long(event.start, allDay: event.allDay, now: now)) · \(event.calendar)")
-                            .font(.system(size: 10.5)).foregroundStyle(.white.opacity(0.5)).lineLimit(1)
+                        Text(compact ? "\(Relative.long(event.start, allDay: event.allDay, now: now)) · \(event.calendar)" : event.calendar)
+                            .font(.system(size: 10.5)).foregroundStyle(Theme.textSecondary).lineLimit(1)
                         if compact, let description = event.notes?.trimmingCharacters(in: .whitespacesAndNewlines), !description.isEmpty {
                             Text(description).font(.system(size: 9.5)).foregroundStyle(.white.opacity(0.62))
                                 .lineLimit(1).truncationMode(.tail)
                         }
                     }
                     Spacer(minLength: 6)
+                    if !compact {
+                        NotchChip(text: Relative.long(event.start, allDay: event.allDay, now: now), tint: event.color)
+                    }
                 }
                 .padding(.horizontal, 6).padding(.vertical, 2)
                 .contentShape(Rectangle())
@@ -909,7 +1024,7 @@ struct CalendarRow: View {
                 .help(L("Gabung rapat", "Join meeting"))
             }
         }
-        .background(RoundedRectangle(cornerRadius: 9).fill(Color.white.opacity(hover || imminent ? 0.07 : 0)))
+        .background(RoundedRectangle(cornerRadius: Theme.Radius.item, style: .continuous).fill(Color.white.opacity(hover || imminent ? 0.07 : 0)))
         .notchHover { hover = $0 }
     }
 
@@ -934,7 +1049,7 @@ struct QuickNote: View {
     @ViewBuilder private var reminderLine: some View {
         if let reminder {
             if reminder.isPast {
-                Label(L("Waktu sudah lewat, pengingat tidak dibuat", "Time has passed, no reminder"), systemImage: "clock.badge.exclamationmark")
+                Label(L("Waktunya sudah lewat, pengingat tidak dibuat", "That time already passed, so no reminder"), systemImage: "clock.badge.exclamationmark")
                     .font(.system(size: 10.5)).foregroundStyle(Color.orange).lineLimit(1)
             } else {
                 Button { model.noteReminderOff.toggle() } label: {
@@ -947,8 +1062,8 @@ struct QuickNote: View {
                         .lineLimit(1)
                 }
                 .buttonStyle(.plain)
-                .help(model.noteReminderOff ? L("Klik untuk menyalakan pengingat", "Click to turn the reminder on")
-                                            : L("Dibuat saat Enter · klik untuk mematikan", "Created on Enter · click to turn off"))
+                .help(model.noteReminderOff ? L("Klik buat nyalakan pengingat", "Click to turn the reminder on")
+                                            : L("Dibuat saat tekan Enter · klik buat mematikan", "Set when you press Enter · click to turn off"))
             }
         }
     }
@@ -957,16 +1072,14 @@ struct QuickNote: View {
         VStack(alignment: .leading, spacing: 6) {
             SectionLabel(text: L("Catatan cepat", "Quick note"))
             ZStack(alignment: .topLeading) {
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(Color.white.opacity(focused ? 0.1 : 0.07))
-                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.accent.opacity(focused ? 0.7 : 0), lineWidth: 1))
+                Color.clear.notchFieldBox(height: nil, radius: Theme.Radius.item, focused: focused)
                 if snapshot {
-                    Text(model.note.isEmpty ? L("Tulis sesuatu, tekan Enter…", "Type something, press Enter…") : model.note)
+                    Text(model.note.isEmpty ? L("Tulis apa saja, tekan Enter…", "Jot something down, press Enter…") : model.note)
                         .font(.system(size: 12))
                         .foregroundStyle(.white.opacity(model.note.isEmpty ? 0.4 : 1))
                         .padding(8)
                 } else {
-                    TextField(L("Tulis sesuatu, tekan Enter…", "Type something, press Enter…"), text: $model.note, axis: .vertical)
+                    TextField(L("Tulis apa saja, tekan Enter…", "Jot something down, press Enter…"), text: $model.note, axis: .vertical)
                         .textFieldStyle(.plain)
                         .font(.system(size: 12))
                         .lineLimit(compact ? 3 : 1, reservesSpace: compact)
@@ -994,11 +1107,11 @@ struct QuickNote: View {
                                 .foregroundStyle(Color.accent).lineLimit(1)
                         }
                         .buttonStyle(.plain)
-                        .help(L("Kurs Yahoo Finance · klik untuk menyalin", "Yahoo Finance rate · click to copy"))
+                        .help(L("Kurs Yahoo Finance · klik buat salin", "Yahoo Finance rate · click to copy"))
                     } else if currencyFailed {
-                        Text(L("Kurs tidak tersedia", "Rate unavailable")).font(.system(size: 10.5))
+                        Text(L("Kurs tidak bisa diambil", "Rate unavailable")).font(.system(size: 10.5))
                     } else {
-                        Text(L("Mengambil kurs Yahoo…", "Fetching Yahoo rate…")).font(.system(size: 10.5))
+                        Text(L("Ambil kurs dari Yahoo…", "Getting the rate from Yahoo…")).font(.system(size: 10.5))
                     }
                 } else if model.features.calculator, let result = QuickCalc.preview(model.note) {
                     Button {
@@ -1010,11 +1123,11 @@ struct QuickNote: View {
                             .foregroundStyle(Color.accent).lineLimit(1)
                     }
                     .buttonStyle(.plain)
-                    .help(L("Klik untuk menyalin hasil", "Click to copy the result"))
+                    .help(L("Klik buat salin hasilnya", "Click to copy the result"))
                 } else if reminder != nil {
                     reminderLine
                 } else if !compact {
-                    Text(model.savingNote ? L("Menyimpan…", "Saving…") : L("Enter menyimpan ke Catatan", "Enter saves to Notes")).font(.system(size: 10.5))
+                    Text(model.savingNote ? L("Menyimpan…", "Saving…") : L("Tekan Enter buat simpan ke Catatan", "Press Enter to save to Notes")).font(.system(size: 10.5))
                 }
                 Spacer()
                 if model.hub.linked {
@@ -1068,7 +1181,7 @@ struct TimerPanel: View {
                 sessions
             }
             .disabled(timer.running)
-            .opacity(timer.running ? 0.55 : 1)
+            .opacity(timer.running ? 0.8 : 1)
             .animation(.notch, value: timer.running)
             Spacer(minLength: 0)
             controls
@@ -1082,11 +1195,12 @@ struct TimerPanel: View {
     // Cincin + sisa waktu (+ jam selesai saat berjalan).
     private var ring: some View {
         ZStack {
-            Circle().stroke(Color.white.opacity(0.08), lineWidth: 7)
+            Circle().stroke(Theme.track, lineWidth: 7)
             Circle()
                 .trim(from: 0, to: timer.progress)
                 .stroke(tint, style: StrokeStyle(lineWidth: 7, lineCap: .round))
                 .rotationEffect(.degrees(-90))
+                .shadow(color: tint.opacity(0.5), radius: 6)
                 .animation(.linear(duration: 0.25), value: timer.progress)
             VStack(spacing: 2) {
                 Text(StudyTimer.clock(timer.remaining))
@@ -1122,7 +1236,7 @@ struct TimerPanel: View {
                     .foregroundStyle(.white.opacity(selected ? 1 : 0.6))
                     .contentShape(Capsule())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(PressableStyle())
             }
         }
         .padding(3)
@@ -1159,11 +1273,11 @@ struct TimerPanel: View {
                     Text("\(preset.focus)/\(preset.rest)")
                         .font(.system(size: 10.5, weight: .semibold).monospacedDigit())
                         .padding(.horizontal, 8).padding(.vertical, 5)
-                        .background(Capsule().stroke(Color.white.opacity(selected ? 0.35 : 0), lineWidth: 1))
-                        .foregroundStyle(.white.opacity(selected ? 0.95 : 0.45))
+                        .background(Capsule().stroke(selected ? Color.accent : .clear, lineWidth: 1))
+                        .foregroundStyle(.white.opacity(selected ? 1 : 0.7))
                         .contentShape(Capsule())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(PressableStyle())
             }
         }
     }
@@ -1179,7 +1293,7 @@ struct TimerPanel: View {
             Text(timer.sessionsToday == 0 ? L("Belum ada sesi fokus hari ini", "No focus sessions yet today")
                                           : L("\(timer.sessionsToday) sesi fokus hari ini", "\(timer.sessionsToday) focus sessions today"))
                 .font(.system(size: 10.5))
-                .foregroundStyle(.white.opacity(0.5))
+                .foregroundStyle(Theme.textSecondary)
         }
     }
 
@@ -1229,7 +1343,7 @@ struct NotesPanel: View {
                 if !snapshot { addField }
             }
             if notes.items.isEmpty {
-                Placeholder(icon: "note.text", text: L("Belum ada catatan. Tulis di kolom di atas lalu tekan Enter.", "No notes yet. Type above and press Enter."))
+                Placeholder(icon: "note.text", text: L("Belum ada catatan. Tulis di kolom atas, lalu tekan Enter.", "No notes yet. Type one above and press Enter."))
             } else if snapshot {
                 list
             } else {
@@ -1255,9 +1369,7 @@ struct NotesPanel: View {
                     .disabled(savingDraft)
             }
         }
-        .padding(.horizontal, 10).frame(height: 26)
-        .background(Capsule().fill(Color.white.opacity(focused ? 0.12 : 0.08)))
-        .overlay(Capsule().stroke(Color.accent.opacity(focused ? 0.7 : 0), lineWidth: 1))
+        .notchFieldBox(height: 26, radius: 13, focused: focused)
     }
 
     private func add() {
@@ -1277,7 +1389,7 @@ struct NotesPanel: View {
                 let rate = try await YahooCurrencyRates.rate(from: pair.from, to: pair.to)
                 noteText = text + "\n= " + YahooCurrencyRates.format(pair.amount, from: pair.from, to: pair.to, rate: rate)
             } catch {
-                noteText = text + "\n= " + L("Kurs tidak tersedia", "Rate unavailable")
+                noteText = text + "\n= " + L("Kurs tidak bisa diambil", "Rate unavailable")
             }
             notes.add(noteText)
             model.show(.done(L("Catatan tersimpan", "Note saved")))
@@ -1317,7 +1429,8 @@ struct NoteRow: View {
         }
         .font(.system(size: 11.5))
         .padding(.horizontal, 10).padding(.vertical, 7)
-        .background(RoundedRectangle(cornerRadius: 9).fill(Color.white.opacity(hover ? 0.1 : 0.06)))
+        .background(RoundedRectangle(cornerRadius: Theme.Radius.item, style: .continuous).fill(Color.white.opacity(hover ? 0.1 : 0.06)))
+        .overlay(RoundedRectangle(cornerRadius: Theme.Radius.item, style: .continuous).strokeBorder(Theme.edge))
         .notchHover { hover = $0 }
     }
 
@@ -1413,7 +1526,7 @@ struct ToastBanner: View {
 
     private var detail: String? {
         if case .alert(_, let detail, _) = toast { return detail }
-        if case .failed = toast { return model.appMode ? nil : L("Coba lagi, atau buka Cognify untuk detailnya.", "Try again, or open Cognify for details.") }
+        if case .failed = toast { return model.appMode ? nil : L("Coba lagi, atau buka Cognify buat lihat detailnya.", "Try again, or open Cognify to see what happened.") }
         return nil
     }
 }
@@ -1436,10 +1549,9 @@ struct Spinner: View {
 struct SectionLabel: View {
     let text: String
     var body: some View {
-        Text(text.uppercased())
-            .font(.system(size: 9.5, weight: .semibold))
-            .tracking(0.6)
-            .foregroundStyle(.white.opacity(0.42))
+        Text(text)
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(Theme.textSecondary)
             .padding(.leading, 6)
     }
 }

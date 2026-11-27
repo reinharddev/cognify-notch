@@ -25,7 +25,7 @@ enum LowPowerMode {
     static func failure(from stderr: String) -> Failure {
         if stderr.contains("(-128)") || stderr.lowercased().contains("user canceled") { return .cancelled }
         let line = stderr.split(whereSeparator: \.isNewline).last.map(String.init)?.trimmingCharacters(in: .whitespaces) ?? ""
-        return .failed(line.isEmpty ? L("Mode Daya Rendah gagal diubah", "Could not change Low Power Mode") : line)
+        return .failed(line.isEmpty ? L("Mode Daya Rendah gagal diganti", "Couldn't switch Low Power Mode") : line)
     }
 
     /// Memblokir sampai dialog selesai; panggil dari luar thread utama.

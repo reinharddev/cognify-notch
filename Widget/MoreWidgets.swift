@@ -57,8 +57,8 @@ struct MimikView: View {
 struct MimikWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: "CognifyMimik", provider: Provider()) { MimikView(entry: $0) }
-            .configurationDisplayName("Mimik")
-            .description(tr("Wajah kecil yang berubah ekspresi mengikuti harimu: tenggat, minum, tugas, jam.", "A little face whose mood follows your day: deadlines, water, tasks, time."))
+            .configurationDisplayName("CogniFace")
+            .description(tr("Wajah kecil yang ekspresinya ikut harimu: tenggat, minum, tugas, dan jam.", "A little face whose mood follows your day: deadlines, water, tasks, and time."))
             .supportedFamilies([.systemSmall, .systemMedium])
     }
 }
@@ -96,7 +96,7 @@ struct WeatherWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: "CognifyWeather", provider: Provider()) { WeatherView(entry: $0) }
             .configurationDisplayName(tr("Cuaca", "Weather"))
-            .description(tr("Suhu dan kondisi dari cuaca Notch, dengan wajah Mimik.", "Temperature and conditions from Notch, with a Mimik face."))
+            .description(tr("Suhu dan cuaca dari Notch, ditemani CogniFace.", "Temperature and conditions from Notch, with CogniFace along."))
             .supportedFamilies([.systemSmall, .systemMedium])
     }
 }
@@ -125,7 +125,7 @@ struct WaterWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: "CognifyWater", provider: Provider()) { WaterView(entry: $0) }
             .configurationDisplayName(tr("Air minum", "Water"))
-            .description(tr("Progres minum hari ini terhadap target.", "Today's water intake against your goal."))
+            .description(tr("Sudah minum seberapa banyak hari ini.", "How close you are to today's water goal."))
             .supportedFamilies([.systemSmall])
     }
 }
@@ -169,7 +169,7 @@ struct TimerWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: "CognifyTimer", provider: Provider()) { TimerView(entry: $0) }
             .configurationDisplayName("Timer")
-            .description(tr("Hitung mundur yang sedang berjalan di Notch.", "The countdown running in Notch."))
+            .description(tr("Hitung mundur yang lagi jalan di Notch.", "The countdown running in Notch."))
             .supportedFamilies([.systemSmall])
     }
 }
@@ -209,7 +209,7 @@ struct NotesWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: "CognifyNotes", provider: Provider()) { NotesView(entry: $0) }
             .configurationDisplayName(tr("Catatan cepat", "Quick notes"))
-            .description(tr("Catatan terbaru dari Notch.", "Your latest notes from Notch."))
+            .description(tr("Catatan terbarumu dari Notch.", "Your latest notes from Notch."))
             .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
     }
 }

@@ -1,1 +1,1 @@
-{ "name": "Lirik", "description": "Lirik lagu yang sedang diputar, baris demi baris, tersinkron dengan lagunya.", "width": 620, "height": 150, "anchor": "bottom-center" }
+{ "name": "Lirik", "description": "Lirik lagu yang lagi diputar, jalan baris demi baris ikut lagunya.", "nameEn": "Lyrics", "descriptionEn": "Lyrics of the song that is playing, line by line in time with the music.", "width": 620, "height": 150, "anchor": "bottom-center" }

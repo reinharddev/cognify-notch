@@ -214,16 +214,11 @@ struct ClockPanel: View {
     private static let presets = [1, 3, 5, 10, 15, 30]
 
     var body: some View {
-        // Tiga kolom berbagi lebar panel; isi tiap kolom turun baris bila sempit, jadi tidak ada yang terpotong.
-        ScrollView(.vertical, showsIndicators: false) {
-            HStack(alignment: .top, spacing: 14) {
-                stopwatch.frame(maxWidth: .infinity, alignment: .leading)
-                Divider().overlay(Color.white.opacity(0.08))
-                countdownColumn.frame(maxWidth: .infinity, alignment: .leading)
-                Divider().overlay(Color.white.opacity(0.08))
-                alarmColumn.frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .frame(maxWidth: .infinity, alignment: .top)
+        // Tiga kartu berbagi lebar panel; isi tiap kartu turun baris bila sempit dan digulir bila kepanjangan.
+        HStack(alignment: .top, spacing: Theme.Space.s) {
+            stopwatch.notchScrollCard()
+            countdownColumn.notchScrollCard()
+            alarmColumn.notchScrollCard()
         }
     }
 
@@ -259,7 +254,8 @@ struct ClockPanel: View {
         }
     }
 
-    @State private var alarmTime = Calendar.current.date(bySettingHour: 7, minute: 0, second: 0, of: Date()) ?? Date()
+    @State private var alarmHour = 7
+    @State private var alarmMinute = 0
     @State private var alarmDays: Set<Int> = []
     @State private var alarmLabel = ""
 
@@ -269,13 +265,19 @@ struct ClockPanel: View {
         VStack(alignment: .leading, spacing: 8) {
             SectionLabel(text: L("Alarm", "Alarm"))
             FlowLayout(spacing: 6, lineSpacing: 6) {
-                DatePicker("", selection: $alarmTime, displayedComponents: .hourAndMinute).labelsHidden().datePickerStyle(.field)
+                HStack(spacing: Theme.Space.xs) {
+                    timePart(L("Jam", "Hour"), $alarmHour, 24)
+                    Text(":").fontWeight(.bold)
+                    timePart(L("Menit", "Minute"), $alarmMinute, 60)
+                }
+                .font(.system(size: 11, weight: .semibold).monospacedDigit())
                 Button {
-                    let c = Calendar.current.dateComponents([.hour, .minute], from: alarmTime)
-                    clock.addAlarm(hour: c.hour ?? 7, minute: c.minute ?? 0, days: Array(alarmDays), label: alarmLabel)
+                    clock.addAlarm(hour: alarmHour, minute: alarmMinute, days: Array(alarmDays), label: alarmLabel)
                     alarmLabel = ""
-                } label: { Label(L("Tambah", "Add"), systemImage: "plus") }
+                } label: { Image(systemName: "plus").frame(height: 14) }
                     .buttonStyle(PillButtonStyle(prominent: true))
+                    .help(L("Tambah alarm", "Add alarm"))
+                    .accessibilityLabel(L("Tambah alarm", "Add alarm"))
             }
             FlowLayout(spacing: 3, lineSpacing: 3) {
                 ForEach(Self.dayOrder, id: \.weekday) { d in
@@ -289,10 +291,10 @@ struct ClockPanel: View {
                     .buttonStyle(PressableStyle())
                 }
             }
-            Text(alarmDays.isEmpty ? L("Tanpa hari dipilih: berbunyi sekali.", "No day picked: rings once.") : L("Berulang di hari terpilih.", "Repeats on the picked days."))
+            Text(alarmDays.isEmpty ? L("Tidak pilih hari: bunyi sekali saja.", "No days picked: rings once.") : L("Diulang di hari yang dipilih.", "Repeats on the days you picked."))
                 .font(.system(size: 9.5)).foregroundStyle(.white.opacity(0.4))
             if clock.alarms.isEmpty {
-                Placeholder(icon: "alarm", text: L("Atur jam, lalu Tambah.", "Set a time, then Add."))
+                Placeholder(icon: "alarm", text: L("Atur jamnya, lalu tekan +.", "Set a time, then press +."))
             } else {
                 VStack(spacing: 5) {
                     ForEach(clock.alarms) { alarm in
@@ -302,17 +304,24 @@ struct ClockPanel: View {
                                 .foregroundStyle(alarm.enabled ? .white : .white.opacity(0.35))
                             Text(alarmSubtitle(alarm)).font(.system(size: 10)).foregroundStyle(.white.opacity(0.5)).lineLimit(1)
                             Spacer()
-                            Toggle("", isOn: Binding(get: { alarm.enabled }, set: { clock.setAlarm(alarm.id, enabled: $0) }))
-                                .toggleStyle(.switch).controlSize(.mini).labelsHidden()
+                            Toggle(isOn: Binding(get: { alarm.enabled }, set: { clock.setAlarm(alarm.id, enabled: $0) })) { EmptyView() }
+                                .toggleStyle(MiniSwitch())
+                                .accessibilityLabel(L("Alarm \(alarm.hour):\(alarm.minute)", "Alarm \(alarm.hour):\(alarm.minute)"))
                             Button { clock.removeAlarm(alarm.id) } label: { Image(systemName: "xmark").font(.system(size: 9, weight: .bold)) }
                                 .buttonStyle(.plain).foregroundStyle(.white.opacity(0.5)).help(L("Hapus", "Delete"))
                         }
                         .padding(.horizontal, 9).padding(.vertical, 5)
-                        .background(RoundedRectangle(cornerRadius: 9).fill(Color.white.opacity(0.06)))
+                        .background(RoundedRectangle(cornerRadius: Theme.Radius.item, style: .continuous).fill(Color.white.opacity(0.06)))
                     }
                 }
             }
         }
+    }
+
+    private func timePart(_ title: String, _ value: Binding<Int>, _ count: Int) -> some View {
+        NotchDropdown(title, selection: value, options: (0..<count).map { DropdownOption($0, String(format: "%02d", $0)) }, listWidth: 80)
+            .labelsHidden()
+            .fixedSize()
     }
 
     private func alarmSubtitle(_ a: ClockTools.Alarm) -> String {
@@ -374,7 +383,7 @@ struct ClockPanel: View {
                         .buttonStyle(.plain).foregroundStyle(.white.opacity(0.5)).help(L("Batalkan", "Cancel"))
                 }
                 .padding(.horizontal, 9).padding(.vertical, 5)
-                .background(RoundedRectangle(cornerRadius: 9).fill(Color.white.opacity(0.06)))
+                .background(RoundedRectangle(cornerRadius: Theme.Radius.item, style: .continuous).fill(Color.white.opacity(0.06)))
             }
         }
     }

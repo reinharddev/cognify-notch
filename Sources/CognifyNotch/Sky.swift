@@ -348,12 +348,23 @@ struct SkyPanel: View {
             let pos = SkyPosition.at(date, sun: sun)
             HStack(alignment: .center, spacing: 20) {
                 info(date: date, sun: sun, isDay: pos.isDay)
+                    .padding(.horizontal, Theme.Space.m).padding(.vertical, Theme.Space.s)
+                    .frame(minWidth: 160, alignment: .leading)
+                    .background(glass(clear: !pos.isDay && weather.now?.code == 0))
                     .frame(width: 210, alignment: .leading)
                 arc(pos: pos, sun: sun, date: date, t: context.date.timeIntervalSinceReferenceDate)
                     .frame(maxWidth: .infinity)
             }
             .foregroundStyle(ink)
         }
+    }
+
+    /// Kartu kaca di belakang jam dan cuaca. Malam cerah dibuat hampir bening supaya rasi bintang tetap terlihat.
+    private func glass(clear: Bool) -> some View {
+        let shape = RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
+        return shape
+            .fill(LinearGradient(colors: [ink.opacity(clear ? 0.04 : 0.18), ink.opacity(clear ? 0.02 : 0.08)], startPoint: .topLeading, endPoint: .bottomTrailing))
+            .overlay(shape.strokeBorder(ink.opacity(clear ? 0.2 : 0.3)))
     }
 
     private func zone(_ sun: WeatherFeed.SunTimes?) -> TimeZone { sun.flatMap { TimeZone(secondsFromGMT: $0.offset) } ?? .current }
@@ -377,8 +388,8 @@ struct SkyPanel: View {
                 }
                 Text(now.place).font(.system(size: 10.5)).foregroundStyle(ink.opacity(0.75)).lineLimit(1)
             } else {
-                Text(weather.problem ?? L("Nyalakan Cuaca dan isi kota di Pengaturan untuk matahari dan cuaca asli (sementara 06.00 sampai 18.00).",
-                                          "Turn on Weather and enter a city in Settings for real sun times and weather (6 am to 6 pm for now)."))
+                Text(weather.problem ?? L("Nyalakan Cuaca dan isi kota di Pengaturan biar matahari dan cuacanya asli (sementara pakai 06.00 sampai 18.00).",
+                                          "Turn on Weather and add a city in Settings for real sun times and weather (using 6 am to 6 pm for now)."))
                     .font(.system(size: 10.5)).foregroundStyle(ink.opacity(0.75)).lineLimit(3)
             }
         }

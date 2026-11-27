@@ -355,7 +355,7 @@ struct DockView: View {
 
     /// Menu klik kanan untuk dock itu sendiri (di latar, atau di bawah menu ikon dan widget).
     @ViewBuilder private var dockMenu: some View {
-        Button(L("Pengaturan dock…", "Dock settings…")) { app.onOpenSettings?() }
+        Button(L("Lihat semua jendela…", "Show all windows…")) { app.onOpenSettings?() }
         Button(L("Matikan dock", "Turn the dock off")) { prefs.dockEnabled = false }
     }
 

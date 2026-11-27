@@ -9,7 +9,8 @@ import UniformTypeIdentifiers
 /// Bahasa tampilan notch. Default Bahasa Indonesia; bahasa Inggris dipilih di jendela Pengaturan
 /// app mandiri. Notch di dalam Cognify selalu Bahasa Indonesia (seperti Cognify).
 enum Lang {
-    static var english = false
+    /// Cognify Notch hanya berbahasa Inggris (keputusan pemilik, 2026-11-26). Pasangan `L(id, en)` lama masih ada di kode.
+    static let english = true
 }
 
 /// Teks sesuai bahasa yang dipilih: `L("Simpan", "Save")`.
@@ -51,11 +52,6 @@ final class Preferences: ObservableObject {
         }
     }
 
-    enum Language: String, CaseIterable, Identifiable {
-        case id, en
-        var id: String { rawValue }
-        var label: String { self == .id ? "Bahasa Indonesia" : "English" }
-    }
 
     /// Jeda sebelum notch terbuka saat kursor diarahkan ke sana (detik).
     @Published var hoverDelay: Double { didSet { save("prefs.hoverDelay", hoverDelay) } }
@@ -72,8 +68,7 @@ final class Preferences: ObservableObject {
     }
     /// Warna aksen sebagai hex "#rrggbb"; kosong = ungu bawaan. Dipakai tab terpilih, tombol, progres, dan equalizer bawaan.
     @Published var accentHex: String {
-        didSet { save("prefs.accentHex", accentHex); AccentStyle.color = Color(hex: accentHex)
-            LyricStyle.shared.auto = lyricAuto; LyricStyle.shared.active = Color(hex: lyricActiveHex); LyricStyle.shared.idle = Color(hex: lyricIdleHex) }
+        didSet { save("prefs.accentHex", accentHex); AccentStyle.color = Color(hex: accentHex) }
     }
     /// Warna lirik (hex): baris aktif dan baris yang belum/sudah lewat; kosong = putih bawaan.
     /// Warna lirik otomatis dari sampul lagu.
@@ -153,6 +148,8 @@ final class Preferences: ObservableObject {
     /// Pakai bentuk melayang juga di Mac yang punya notch fisik.
     @Published var floatOnNotch: Bool { didSet { save("prefs.floatOnNotch", floatOnNotch) } }
     /// Geseran notch melayang dari tengah-atas layar (titik): kanan positif, ke bawah positif.
+    /// Lirik di baris kedua di bawah notch (bawaan mati).
+    @Published var lyricsBelow: Bool { didSet { save("prefs.lyricsBelow", lyricsBelow) } }
     @Published var floatDX: Double { didSet { save("prefs.floatDX", floatDX) } }
     @Published var floatDY: Double { didSet { save("prefs.floatDY", floatDY) } }
     @Published var autoHide: Bool { didSet { save("prefs.autoHide", autoHide) } }
@@ -162,12 +159,6 @@ final class Preferences: ObservableObject {
     /// Bundle id app yang notifikasinya diteruskan ke notch.
     @Published var notifyApps: [String] { didSet { save("prefs.notifyApps", notifyApps) } }
     @Published var hotKey: HotKeyChoice { didSet { save("prefs.hotKey", hotKey.rawValue) } }
-    @Published var language: Language {
-        didSet {
-            save("prefs.language", language.rawValue)
-            Lang.english = language == .en
-        }
-    }
     enum Display: String, CaseIterable, Identifiable {
         case notch, main, active
         var id: String { rawValue }
@@ -175,19 +166,28 @@ final class Preferences: ObservableObject {
             switch self {
             case .notch: return L("Layar dengan notch", "Screen with the notch")
             case .main: return L("Layar utama (menu bar)", "Main screen (menu bar)")
-            case .active: return L("Layar yang sedang dipakai", "Screen you're using")
+            case .active: return L("Layar yang lagi dipakai", "Screen you're on")
             }
         }
     }
 
     /// Bentuk notch yang sedang diam di Mac tanpa notch: kepala bulat yang melayang, atau tab hitam yang menempel di tepi atas (seperti di Windows).
+    /// Tiga gaya: menempel di tepi atas, kapsul melayang, atau wajah bulat melayang.
     enum FloatingStyle: String, CaseIterable, Identifiable {
-        case head, attached
+        case attached, pill, head
         var id: String { rawValue }
         var label: String {
             switch self {
-            case .head: return L("Melayang", "Floating")
-            case .attached: return L("Menempel di atas", "Attached to the top")
+            case .attached: return "Notch"
+            case .pill: return L("Kapsul melayang", "Floating pill")
+            case .head: return L("Wajah melayang", "Floating face")
+            }
+        }
+        var hint: String {
+            switch self {
+            case .attached: return "Stays at the top"
+            case .pill: return "Drag anywhere"
+            case .head: return "Smallest"
             }
         }
     }
@@ -196,6 +196,16 @@ final class Preferences: ObservableObject {
     @Published var openOnClick: Bool { didSet { save("prefs.openOnClick", openOnClick) } }
     /// Hanya berlaku di Mac tanpa notch.
     @Published var floatingStyle: FloatingStyle { didSet { save("prefs.floatingStyle", floatingStyle.rawValue) } }
+    /// Lebar gaya Notch di layar tanpa poni (84 selebar kapsul).
+    @Published var notchWidth: Double { didSet { save("prefs.notchWidth", notchWidth) } }
+
+    /// Gaya yang sedang terlihat: di Mac berponi, selama tidak melayang yang tampil selalu Notch.
+    func style(physicalNotch: Bool) -> FloatingStyle { physicalNotch && !floatOnNotch ? .attached : floatingStyle }
+
+    func setStyle(_ style: FloatingStyle) {
+        floatingStyle = style
+        floatOnNotch = style != .attached
+    }
     /// Layar tempat notch tampil (penting saat memakai monitor tambahan).
     @Published var display: Display { didSet { save("prefs.display", display.rawValue) } }
     /// Kota untuk cuaca di header (dikirim ke Open-Meteo bila fitur cuaca nyala).
@@ -216,6 +226,8 @@ final class Preferences: ObservableObject {
     }
 
     /// Urutan tab (rawValue `NotchModel.Tab`).
+    /// Tab yang tampil saat notch dibuka; kosong = tab terakhir.
+    @Published var startTab: String { didSet { save("prefs.startTab", startTab) } }
     @Published var tabOrder: [String] { didSet { save("prefs.tabOrder", tabOrder) } }
 
     private let defaults: UserDefaults?
@@ -261,18 +273,22 @@ final class Preferences: ObservableObject {
         dockLinks = DockLinks.clean((d?.data(forKey: "prefs.dockLinks")).flatMap { try? JSONDecoder().decode([DockLink].self, from: $0) } ?? [])
         dockPins = DockApps.cleanPins((d?.data(forKey: "prefs.dockPins")).flatMap { try? JSONDecoder().decode([DockPin].self, from: $0) } ?? [])
         floatOnNotch = d?.bool(forKey: "prefs.floatOnNotch") ?? false
+        lyricsBelow = d?.bool(forKey: "prefs.lyricsBelow") ?? false
         floatDX = d?.object(forKey: "prefs.floatDX") as? Double ?? 0
         floatDY = d?.object(forKey: "prefs.floatDY") as? Double ?? 0
         autoHide = d?.bool(forKey: "prefs.autoHide") ?? false
         idleScale = min(1.5, max(0.6, d?.object(forKey: "prefs.idleScale") as? Double ?? 1))
         scale = d?.object(forKey: "prefs.scale") as? Double ?? 1
         hotKey = (d?.string(forKey: "prefs.hotKey")).flatMap(HotKeyChoice.init) ?? .ctrlOptN
-        language = (d?.string(forKey: "prefs.language")).flatMap(Language.init) ?? .id
         notifyApps = d?.stringArray(forKey: "prefs.notifyApps") ?? ["net.whatsapp.WhatsApp", "com.hnc.Discord"]
+        startTab = d?.string(forKey: "prefs.startTab") ?? ""
         tabOrder = d?.stringArray(forKey: "prefs.tabOrder") ?? NotchModel.Tab.allCases.map(\.rawValue)
         openOnClick = d?.bool(forKey: "prefs.openOnClick") ?? false
         display = (d?.string(forKey: "prefs.display")).flatMap(Display.init) ?? .notch
-        floatingStyle = (d?.string(forKey: "prefs.floatingStyle")).flatMap(FloatingStyle.init) ?? .head
+        // Dulu "menempel" yang diseret turun berbentuk kapsul; sekarang itu gaya tersendiri.
+        let storedStyle = (d?.string(forKey: "prefs.floatingStyle")).flatMap(FloatingStyle.init) ?? .head
+        floatingStyle = storedStyle == .attached && (d?.double(forKey: "prefs.floatDY") ?? 0) > 0.5 ? .pill : storedStyle
+        notchWidth = min(220, max(84, d?.object(forKey: "prefs.notchWidth") as? Double ?? 116))
         weatherCity = d?.string(forKey: "prefs.weatherCity") ?? ""
         weatherCoords = d?.string(forKey: "prefs.weatherCoords") ?? ""
         companionMode = (d?.string(forKey: "prefs.companionMode")).flatMap(CompanionMode.init) ?? .dynamic
@@ -280,8 +296,10 @@ final class Preferences: ObservableObject {
         companionBlink = d?.object(forKey: "prefs.companionBlink") as? Bool ?? true
         companionFollow = d?.object(forKey: "prefs.companionFollow") as? Bool ?? true
         companionMap = d?.dictionary(forKey: "prefs.companionMap") as? [String: String] ?? [:]
-        Lang.english = language == .en
-        if d != nil { EqualizerStyle.shared.auto = equalizerAuto; EqualizerStyle.shared.color = Color(hex: equalizerHex); AccentStyle.color = Color(hex: accentHex) }
+        if d != nil {
+            EqualizerStyle.shared.auto = equalizerAuto; EqualizerStyle.shared.color = Color(hex: equalizerHex); AccentStyle.color = Color(hex: accentHex)
+            LyricStyle.shared.auto = lyricAuto; LyricStyle.shared.active = Color(hex: lyricActiveHex); LyricStyle.shared.idle = Color(hex: lyricIdleHex)
+        }
     }
 
     private func save(_ key: String, _ value: Any) { defaults?.set(value, forKey: key) }
@@ -289,6 +307,14 @@ final class Preferences: ObservableObject {
     /// Tab dalam urutan pilihan user; tab baru (belum ada di urutan tersimpan) di belakang.
     func ordered(_ tabs: [NotchModel.Tab]) -> [NotchModel.Tab] {
         tabs.sorted { (tabOrder.firstIndex(of: $0.rawValue) ?? 99) < (tabOrder.firstIndex(of: $1.rawValue) ?? 99) }
+    }
+
+    /// Pindahkan `tab` ke tempat `target` (hasil menyeret).
+    func move(_ tab: NotchModel.Tab, onto target: NotchModel.Tab) {
+        var order = ordered(NotchModel.Tab.allCases).map(\.rawValue)
+        guard tab != target, let from = order.firstIndex(of: tab.rawValue), let to = order.firstIndex(of: target.rawValue) else { return }
+        order.insert(order.remove(at: from), at: to)
+        tabOrder = order
     }
 
     func move(_ tab: NotchModel.Tab, by offset: Int) {
@@ -312,81 +338,84 @@ struct FeatureToggle: Identifiable {
     static let all: [FeatureToggle] = [
         FeatureToggle(key: \.media, defaultsKey: "feature.media",
                       title: { L("Lagu & video yang diputar", "Now playing") },
-                      hint: { L("Geser dua jari di notch untuk ganti lagu.", "Swipe with two fingers on the notch to change tracks.") }),
+                      hint: { L("Geser dua jari di notch buat ganti lagu.", "Swipe the notch with two fingers to skip tracks.") }),
         FeatureToggle(key: \.spectrum, defaultsKey: "feature.spectrum",
-                      title: { L("Equalizer mengikuti suara", "Equalizer follows the audio") },
-                      hint: { L("Suara hanya diubah jadi tinggi batang, tidak direkam.", "Audio only drives the bars; nothing is recorded.") }),
+                      title: { L("Equalizer ikut suara", "Equalizer moves with the sound") },
+                      hint: { L("Suaranya cuma dipakai buat tinggi batang, tidak direkam.", "Sound only moves the bars. Nothing is recorded.") }),
         FeatureToggle(key: \.calendar, defaultsKey: "feature.calendar",
                       title: { L("Agenda Kalender & Pengingat", "Calendar & Reminders agenda") },
-                      hint: { L("Menampilkan acara Kalender dan Pengingat terjadwal. Termasuk tombol Gabung untuk rapat Zoom, Meet, dan Teams.", "Shows Calendar events and scheduled Reminders, with Join buttons for Zoom, Meet, and Teams.") }),
+                      hint: { L("Lihat acara Kalender dan Pengingat berjadwal, plus tombol Gabung buat rapat Zoom, Meet, dan Teams.", "See Calendar events and scheduled Reminders, with a Join button for Zoom, Meet, and Teams.") }),
         FeatureToggle(key: \.camera, defaultsKey: "feature.camera",
-                      title: { L("Cermin kamera", "Camera mirror") },
-                      hint: { L("Kamera hanya menyala selama tab Cermin dibuka.", "The camera is only on while the Mirror tab is open.") }),
+                      title: { L("Kamera", "Camera") },
+                      hint: { L("Kamera cuma nyala selama tab Kamera dibuka.", "The camera is only on while the Camera tab is open.") }),
+        FeatureToggle(key: \.micTest, defaultsKey: "feature.micTest",
+                      title: { "Test mic" },
+                      hint: { "Check your microphone on the Camera & Mic page. Nothing is saved." }),
         FeatureToggle(key: \.shortcuts, defaultsKey: "feature.shortcuts",
                       title: { L("Pintasan", "Shortcuts") },
-                      hint: { L("Jalankan Siri Shortcuts dengan satu klik.", "Run Siri Shortcuts with one click.") }),
+                      hint: { L("Jalankan Siri Shortcuts sekali klik.", "Run Siri Shortcuts in one click.") }),
         FeatureToggle(key: \.clipboard, defaultsKey: "feature.clipboard",
                       title: { L("Riwayat clipboard", "Clipboard history") },
-                      hint: { L("Tersimpan di Mac ini saja. Isi dari pengelola kata sandi dilewati.", "Stored on this Mac only. Password manager content is skipped.") }),
+                      hint: { L("Cuma disimpan di Mac ini. Isi dari pengelola kata sandi dilewati.", "Stays on this Mac. Anything from password managers is skipped.") }),
         FeatureToggle(key: \.voice, defaultsKey: "feature.voice",
-                      title: { L("Rekam suara jadi catatan", "Voice to note") },
-                      hint: { L("Diubah jadi teks di Mac ini, tidak dikirim ke internet.", "Transcribed on this Mac, never sent online.") }),
+                      title: { L("Suara jadi catatan", "Voice notes") },
+                      hint: { L("Diubah jadi teks langsung di Mac ini, tidak dikirim ke internet.", "Turned into text on this Mac. Nothing goes online.") }),
         FeatureToggle(key: \.hud, defaultsKey: "feature.hud",
                       title: { L("Volume & kecerahan", "Volume & brightness") },
-                      hint: { L("Perubahan ditampilkan di notch.", "Changes show up in the notch.") }),
+                      hint: { L("Perubahannya muncul di notch.", "See changes right in the notch.") }),
         FeatureToggle(key: \.power, defaultsKey: "feature.power",
                       title: { L("Baterai & charger", "Battery & charger") },
-                      hint: { L("Charger dicolok/dicabut, baterai 20% dan 10%.", "Charger plugged in or out, battery at 20% and 10%.") }),
+                      hint: { L("Kabar saat charger dicolok atau dicabut, dan baterai tinggal 20% atau 10%.", "A heads-up when you plug in or unplug, and at 20% and 10% battery.") }),
         FeatureToggle(key: \.devices, defaultsKey: "feature.devices",
                       title: { L("AirPods & headphone", "AirPods & headphones") },
-                      hint: { L("Nama dan baterai saat tersambung.", "Name and battery when connected.") }),
+                      hint: { L("Nama dan sisa baterai saat tersambung.", "Name and battery level when they connect.") }),
         FeatureToggle(key: \.downloads, defaultsKey: "feature.downloads",
-                      title: { L("Progress download", "Download progress") },
-                      hint: { L("File yang sedang diunduh ke folder Downloads.", "Files downloading to your Downloads folder.") }),
+                      title: { L("Progres unduhan", "Download progress") },
+                      hint: { L("Pantau file yang lagi diunduh ke folder Unduhan.", "Keep an eye on files downloading to your Downloads folder.") }),
         FeatureToggle(key: \.lyrics, defaultsKey: "feature.lyrics",
                       title: { L("Lirik lagu", "Synced lyrics") },
                       hint: { L("Butuh internet: judul, artis, dan durasi lagu dikirim ke LRCLIB (lrclib.net) saat halaman Musik dibuka.",
-                                "Needs internet: song title, artist and length are sent to LRCLIB (lrclib.net) when the Music page is open.") }),
+                                "Needs internet: the song's title, artist and length go to LRCLIB (lrclib.net) when you open the Music page.") }),
         FeatureToggle(key: \.water, defaultsKey: "feature.water",
                       title: { L("Pengingat minum", "Water reminder") },
-                      hint: { L("Target harian, grafik per jam, dan pengingat di jam aktif.", "Daily goal, hourly chart and reminders during your hours.") }),
+                      hint: { L("Target harian, grafik per jam, dan diingatkan selama jam aktifmu.", "A daily goal, an hourly chart, and reminders during your active hours.") }),
         FeatureToggle(key: \.todo, defaultsKey: "feature.todo",
                       title: { L("Daftar tugas", "To-do list") },
-                      hint: { L("Tugas dengan pengingat; tulis \"jam 7\" untuk mengatur waktunya.", "Tasks with reminders; type \"at 7pm\" to set a time.") }),
+                      hint: { L("Tugas lengkap dengan pengingat; tulis \"jam 7\" buat atur waktunya.", "Tasks with reminders. Type \"at 7pm\" to set the time.") }),
         FeatureToggle(key: \.companion, defaultsKey: "feature.companion",
-                      title: { L("Teman kecil di notch", "Little companion in the notch") },
-                      hint: { L("Wajah yang berkedip, tertidur, dan ekspresinya menyesuaikan keadaan. Atur caranya di bagian Teman kecil.", "A face that blinks, dozes off, and changes expression with what is going on. Set how in the Little companion section.") }),
+                      title: { L("Ekspresi CogniFace di notch", "CogniFace expressions in the notch") },
+                      hint: { L("CogniFace bisa berkedip, ketiduran, dan ganti ekspresi sesuai suasana. Atur di bagian Ekspresi CogniFace.", "CogniFace blinks, dozes off, and reacts to what's happening. Tweak it under CogniFace expressions.") }),
         FeatureToggle(key: \.keyboard, defaultsKey: "feature.keyboard",
                       title: { L("Caps Lock & bahasa keyboard", "Caps Lock & keyboard language") },
-                      hint: { L("Kabar singkat saat Caps Lock nyala atau bahasa keyboard berganti.", "A nudge when Caps Lock turns on or the keyboard language changes.") }),
+                      hint: { L("Kasih tahu sebentar saat Caps Lock nyala atau bahasa keyboard ganti.", "A quick heads-up when Caps Lock is on or the keyboard language changes.") }),
         FeatureToggle(key: \.network, defaultsKey: "feature.network",
-                      title: { L("Internet putus/tersambung", "Connection changes") },
-                      hint: { L("Kabar saat koneksi internet hilang atau pulih.", "A nudge when you go offline or come back online.") }),
+                      title: { L("Internet putus & nyambung", "Connection changes") },
+                      hint: { L("Kasih tahu saat internet putus atau balik lagi.", "A heads-up when you go offline or get back online.") }),
         FeatureToggle(key: \.hideFullscreen, defaultsKey: "feature.hideFullscreen",
-                      title: { L("Sembunyi saat layar penuh", "Hide in full-screen apps") },
-                      hint: { L("Notch menyingkir saat video, game, atau presentasi memenuhi layar.", "Steps aside for full-screen video, games and presentations.") }),
+                      title: { L("Ngumpet saat layar penuh", "Hide in full screen") },
+                      hint: { L("Notch minggir kalau video, game, atau presentasi lagi layar penuh.", "Gets out of the way during full-screen videos, games and presentations.") }),
         FeatureToggle(key: \.lyricsWing, defaultsKey: "feature.lyricsWing",
                       title: { L("Lirik di notch tertutup", "Lyrics in the closed notch") },
-                      hint: { L("Baris yang sedang dinyanyikan tampil di sisi kiri notch saat lagu diputar.", "The line being sung shows beside the notch while music plays.") }),
+                      hint: { L("Baris yang lagi dinyanyikan muncul di sisi kiri notch selama lagu diputar.", "The current line shows next to the notch while music plays.") }),
         FeatureToggle(key: \.clockTools, defaultsKey: "feature.clockTools",
                       title: { L("Stopwatch & hitung mundur", "Stopwatch & countdowns") },
-                      hint: { L("Halaman stopwatch dengan lap dan beberapa hitung mundur sekaligus.", "A stopwatch with laps and several countdowns at once.") }),
+                      hint: { L("Halaman stopwatch lengkap dengan lap dan beberapa hitung mundur sekaligus.", "A stopwatch with laps, plus several countdowns at once.") }),
         FeatureToggle(key: \.remindersSync, defaultsKey: "feature.remindersSync",
                       title: { L("Sinkron Daftar Tugas dengan Pengingat", "Sync to-dos with Reminders") },
-                      hint: { L("Tugas disimpan di daftar Pengingat bawaan, ikut iCloud ke iPhone. macOS akan meminta izin.", "Tasks live in your default Reminders list and sync to iPhone via iCloud. macOS will ask for permission.") }),
+                      hint: { L("Tugas disimpan di daftar bawaan Pengingat dan ikut iCloud ke iPhone. macOS bakal minta izin.", "Tasks go into your default Reminders list and sync to your iPhone through iCloud. macOS will ask for permission.") }),
         FeatureToggle(key: \.calculator, defaultsKey: "feature.calculator",
                       title: { L("Kalkulator di catatan cepat", "Calculator in quick note") },
-                      hint: { L("Ketik 12*3, 15% dari 200, atau 5 km ke mil; hasilnya langsung muncul.", "Type 12*3, 15% of 200 or 5 km to mi; the answer shows up right away.") }),
+                      hint: { L("Ketik 12*3, 15% dari 200, atau 5 km ke mil; hasilnya langsung keluar.", "Type 12*3, 15% of 200, or 5 km to mi and get the answer right away.") }),
         FeatureToggle(key: \.weather, defaultsKey: "feature.weather",
                       title: { L("Cuaca di header", "Weather in the header") },
-                      hint: { L("Butuh internet dan nama kota (di bawah): kota dan koordinatnya dikirim ke Open-Meteo tiap 30 menit.", "Needs internet and a city (below): the city and its coordinates are sent to Open-Meteo every 30 minutes.") }),
+                      hint: { L("Butuh internet dan nama kota (di bawah): nama kota dan koordinatnya dikirim ke Open-Meteo tiap 30 menit.", "Needs internet and a city (below): the city and its coordinates go to Open-Meteo every 30 minutes.") }),
         FeatureToggle(key: \.appNotifications, defaultsKey: "feature.appNotifications",
                       title: { L("Notifikasi app lain", "Other apps' notifications") },
-                      hint: { L("WhatsApp, Discord, dan app pilihanmu muncul di notch. Dibaca dari Pusat Notifikasi di Mac ini, perlu Akses Disk Penuh. Isinya tidak disimpan dan tidak dikirim ke mana pun.",
-                                "WhatsApp, Discord and the apps you pick show up in the notch. Read from Notification Center on this Mac; needs Full Disk Access. Contents are never stored or sent anywhere.") }),
+                      hint: { L("Notifikasi WhatsApp, Discord, dan app pilihanmu muncul di notch. Dibaca dari Pusat Notifikasi di Mac ini, jadi perlu Akses Disk Penuh. Isinya tidak disimpan dan tidak dikirim ke mana pun.",
+                                "See WhatsApp, Discord and any apps you pick right in the notch. They're read from Notification Center on this Mac, so Full Disk Access is needed. Nothing is stored or sent anywhere.") }),
         FeatureToggle(key: \.hotkey, defaultsKey: "feature.hotkey",
-                      title: { L("Buka dengan shortcut keyboard", "Open with a keyboard shortcut") },
-                      hint: { L("Esc atau klik di luar notch menutupnya.", "Esc or a click outside closes it.") }),
+                      title: { L("Buka pakai pintasan keyboard", "Open with a keyboard shortcut") },
+                      hint: { L("Tutup lagi dengan Esc atau klik di luar notch.", "Press Esc or click outside to close it.") }),
     ]
 
     /// Fitur tersimpan app mandiri. Kalender default nyala (satu-satunya sumber agenda).
@@ -439,14 +468,14 @@ enum DataBackup {
               root["cognifyNotch"] != nil, let values = root["data"] as? [String: Any]
         else {
             let alert = NSAlert()
-            alert.messageText = L("File ini bukan cadangan Cognify Notch", "This file isn't a Cognify Notch backup")
+            alert.messageText = L("File ini bukan cadangan Cognify Notch", "That's not a Cognify Notch backup")
             alert.runModal()
             return
         }
         let alert = NSAlert()
-        alert.messageText = L("Ganti data di Mac ini dengan isi cadangan?", "Replace this Mac's data with the backup?")
-        alert.informativeText = L("Catatan, tugas, riwayat minum, clipboard, timer, dan pengaturan sekarang akan diganti. Cognify Notch lalu dibuka ulang.",
-                                  "Current notes, tasks, water log, clipboard, timers and settings will be replaced. Cognify Notch will then restart.")
+        alert.messageText = L("Timpa data di Mac ini dengan isi cadangan?", "Replace the data on this Mac with this backup?")
+        alert.informativeText = L("Catatan, tugas, riwayat minum, clipboard, timer, dan pengaturan yang sekarang bakal diganti. Setelah itu Cognify Notch dibuka ulang.",
+                                  "Your current notes, tasks, water log, clipboard, timers and settings will be replaced, then Cognify Notch restarts.")
         alert.addButton(withTitle: L("Ganti", "Replace"))
         alert.addButton(withTitle: L("Batal", "Cancel"))
         guard alert.runModal() == .alertFirstButtonReturn else { return }

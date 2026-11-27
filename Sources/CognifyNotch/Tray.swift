@@ -61,7 +61,7 @@ final class TrayModel: ObservableObject {
         let clean = newName.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "/", with: "-")
         guard !clean.isEmpty, clean != item.name, let url = url(for: item) else { return nil }
         let target = url.deletingLastPathComponent().appendingPathComponent(clean)
-        guard !FileManager.default.fileExists(atPath: target.path) else { return L("Sudah ada file bernama “\(clean)”", "A file named “\(clean)” already exists") }
+        guard !FileManager.default.fileExists(atPath: target.path) else { return L("Nama “\(clean)” sudah dipakai file lain", "There's already a file called “\(clean)”") }
         do {
             try FileManager.default.moveItem(at: url, to: target)
             guard let index = items.firstIndex(where: { $0.id == item.id }), let bookmark = try? target.bookmarkData() else { return nil }
@@ -69,7 +69,7 @@ final class TrayModel: ObservableObject {
             save()
             return nil
         } catch {
-            return L("Nama tidak bisa diganti: ", "Couldn't rename: ") + error.localizedDescription
+            return L("Gagal ganti nama: ", "Couldn't rename: ") + error.localizedDescription
         }
     }
 
@@ -118,8 +118,8 @@ struct TrayPanel: View {
             if tray.items.isEmpty {
                 VStack(spacing: 6) {
                     Image(systemName: "tray").font(.system(size: 22)).foregroundStyle(.white.opacity(0.35))
-                    Text(model.appMode ? L("Seret file ke notch untuk menaruhnya di sini.", "Drop files on the notch to park them here.") : "Seret file ke notch lalu lepas di “Taruh di tray”.").font(.system(size: 11.5))
-                    Text(L("File tetap di tempat aslinya; tray hanya menyimpan pintasannya.", "Files stay where they are; the tray only keeps a shortcut.")).font(.system(size: 10.5)).foregroundStyle(.white.opacity(0.45))
+                    Text(model.appMode ? L("Seret file ke notch buat ditaruh di sini.", "Drag files onto the notch to keep them here.") : "Drag files onto the notch and drop them on “Add to shelf”.").font(.system(size: 11.5))
+                    Text(L("File aslinya tidak dipindah; rak cuma menyimpan pintasannya.", "Your files don't move. The shelf just keeps a shortcut.")).font(.system(size: 10.5)).foregroundStyle(.white.opacity(0.45))
                 }
                 .foregroundStyle(.white.opacity(0.6))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -162,7 +162,7 @@ struct TrayTile: View {
                         Button { tray.remove(item) } label: {
                             Image(systemName: "xmark.circle.fill").font(.system(size: 14)).foregroundStyle(.white, Color(white: 0.3))
                         }
-                        .buttonStyle(.plain).offset(x: 6, y: -6).help(L("Keluarkan dari tray", "Remove from tray"))
+                        .buttonStyle(.plain).offset(x: 6, y: -6).help(L("Keluarkan dari rak", "Remove from shelf"))
                     }
                 }
             if tray.renaming == item.id {
@@ -181,7 +181,8 @@ struct TrayTile: View {
         }
         .frame(width: 84, height: 108, alignment: .top)
         .padding(.top, 4)
-        .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(hover ? 0.08 : 0)))
+        .background(RoundedRectangle(cornerRadius: Theme.Radius.item, style: .continuous).fill(Color.white.opacity(hover ? 0.12 : 0.06)))
+        .overlay(RoundedRectangle(cornerRadius: Theme.Radius.item, style: .continuous).strokeBorder(Theme.edge))
         .notchHover { hover = $0 }
         .onTapGesture(count: 2) { tray.open(item) }
         .onDrag { url.map { NSItemProvider(object: $0 as NSURL) } ?? NSItemProvider() } // seret keluar ke app lain
@@ -192,12 +193,12 @@ struct TrayTile: View {
             Button(L("Ganti nama", "Rename")) { tray.renaming = item.id }
             Divider()
             if !model.appMode {
-                Button("Simpan ke Knowledge") { if let url { model.save(files: [url], links: [], texts: []) } }
+                Button("Save to Knowledge") { if let url { model.save(files: [url], links: [], texts: []) } }
             }
             Divider()
-            Button(L("Keluarkan dari tray", "Remove from tray")) { tray.remove(item) }
+            Button(L("Keluarkan dari rak", "Remove from shelf")) { tray.remove(item) }
         }
-        .help("\(item.name)\nKlik dua kali untuk membuka, klik kanan untuk pilihan lain, seret untuk memindahkan.")
+        .help("\(item.name)\nDouble-click to open, right-click for more, drag to move.")
     }
 
     private func commitRename() {
@@ -238,19 +239,19 @@ struct DropChoice: View {
     var body: some View {
         HStack(spacing: 10) {
             if !model.appMode {
-            DropTargetZone(icon: "brain.head.profile", title: "Simpan ke Knowledge",
-                           detail: "PDF, Word, PowerPoint, gambar, tautan, teks") { files, links, texts in
+            DropTargetZone(icon: "brain.head.profile", title: "Save to Knowledge",
+                           detail: "PDF, Word, PowerPoint, images, links, text") { files, links, texts in
                 model.save(files: files, links: links, texts: texts)
             }
             }
-            DropTargetZone(icon: "tray.full.fill", title: L("Taruh di tray", "Add to tray"),
-                           detail: L("Parkir sementara, AirDrop, ganti nama", "Park, AirDrop, rename")) { files, links, texts in
+            DropTargetZone(icon: "tray.full.fill", title: L("Taruh di rak", "Add to shelf"),
+                           detail: L("Simpan sementara, AirDrop, ganti nama", "Hold, AirDrop, rename")) { files, links, texts in
                 if files.isEmpty {
-                    model.show(.failed(model.appMode ? L("Tray hanya untuk file.", "The tray only holds files.") : "Tray hanya untuk file. Tautan & teks bisa disimpan ke Knowledge."))
+                    model.show(.failed(model.appMode ? L("Rak cuma bisa menampung file.", "The shelf only takes files.") : "The shelf only takes files. Links and text can be saved to Knowledge."))
                 } else {
                     model.tray.add(files)
                     model.tab = .tray
-                    model.show(.done(files.count == 1 ? "“\(files[0].lastPathComponent)” di tray" : "\(files.count) file di tray"))
+                    model.show(.done(files.count == 1 ? "“\(files[0].lastPathComponent)” on the shelf" : "\(files.count) files on the shelf"))
                 }
             }
         }

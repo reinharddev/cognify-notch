@@ -100,8 +100,8 @@ struct WaterPanel: View {
     @State private var editing = false
 
     var body: some View {
-        HStack(alignment: .top, spacing: 20) {
-            VStack(alignment: .leading, spacing: 8) {
+        HStack(alignment: .top, spacing: Theme.Space.s) {
+            VStack(alignment: .leading, spacing: Theme.Space.s) {
                 HStack(alignment: .firstTextBaseline, spacing: 4) {
                     Text(Self.liters(water.total))
                         .font(.system(size: 34, weight: .bold, design: .rounded).monospacedDigit())
@@ -117,7 +117,7 @@ struct WaterPanel: View {
                     }
                 }
                 .font(.system(size: 11))
-                ProgressBar(value: water.progress, tint: .cyan).frame(width: 190)
+                ProgressBar(value: water.progress, tint: .cyan)
                 HStack(spacing: 6) {
                     Button { water.drink() } label: {
                         Label(L("Minum \(water.glass) ml", "Drink \(water.glass) ml"), systemImage: "drop.fill").lineLimit(1).fixedSize()
@@ -136,17 +136,22 @@ struct WaterPanel: View {
                 Toggle(isOn: $water.reminders) {
                     Text(L("Ingatkan tiap \(water.interval) menit, \(water.startHour).00-\(water.endHour).00",
                            "Every \(water.interval) min, \(water.startHour):00-\(water.endHour):00"))
-                        .font(.system(size: 10.5)).foregroundStyle(.white.opacity(0.55))
+                        .font(.system(size: 10.5)).foregroundStyle(Theme.textSecondary)
                         .lineLimit(1).minimumScaleFactor(0.85)
                 }
                 .toggleStyle(MiniSwitch())
             }
-            .frame(width: 250, alignment: .leading)
-            if editing {
-                settings
-            } else {
-                chart
+            .notchScrollCard()
+            .frame(width: 266)
+            Group {
+                if editing {
+                    settings
+                } else {
+                    chart
+                }
             }
+            .frame(maxHeight: .infinity)
+            .notchCard()
         }
         .frame(maxHeight: .infinity, alignment: .top)
     }
@@ -157,8 +162,8 @@ struct WaterPanel: View {
         return HStack(alignment: .bottom, spacing: 4) {
             ForEach(data, id: \.hour) { item in
                 VStack(spacing: 4) {
-                    RoundedRectangle(cornerRadius: 3)
-                        .fill(item.ml > 0 ? Color.cyan.opacity(0.85) : Color.white.opacity(0.08))
+                    Capsule()
+                        .fill(item.ml > 0 ? Color.cyan.opacity(0.85) : Theme.track)
                         .frame(height: max(4, 96 * CGFloat(item.ml) / CGFloat(top)))
                     Text(item.hour % 3 == 0 ? String(format: "%02d", item.hour) : " ")
                         .font(.system(size: 8.5, weight: .medium).monospacedDigit()).foregroundStyle(.white.opacity(0.4))
@@ -168,7 +173,6 @@ struct WaterPanel: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-        .padding(.bottom, 4)
     }
 
     private var settings: some View {
@@ -240,28 +244,11 @@ struct ProgressBar: View {
     var body: some View {
         GeometryReader { geo in
             ZStack(alignment: .leading) {
-                Capsule().fill(Color.white.opacity(0.1))
+                Capsule().fill(Theme.track)
                 Capsule().fill(tint).frame(width: geo.size.width * max(0, min(1, value)))
             }
         }
         .frame(height: 5)
         .animation(.notch, value: value)
-    }
-}
-
-/// Saklar kecil bergaya notch (Toggle bawaan tidak ikut terender di snapshot).
-struct MiniSwitch: ToggleStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        Button { withAnimation(.notch) { configuration.isOn.toggle() } } label: {
-            HStack(spacing: 7) {
-                ZStack(alignment: configuration.isOn ? .trailing : .leading) {
-                    Capsule().fill(configuration.isOn ? Color.accent : Color.white.opacity(0.18)).frame(width: 26, height: 15)
-                    Circle().fill(.white).frame(width: 11, height: 11).padding(.horizontal, 2)
-                }
-                configuration.label
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
     }
 }

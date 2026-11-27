@@ -96,7 +96,7 @@ struct AgendaView: View {
             Text(tr("Agenda", "Agenda")).font(.system(size: 12, weight: .bold)).foregroundStyle(.secondary).textCase(.uppercase)
             if items.isEmpty {
                 Spacer()
-                Text(tr("Tidak ada acara terdekat", "Nothing coming up")).font(.system(size: 13)).foregroundStyle(.secondary)
+                Text(tr("Belum ada acara dekat-dekat ini", "Nothing coming up")).font(.system(size: 13)).foregroundStyle(.secondary)
                 Spacer()
             } else {
                 ForEach(items) { EventRow(e: $0) }
@@ -152,7 +152,7 @@ struct AgendaWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: "CognifyAgenda", provider: Provider()) { AgendaView(entry: $0) }
             .configurationDisplayName("Agenda")
-            .description(tr("Acara, pengingat, dan tenggat tugas terdekat.", "Upcoming events, reminders and deadlines."))
+            .description(tr("Acara, pengingat, dan tenggat tugas yang paling dekat.", "Your next events, reminders, and deadlines."))
             .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
     }
 }

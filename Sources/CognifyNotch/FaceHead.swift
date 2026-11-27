@@ -126,7 +126,6 @@ struct HeadCanvas: View, Animatable {
                 if alpha > 0.01 {
                     e.opacity = alpha
                     e.fill(Path(ellipseIn: CGRect(x: -r, y: -r, width: 2 * r, height: 2 * r)), with: .color(Self.ink))
-                    // Kelopak berwarna kepala: atas (persegi, miring) dan bawah (lingkaran naik).
                     var lid = e
                     lid.clip(to: Path(ellipseIn: CGRect(x: -r - 0.6, y: -r - 0.6, width: 2 * r + 1.2, height: 2 * r + 1.2)))
                     var upper = lid

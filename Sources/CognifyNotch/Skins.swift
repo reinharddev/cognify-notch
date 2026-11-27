@@ -32,6 +32,9 @@ struct SkinInfo: Identifiable, Equatable {
 private struct SkinManifest: Decodable {
     var name: String?
     var description: String?
+    /// Teks Inggris untuk Notch Mac (berkas skin dipakai bersama Notch Windows yang masih dwibahasa).
+    var nameEn: String?
+    var descriptionEn: String?
     var width: Double?
     var height: Double?
     var cursor: Bool?
@@ -286,7 +289,7 @@ final class SkinManager: ObservableObject {
                   let m = try? JSONDecoder().decode(SkinManifest.self, from: data) else { return nil }
             let entry = m.entry ?? "index.html"
             guard fm.fileExists(atPath: dir.appendingPathComponent(entry).path) else { return nil }
-            return SkinInfo(id: name, name: m.name ?? name, desc: m.description ?? "", width: min(max(m.width ?? 240, 80), 1200),
+            return SkinInfo(id: name, name: m.nameEn ?? m.name ?? name, desc: m.descriptionEn ?? m.description ?? "", width: min(max(m.width ?? 240, 80), 1200),
                             height: min(max(m.height ?? 240, 60), 900), cursor: m.cursor ?? false, audio: m.audio ?? false, notch: m.notch ?? false, anchor: m.anchor ?? "top-right", entry: entry, folder: dir)
         }
     }
@@ -517,6 +520,8 @@ final class SkinWindow: NSObject, WKNavigationDelegate {
         self.onReady = onReady
         let config = WKWebViewConfiguration()
         config.setURLSchemeHandler(SkinScheme(root: info.folder, entry: info.entry), forURLScheme: "skin")
+        // Notch Mac berbahasa Inggris saja: skin yang memilih bahasa lewat navigator.language ikut Inggris.
+        config.userContentController.addUserScript(WKUserScript(source: "Object.defineProperty(navigator, 'language', { get: () => 'en-US' })", injectionTime: .atDocumentStart, forMainFrameOnly: true))
         config.userContentController.addUserScript(WKUserScript(source: Self.bridge, injectionTime: .atDocumentStart, forMainFrameOnly: true))
         web = SkinWebView(frame: .zero, configuration: config)
         web.setValue(false, forKey: "drawsBackground")
@@ -658,11 +663,11 @@ struct SkinsPane: View {
 
     var body: some View {
         if let mimik = skins.skins.first(where: { $0.id == "mimik" }), skins.isOn("mimik") {
-            Section(L("Mimik: atur wajahmu", "Mimik: make a face you like")) { MimikPlayground(skins: skins, info: mimik) }
+            SettingsCard(L("CogniFace: atur wajahnya", "CogniFace: give it your own look")) { MimikPlayground(skins: skins, info: mimik) }
         }
-        Section {
+        SettingsCard(note: "To move widgets, use Arrange positions below, or hold ⌥ (Option) and drag. Widgets can't go online and only read their own folder.") {
             if skins.skins.isEmpty {
-                Text(L("Belum ada skin. Letakkan folder skin di folder skin lalu tekan Muat ulang.", "No skins yet. Put a skin folder in the skins folder, then press Reload."))
+                Text(L("Belum ada widget. Taruh folder widget di folder widget, lalu tekan Muat ulang.", "No widgets yet. Drop a widget folder into the widgets folder, then hit Reload."))
                     .foregroundStyle(.secondary)
             }
             ForEach(skins.skins) { skin in
@@ -675,7 +680,7 @@ struct SkinsPane: View {
                 if skins.isOn(skin.id) {
                     HStack {
                         Text(L("Ukuran", "Size")).foregroundStyle(.secondary)
-                        Slider(value: Binding(get: { skins.scale(of: skin) }, set: { skins.setScale($0, of: skin) }), in: 0.5...max(0.55, skins.maxScale(of: skin))) { EmptyView() }
+                        NotchSlider(value: Binding(get: { skins.scale(of: skin) }, set: { skins.setScale($0, of: skin) }), range: 0.5...max(0.55, skins.maxScale(of: skin))).frame(minWidth: 100, maxWidth: 200)
                         Text("\(Int((skins.scale(of: skin) * 100).rounded()))%").monospacedDigit().frame(width: 48, alignment: .trailing)
                         Button { skins.setScale(1, of: skin) } label: { Image(systemName: "arrow.counterclockwise") }
                             .disabled(abs(skins.scale(of: skin) - 1) < 0.005)
@@ -683,38 +688,35 @@ struct SkinsPane: View {
                     }
                 }
             }
-        } footer: {
-            Text(L("Pindahkan skin dengan mode Atur posisi di bawah, atau tahan ⌥ (Option) lalu seret. Skin tidak punya akses internet dan hanya membaca folder skinnya sendiri.",
-                   "Move skins with Arrange positions below, or hold ⌥ (Option) and drag. Skins have no internet access and only read their own folder."))
         }
         if skins.isOn("lyrics") {
-            Section(L("Warna lirik", "Lyrics colour")) {
-                ColorPicker(L("Baris yang dinyanyikan", "Current line"), selection: hexColor($skins.lyricStyle.color), supportsOpacity: false)
-                ColorPicker(L("Judul dan baris berikutnya", "Title and next line"), selection: hexColor($skins.lyricStyle.sub), supportsOpacity: false)
+            SettingsCard(L("Warna lirik", "Lyrics colour")) {
+                LabeledContent(L("Baris yang dinyanyikan", "Current line")) { NotchColorPicker(selection: hexColor($skins.lyricStyle.color), title: L("Baris yang dinyanyikan", "Current line")) }
+                LabeledContent(L("Judul dan baris berikutnya", "Title and next line")) { NotchColorPicker(selection: hexColor($skins.lyricStyle.sub), title: L("Judul dan baris berikutnya", "Title and next line")) }
                 Button(L("Kembalikan ke putih", "Reset to white")) { skins.lyricStyle = SkinLyricStyle() }
                     .disabled(skins.lyricStyle == SkinLyricStyle())
             }
         }
-        Section {
+        SettingsCard {
             Toggle(isOn: $skins.arranging) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(L("Atur posisi", "Arrange positions"))
-                    Text(L("Skin berbingkai dan bisa diseret bebas ke mana saja. Matikan setelah selesai; posisinya tersimpan.",
-                           "Skins get an outline and can be dragged anywhere. Turn it off when done; positions are saved."))
+                    Text(L("Widget diberi bingkai dan bisa diseret ke mana saja. Matikan kalau sudah pas; posisinya disimpan.",
+                           "Widgets get an outline so you can drag them anywhere. Turn it off when you're happy; positions are saved."))
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
             Button(L("Kembalikan ke posisi awal", "Reset positions")) { skins.resetPositions() }
         }
-        Section(L("Tampilan", "Display")) {
-            Picker(L("Posisi jendela", "Window level"), selection: $skins.onTop) {
-                Text(L("Di desktop (di bawah jendela lain)", "On the desktop (below other windows)")).tag(false)
-                Text(L("Selalu di atas", "Always on top")).tag(true)
-            }
+        SettingsCard(L("Tampilan", "Display")) {
+            NotchDropdown(L("Posisi jendela", "Window level"), selection: $skins.onTop, options: [
+                DropdownOption(false, L("Di desktop (di bawah jendela lain)", "On the desktop (below other windows)")),
+                DropdownOption(true, L("Selalu di atas", "Always on top")),
+            ])
         }
-        Section {
+        SettingsCard {
             HStack {
-                Button(L("Buka folder skin", "Open skins folder")) { skins.reveal() }
+                Button(L("Buka folder widget", "Open widgets folder")) { skins.reveal() }
                 Button(L("Muat ulang", "Reload")) { skins.reload() }
             }
         }

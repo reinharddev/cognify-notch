@@ -218,9 +218,7 @@ struct MimikPlayground: View {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(L("Simpan gaya ini", "Save this style")).font(.caption).foregroundStyle(.secondary)
                             HStack(spacing: 8) {
-                                TextField("", text: $presetName, prompt: Text(L("Nama gaya", "Style name")))
-                                    .labelsHidden()
-                                    .textFieldStyle(.roundedBorder)
+                                NotchField(L("Nama gaya", "Style name"), text: $presetName)
                                     .frame(minWidth: 110, maxWidth: 220)
                                     .onSubmit(savePreset)
                                 Button(L("Simpan", "Save"), action: savePreset)
@@ -229,7 +227,7 @@ struct MimikPlayground: View {
                             }
                         }
                         if !skins.mimikPresets.isEmpty {
-                            Text(L("Klik kanan gaya buatanmu untuk menghapusnya.", "Right-click one of your styles to delete it."))
+                            Text(L("Klik kanan gaya buatanmu buat menghapusnya.", "Right-click one of your styles to delete it."))
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                     }
@@ -253,9 +251,9 @@ struct MimikPlayground: View {
                 ChipFlow {
                     Chip(title: L("Gambar mulut", "Draw a mouth"), on: skins.mimik.mouth) { skins.mimik.mouth.toggle() }
                     Chip(title: L("Pupil dalam", "Inner pupils"), on: skins.mimik.pupils) { skins.mimik.pupils.toggle() }
-                    Chip(title: L("Ikuti kursor", "Follow cursor"), on: skins.mimik.follow) { skins.mimik.follow.toggle() }
+                    Chip(title: L("Ikut kursor", "Follow cursor"), on: skins.mimik.follow) { skins.mimik.follow.toggle() }
                     Chip(title: L("Berkedip", "Blink"), on: skins.mimik.blink) { skins.mimik.blink.toggle() }
-                    Chip(title: L("Melirik sendiri", "Idle wander"), on: skins.mimik.wander) { skins.mimik.wander.toggle() }
+                    Chip(title: L("Lirak-lirik sendiri", "Look around on its own"), on: skins.mimik.wander) { skins.mimik.wander.toggle() }
                 }
             }
             group(L("Suasana", "Mood")) {
@@ -265,7 +263,7 @@ struct MimikPlayground: View {
                         Chip(title: mood, on: skins.mimik.mood == mood) { skins.mimik.mood = mood }
                     }
                 }
-                Text(L("Otomatis: wajah mengikuti harimu (musik, jam, tugas). Pilih satu untuk menetapkannya.", "Auto: the face follows your day (music, time, tasks). Pick one to lock it."))
+                Text(L("Otomatis: wajahnya ikut harimu (musik, jam, tugas). Pilih satu kalau mau tetap.", "Auto: the face follows your day (music, time, tasks). Pick one to keep it that way."))
                     .font(.caption).foregroundStyle(.secondary)
             }
             group(L("Efek", "Effects")) {
@@ -299,7 +297,7 @@ struct MimikPlayground: View {
 
     private func swatch(_ title: String, _ hex: Binding<String>) -> some View {
         VStack(spacing: 4) {
-            ColorPicker("", selection: hexColor(hex) { skins.mimik.preset = "custom" }, supportsOpacity: false).labelsHidden()
+            NotchColorPicker(selection: hexColor(hex) { skins.mimik.preset = "custom" })
             Text(title).font(.caption).foregroundStyle(.secondary)
         }
     }
